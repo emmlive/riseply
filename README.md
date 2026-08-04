@@ -17,9 +17,10 @@ matches before anything is submitted. Built as two services:
 ┌─────────────┐      ┌──────────────────┐      ┌─────────────┐
 │  Next.js    │ HTTP │  FastAPI backend  │      │  Postgres/  │
 │  frontend   │◄────►│  (auth, profiles, │◄────►│  SQLite     │
-│  (Vercel)   │      │   matching, tips) │      │  (Supabase/ │
-└─────────────┘      └────────┬─────────┘      │  Railway)   │
-                               │                └─────────────┘
+│  (Cloudflare│      │   matching, tips) │      │  (Supabase/ │
+│   Pages)    │      │   (Railway/Render)│      │  Railway)   │
+└─────────────┘      └────────┬─────────┘      └─────────────┘
+                               │
                                ▼
                       ┌──────────────────┐
                       │  Claude API      │  job matching +
@@ -62,10 +63,16 @@ then hit **Find new matches** on the Overview page.
 
 ## Deploying
 
-**Recommended stack:** Vercel (frontend) + Railway or Render (backend) +
-Supabase or Neon (Postgres). All have workable free tiers, and this is
-exactly the setup the code is built to swap into — the app itself doesn't
-change between local SQLite and hosted Postgres.
+**Recommended stack:** Cloudflare Pages (frontend, free) + Railway or Render
+(backend). The frontend ships as a static export — no server-side API
+routes exist in this app, since every data call goes to the FastAPI
+backend — so Cloudflare Pages serves it directly with no adapter needed.
+
+> **Why not the backend too?** Cloudflare Workers' Python runtime is
+> WASM-based (Pyodide) and can't run this backend's native dependencies —
+> `bcrypt`, `psycopg2`, and parts of SQLAlchemy all need real compiled
+> code. Running the backend elsewhere (Railway/Render/Fly, all with usable
+> free tiers) and the frontend on Cloudflare is the practical split.
 
 1. **Database**: create a Postgres instance on Supabase/Neon/Railway, copy
    its connection string.
@@ -76,10 +83,26 @@ change between local SQLite and hosted Postgres.
    - Set `JWT_SECRET` to a long random value (generate with
      `python -c "import secrets; print(secrets.token_hex(32))"`)
    - Set `ANTHROPIC_API_KEY`, SMTP credentials, and `ALLOWED_ORIGINS` to
-     your deployed frontend's URL.
+     your deployed frontend's URL (your `*.pages.dev` URL, or custom domain).
    - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. **Frontend**: deploy `frontend/` to Vercel.
-   - Set `NEXT_PUBLIC_API_URL` to your deployed backend's URL.
+3. **Frontend on Cloudflare Pages**:
+   - Push this repo to GitHub (already done if you're reading this from
+     there).
+   - In the Cloudflare dashboard: **Workers & Pages → Create → Pages →
+     Connect to Git**, select this repo.
+   - Build settings:
+     - Framework preset: **Next.js (Static HTML Export)**
+     - Build command: `npm run build`
+     - Build output directory: `out`
+     - Root directory: `frontend`
+   - Environment variable: `NEXT_PUBLIC_API_URL` = your deployed backend's
+     URL (from step 2).
+   - Deploy. You'll get a free `your-project.pages.dev` URL immediately;
+     attach a custom domain later from the same dashboard if you want one.
+   - **After the first deploy**, go back to your backend's `ALLOWED_ORIGINS`
+     and set it to the actual `*.pages.dev` URL Cloudflare gave you (or
+     your custom domain), then redeploy the backend — otherwise the
+     frontend's requests will be blocked by CORS.
 4. **Stripe (tips)**: create a Stripe account, grab the secret key from the
    dashboard, set `STRIPE_SECRET_KEY` on the backend. Until you do, the
    tip endpoint returns a clear "not configured yet" response instead of
