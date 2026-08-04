@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas, security
+from app.services import notifier
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,6 +31,11 @@ def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    try:
+        notifier.notify_welcome(user.email, user.full_name)
+    except Exception:
+        pass  # welcome email is a nice-to-have -- never block signup on it
 
     token = security.create_access_token(user.id)
     return schemas.TokenResponse(access_token=token)

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_pass: str = ""
     smtp_from_name: str = "Riseply"
+    support_email: str = ""  # where "Contact support" messages get sent -- defaults to smtp_user if blank
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""

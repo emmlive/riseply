@@ -151,6 +151,13 @@ class JobBuddyChatRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+# --- Support ---
+
+class SupportContactRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=5000)
+
+
 # --- Rise Index ---
 
 class CompanyStatsOut(BaseModel):

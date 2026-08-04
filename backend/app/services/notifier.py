@@ -28,7 +28,7 @@ def send_email(to_addr: str, subject: str, body: str, attachment_path: str | Non
         except FileNotFoundError:
             pass
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as s:
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
         s.starttls()
         s.login(settings.smtp_user, settings.smtp_pass)
         s.send_message(msg)
@@ -55,4 +55,22 @@ def notify_submitted(to_addr: str, job: dict):
         to_addr,
         f"Application submitted: {job['title']} @ {job['company']}",
         f"Submitted your application to {job['company']} for {job['title']}.\n{job['url']}",
+    )
+
+
+def notify_welcome(to_addr: str, full_name: str = ""):
+    name_part = f", {full_name}" if full_name else ""
+    send_email(
+        to_addr,
+        "Welcome to Riseply",
+        (
+            f"Hey{name_part},\n\n"
+            f"Welcome to Riseply. Here's how to get started:\n\n"
+            f"1. Add your resume — Resume tab in your dashboard\n"
+            f"2. Set up a search profile — tell Riseply what roles/locations you're targeting\n"
+            f"3. Hit \"Find new matches\" on your Overview page\n\n"
+            f"Everything gets queued for your review — nothing gets submitted without your OK.\n\n"
+            f"Questions? Just reply to this email or use the Support tab in your dashboard.\n\n"
+            f"— Riseply"
+        ),
     )

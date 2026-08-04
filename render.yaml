@@ -32,6 +32,8 @@ services:
         sync: false
       - key: SMTP_FROM_NAME
         value: Riseply
+      - key: SUPPORT_EMAIL
+        sync: false  # leave unset to default to SMTP_USER
       - key: ALLOWED_ORIGINS
         sync: false  # e.g. https://riseply.com,https://riseply.pages.dev
 
