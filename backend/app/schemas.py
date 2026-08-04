@@ -101,3 +101,47 @@ class UsageOut(BaseModel):
     matches_limit: int
     tailored_resumes_used: int
     tailored_resumes_limit: int
+    interview_preps_used: int
+    interview_preps_limit: int
+    onboarding_plans_used: int
+    onboarding_plans_limit: int
+    job_buddy_messages_used: int
+    job_buddy_messages_limit: int
+
+
+# --- Interview prep ---
+
+class InterviewPrepOut(BaseModel):
+    id: int
+    application_id: int
+    brief: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Job Buddy ---
+
+class OnboardingPlanOut(BaseModel):
+    id: int
+    application_id: int
+    plan: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JobBuddyMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JobBuddyChatRequest(BaseModel):
+    message: str = Field(min_length=1)

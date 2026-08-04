@@ -96,4 +96,31 @@ export interface Usage {
   matches_limit: number;
   tailored_resumes_used: number;
   tailored_resumes_limit: number;
+  interview_preps_used: number;
+  interview_preps_limit: number;
+  onboarding_plans_used: number;
+  onboarding_plans_limit: number;
+  job_buddy_messages_used: number;
+  job_buddy_messages_limit: number;
+}
+
+export interface InterviewPrep {
+  id: number;
+  application_id: number;
+  brief: string;
+  created_at: string;
+}
+
+export interface OnboardingPlan {
+  id: number;
+  application_id: number;
+  plan: string;
+  created_at: string;
+}
+
+export interface JobBuddyMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
 }

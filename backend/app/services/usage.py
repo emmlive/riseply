@@ -8,6 +8,9 @@ from app.config import settings
 LIMITS = {
     "match": settings.free_tier_max_matches_per_month,
     "tailor_resume": settings.free_tier_max_tailored_resumes_per_month,
+    "interview_prep": settings.free_tier_max_interview_preps_per_month,
+    "onboarding_plan": settings.free_tier_max_onboarding_plans_per_month,
+    "job_buddy_message": settings.free_tier_max_job_buddy_messages_per_month,
 }
 
 
@@ -29,6 +32,9 @@ def check_and_increment(db: Session, user_id: int, action: str, amount: int = 1)
 
     Call this BEFORE making the Claude API call it's metering, so a user
     who's hit their cap never triggers the paid call in the first place.
+    If the call you're metering can fail, pair this with decrement() in a
+    try/except so a failed generation doesn't cost the user part of their
+    monthly allowance for nothing.
     """
     limit = LIMITS.get(action)
     if limit is None:
@@ -56,3 +62,16 @@ def check_and_increment(db: Session, user_id: int, action: str, amount: int = 1)
         db.add(row)
     db.commit()
     return current + amount
+
+
+def decrement(db: Session, user_id: int, action: str, amount: int = 1):
+    """Compensating decrement for when a metered call was counted but then
+    failed — e.g. the Claude API call itself errored after the usage check
+    passed. Never goes below zero."""
+    period = _current_period()
+    row = db.query(models.UsageLog).filter_by(
+        user_id=user_id, period=period, action=action
+    ).first()
+    if row and row.count > 0:
+        row.count = max(0, row.count - amount)
+        db.commit()

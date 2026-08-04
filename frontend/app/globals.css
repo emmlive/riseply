@@ -240,6 +240,8 @@ button, input, select, textarea {
 .pill-approved { background: var(--accent-soft); color: var(--accent-hover); }
 .pill-rejected { background: var(--danger-soft); color: var(--danger); }
 .pill-submitted { background: #E4E9FB; color: #3B4FA0; }
+.pill-interviewing { background: #F3E8FB; color: #7A3FA0; }
+.pill-accepted { background: var(--accent-soft); color: var(--accent-hover); }
 .pill-default { background: var(--border); color: var(--ink-muted); }
 
 /* --- Misc --- */
@@ -275,6 +277,67 @@ button, input, select, textarea {
   padding: 3px 9px;
   font-size: 0.78rem;
   color: var(--ink-muted);
+}
+
+/* --- Interview prep / onboarding plan brief display --- */
+
+.brief {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-top: 10px;
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* --- Job Buddy chat --- */
+
+.chat-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.chat-bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
 }
 
 @media (max-width: 720px) {

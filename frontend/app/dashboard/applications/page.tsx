@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, Application } from "@/lib/api";
+import Link from "next/link";
+import { api, Application, InterviewPrep } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
   { value: "pending_approval", label: "Awaiting review" },
   { value: "approved", label: "Approved" },
   { value: "submitted", label: "Submitted" },
+  { value: "interviewing", label: "Interviewing" },
+  { value: "accepted", label: "Accepted" },
   { value: "rejected", label: "Rejected" },
 ];
 
@@ -17,6 +20,7 @@ export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
 
   async function load(status: string) {
     const qs = status ? `?status=${status}` : "";
@@ -25,7 +29,19 @@ export default function ApplicationsPage() {
 
   useEffect(() => { load(filter); }, [filter]);
 
-  async function act(id: number, action: "approve" | "reject") {
+  // Once interviewing applications are loaded, quietly check whether each
+  // already has a prep brief, so it renders immediately instead of behind
+  // an extra click.
+  useEffect(() => {
+    apps.filter((a) => a.status === "interviewing" && !(a.id in preps)).forEach((a) => {
+      api<InterviewPrep>(`/applications/${a.id}/interview-prep`)
+        .then((prep) => setPreps((p) => ({ ...p, [a.id]: prep })))
+        .catch(() => setPreps((p) => ({ ...p, [a.id]: "none" })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps]);
+
+  async function act(id: number, action: "approve" | "reject" | "mark-interviewing" | "mark-accepted") {
     setBusyId(id);
     try {
       await api(`/applications/${id}/${action}`, { method: "POST" });
@@ -35,11 +51,22 @@ export default function ApplicationsPage() {
     }
   }
 
+  async function generatePrep(id: number) {
+    setPreps((p) => ({ ...p, [id]: "loading" }));
+    try {
+      const prep = await api<InterviewPrep>(`/applications/${id}/interview-prep`, { method: "POST" });
+      setPreps((p) => ({ ...p, [id]: prep }));
+    } catch (err: any) {
+      setPreps((p) => ({ ...p, [id]: "none" }));
+      alert(err.message || "Couldn't generate interview prep.");
+    }
+  }
+
   return (
     <div>
       <h1>Applications</h1>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -56,53 +83,84 @@ export default function ApplicationsPage() {
         <div className="empty-state">Nothing here yet.</div>
       )}
 
-      {apps.map((app) => (
-        <div key={app.id} className="card">
-          <div className="card-row">
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <h3 style={{ margin: 0 }}>{app.job_title} — {app.job_company}</h3>
-                <StatusPill status={app.status} />
+      {apps.map((app) => {
+        const prep = preps[app.id];
+        return (
+          <div key={app.id} className="card">
+            <div className="card-row">
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <h3 style={{ margin: 0 }}>{app.job_title} — {app.job_company}</h3>
+                  <StatusPill status={app.status} />
+                </div>
+                <p className="muted" style={{ margin: "4px 0" }}>{app.job_location}</p>
+                <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
+                {app.notes && <p className="hint">{app.notes}</p>}
+                <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem" }}>
+                  <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
+                  {app.tailored_resume_path && (
+                    <a href={`${API_URL}/files/tailored_resumes/${app.tailored_resume_path.split("/").pop()}`}>
+                      Download tailored resume
+                    </a>
+                  )}
+                </div>
               </div>
-              <p className="muted" style={{ margin: "4px 0" }}>{app.job_location}</p>
-              <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
-              {app.notes && <p className="hint">{app.notes}</p>}
-              <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem" }}>
-                <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
-                {app.tailored_resume_path && (
-                  <a href={`${API_URL}/files/tailored_resumes/${app.tailored_resume_path.split("/").pop()}`}>
-                    Download tailored resume
-                  </a>
+
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+                <span className={`ticket ${app.match_score >= 80 ? "high" : ""}`}>
+                  match <span className="score">{app.match_score}%</span>
+                </span>
+
+                {app.status === "pending_approval" && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
+                            onClick={() => act(app.id, "approve")}>Approve</button>
+                    <button className="btn btn-danger-ghost btn-sm" disabled={busyId === app.id}
+                            onClick={() => act(app.id, "reject")}>Reject</button>
+                  </div>
+                )}
+
+                {(app.status === "approved" || app.status === "submitted") && (
+                  <button className="btn btn-ghost btn-sm" disabled={busyId === app.id}
+                          onClick={() => act(app.id, "mark-interviewing")}>
+                    Mark interviewing
+                  </button>
+                )}
+
+                {app.status === "interviewing" && (
+                  <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
+                          onClick={() => act(app.id, "mark-accepted")}>
+                    Mark accepted
+                  </button>
+                )}
+
+                {app.status === "accepted" && (
+                  <Link href={`/dashboard/job-buddy?applicationId=${app.id}`} className="btn btn-primary btn-sm">
+                    Open Job Buddy →
+                  </Link>
                 )}
               </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-              <span className={`ticket ${app.match_score >= 80 ? "high" : ""}`}>
-                match <span className="score">{app.match_score}%</span>
-              </span>
-              {app.status === "pending_approval" && (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    disabled={busyId === app.id}
-                    onClick={() => act(app.id, "approve")}
-                  >
-                    Approve
+            {app.status === "interviewing" && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                {prep === "loading" && <p className="muted">Generating interview prep…</p>}
+                {(!prep || prep === "none") && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => generatePrep(app.id)}>
+                    Generate interview prep
                   </button>
-                  <button
-                    className="btn btn-danger-ghost btn-sm"
-                    disabled={busyId === app.id}
-                    onClick={() => act(app.id, "reject")}
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
+                )}
+                {prep && prep !== "loading" && prep !== "none" && (
+                  <>
+                    <h3 style={{ fontSize: "0.95rem" }}>Interview prep</h3>
+                    <div className="brief">{prep.brief}</div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -113,6 +171,8 @@ function StatusPill({ status }: { status: string }) {
     approved: "pill-approved",
     rejected: "pill-rejected",
     submitted: "pill-submitted",
+    interviewing: "pill-interviewing",
+    accepted: "pill-accepted",
   };
   const label = status.replace("_", " ");
   return <span className={`pill ${map[status] || "pill-default"}`}>{label}</span>;

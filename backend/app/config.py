@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     free_tier_max_matches_per_month: int = 50
     free_tier_max_tailored_resumes_per_month: int = 15
+    free_tier_max_interview_preps_per_month: int = 10
+    free_tier_max_onboarding_plans_per_month: int = 5
+    free_tier_max_job_buddy_messages_per_month: int = 60
 
     allowed_origins: str = "http://localhost:3000"
 

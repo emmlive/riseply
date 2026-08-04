@@ -72,9 +72,11 @@ export default function OverviewPage() {
       {usage && (
         <div className="card">
           <h3>This month's usage</h3>
-          <div style={{ display: "flex", gap: 32, marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 32, marginTop: 10, flexWrap: "wrap" }}>
             <UsageBar label="Job matches scored" used={usage.matches_used} limit={usage.matches_limit} />
             <UsageBar label="Resumes tailored" used={usage.tailored_resumes_used} limit={usage.tailored_resumes_limit} />
+            <UsageBar label="Interview preps" used={usage.interview_preps_used} limit={usage.interview_preps_limit} />
+            <UsageBar label="Job Buddy messages" used={usage.job_buddy_messages_used} limit={usage.job_buddy_messages_limit} />
           </div>
         </div>
       )}
@@ -106,7 +108,7 @@ export default function OverviewPage() {
 function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }) {
   const pct = Math.min(100, Math.round((used / Math.max(limit, 1)) * 100));
   return (
-    <div style={{ flex: 1 }}>
+    <div style={{ flex: "1 1 180px", minWidth: 180 }}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem" }}>
         <span className="muted">{label}</span>
         <span className="mono">{used} / {limit}</span>

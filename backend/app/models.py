@@ -96,6 +96,52 @@ class Application(Base):
     job = relationship("Job")
 
 
+class InterviewPrep(Base):
+    """Generated once per application when it moves to 'interviewing' —
+    likely questions, talking points, and questions to ask them."""
+    __tablename__ = "interview_preps"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    brief = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    application = relationship("Application")
+
+
+class OnboardingPlan(Base):
+    """Generated once per application when it moves to 'accepted' — a
+    30/60/90-day plan, first-week checklist, and questions to ask a manager.
+    This is the basis the Job Buddy chat draws context from."""
+    __tablename__ = "onboarding_plans"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    plan = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    application = relationship("Application")
+
+
+class JobBuddyMessage(Base):
+    """One turn in the ongoing onboarding-mentor chat, scoped to a specific
+    accepted application (a user might have multiple over time — each gets
+    its own conversation thread)."""
+    __tablename__ = "job_buddy_messages"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class UsageLog(Base):
     """Tracks API-cost actions per user per calendar month, so free-tier
     limits can be enforced before an expensive Claude call is made."""

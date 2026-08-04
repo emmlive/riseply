@@ -89,7 +89,12 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
             "location": job_row.location, "url": job_row.url,
             "description": job_row.description,
         }
-        best = matcher.best_profile_match(job, user.resume_text, profiles)
+        try:
+            best = matcher.best_profile_match(job, user.resume_text, profiles)
+        except Exception:
+            usage.decrement(db, user.id, "match", 1)
+            continue  # skip this job, don't let one API hiccup kill the whole batch
+
         if not best["meets_threshold"]:
             continue
 
@@ -115,14 +120,21 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
         except HTTPException:
             application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
             db.commit()
+        except Exception:
+            usage.decrement(db, user.id, "tailor_resume", 1)
+            application.notes = "Resume tailoring failed this run — using base resume. You can retry from the dashboard later."
+            db.commit()
 
         notify_addr = user.notify_email or user.email
-        notifier.notify_new_match(
-            notify_addr,
-            {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
-             "match_reason": best["reason"]},
-            application.id, resume_path,
-        )
+        try:
+            notifier.notify_new_match(
+                notify_addr,
+                {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
+                 "match_reason": best["reason"]},
+                application.id, resume_path,
+            )
+        except Exception:
+            pass  # notification is a side effect — a failure here shouldn't lose the match itself
         queued.append(application.id)
 
     return {"queued_application_ids": queued, "usage_limit_reached": limit_hit}
@@ -160,6 +172,21 @@ def list_applications(
     return [_to_out(app, job) for app, job in q.all()]
 
 
+@router.get("/applications/{application_id}", response_model=schemas.ApplicationOut)
+def get_application(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+    return _to_out(app_row, job)
+
+
 @router.post("/applications/{application_id}/approve")
 def approve_application(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
@@ -184,6 +211,30 @@ def reject_application(
     return {"status": "rejected"}
 
 
+@router.post("/applications/{application_id}/mark-interviewing")
+def mark_interviewing(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.status = "interviewing"
+    db.commit()
+    return {"status": "interviewing"}
+
+
+@router.post("/applications/{application_id}/mark-accepted")
+def mark_accepted(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.status = "accepted"
+    db.commit()
+    return {"status": "accepted"}
+
+
 # --- Usage summary ---
 
 @router.get("/usage", response_model=schemas.UsageOut)
@@ -193,4 +244,10 @@ def get_usage(db: Session = Depends(get_db), user: models.User = Depends(get_cur
         matches_limit=settings.free_tier_max_matches_per_month,
         tailored_resumes_used=usage.get_usage(db, user.id, "tailor_resume"),
         tailored_resumes_limit=settings.free_tier_max_tailored_resumes_per_month,
+        interview_preps_used=usage.get_usage(db, user.id, "interview_prep"),
+        interview_preps_limit=settings.free_tier_max_interview_preps_per_month,
+        onboarding_plans_used=usage.get_usage(db, user.id, "onboarding_plan"),
+        onboarding_plans_limit=settings.free_tier_max_onboarding_plans_per_month,
+        job_buddy_messages_used=usage.get_usage(db, user.id, "job_buddy_message"),
+        job_buddy_messages_limit=settings.free_tier_max_job_buddy_messages_per_month,
     )
