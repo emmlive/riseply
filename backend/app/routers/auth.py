@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -9,6 +10,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=schemas.TokenResponse)
 def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
+    if not payload.agree_to_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="You need to agree to the Terms of Service and Privacy Policy to create an account.",
+        )
+
     existing = db.query(models.User).filter(models.User.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="An account with this email already exists")
@@ -18,6 +25,7 @@ def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
         hashed_password=security.hash_password(payload.password),
         full_name=payload.full_name,
         notify_email=payload.email,
+        tos_accepted_at=datetime.utcnow(),
     )
     db.add(user)
     db.commit()

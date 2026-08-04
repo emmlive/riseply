@@ -25,6 +25,8 @@ class User(Base):
     notify_email = Column(String, default="")  # defaults to account email if blank
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
 
+    tos_accepted_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profiles = relationship("SearchProfile", back_populates="owner", cascade="all, delete-orphan")

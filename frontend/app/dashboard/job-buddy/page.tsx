@@ -164,6 +164,12 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
 
           <div className="card">
             <h3>Chat with your Job Buddy</h3>
+            <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+              General career guidance only — not legal, medical, tax, or
+              immigration advice. For harassment, discrimination, safety, or
+              other serious workplace issues, please contact HR, an
+              employment lawyer, or the relevant authority directly.
+            </p>
             <div className="chat-window" ref={scrollRef}>
               {messages.length === 0 && (
                 <p className="muted">

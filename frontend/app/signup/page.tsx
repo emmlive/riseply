@@ -10,6 +10,7 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -20,11 +21,15 @@ export default function SignupPage() {
       setError("Password needs to be at least 8 characters.");
       return;
     }
+    if (!agreeToTerms) {
+      setError("You'll need to agree to the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setLoading(true);
     try {
       const { access_token } = await api<{ access_token: string }>("/auth/signup", {
         method: "POST",
-        body: JSON.stringify({ email, password, full_name: fullName }),
+        body: JSON.stringify({ email, password, full_name: fullName, agree_to_terms: agreeToTerms }),
       });
       setToken(access_token);
       router.push("/dashboard");
@@ -55,6 +60,19 @@ export default function SignupPage() {
             <input id="password" type="password" required value={password}
                    onChange={(e) => setPassword(e.target.value)} />
             <p className="hint">At least 8 characters.</p>
+          </div>
+          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <input
+              id="terms"
+              type="checkbox"
+              checked={agreeToTerms}
+              onChange={(e) => setAgreeToTerms(e.target.checked)}
+              style={{ width: "auto", marginTop: 3 }}
+            />
+            <label htmlFor="terms" style={{ fontWeight: 400, fontSize: "0.85rem", color: "var(--ink)" }}>
+              I agree to the <Link href="/terms" target="_blank">Terms of Service</Link> and{" "}
+              <Link href="/privacy" target="_blank">Privacy Policy</Link>.
+            </label>
           </div>
           {error && <p className="error-text">{error}</p>}
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
