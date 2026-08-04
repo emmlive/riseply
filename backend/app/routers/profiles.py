@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import usage
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -36,6 +37,15 @@ def create_profile(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    existing_count = db.query(models.SearchProfile).filter_by(user_id=user.id).count()
+    limit = usage.max_search_profiles(user)
+    if existing_count >= limit:
+        upgrade_hint = "" if usage.is_pro(user) else " Upgrade to Pro for more."
+        raise HTTPException(
+            status_code=429,
+            detail=f"You've reached your plan's limit of {limit} search profile(s).{upgrade_hint}",
+        )
+
     p = models.SearchProfile(
         user_id=user.id,
         name=payload.name,

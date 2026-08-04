@@ -32,7 +32,7 @@ def generate_interview_prep(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before generating interview prep.")
 
-    usage.check_and_increment(db, user.id, "interview_prep", 1)
+    usage.check_and_increment(db, user, "interview_prep", 1)
 
     job = app_row.job
     try:

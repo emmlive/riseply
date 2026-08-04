@@ -79,7 +79,7 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
 
     for job_row in unseen_jobs:
         try:
-            usage.check_and_increment(db, user.id, "match", 1)
+            usage.check_and_increment(db, user, "match", 1)
         except HTTPException:
             limit_hit = True
             break
@@ -109,7 +109,7 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
 
         resume_path = ""
         try:
-            usage.check_and_increment(db, user.id, "tailor_resume", 1)
+            usage.check_and_increment(db, user, "tailor_resume", 1)
             job["matched_profile"] = best["profile_name"]
             job["match_score"] = best["score"]
             resume_path = resume_customizer.customize_for_job(
@@ -270,15 +270,17 @@ def mark_accepted(
 
 @router.get("/usage", response_model=schemas.UsageOut)
 def get_usage(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    limits = usage.limits_for(user)
     return schemas.UsageOut(
+        tier="pro" if usage.is_pro(user) else "free",
         matches_used=usage.get_usage(db, user.id, "match"),
-        matches_limit=settings.free_tier_max_matches_per_month,
+        matches_limit=limits["match"],
         tailored_resumes_used=usage.get_usage(db, user.id, "tailor_resume"),
-        tailored_resumes_limit=settings.free_tier_max_tailored_resumes_per_month,
+        tailored_resumes_limit=limits["tailor_resume"],
         interview_preps_used=usage.get_usage(db, user.id, "interview_prep"),
-        interview_preps_limit=settings.free_tier_max_interview_preps_per_month,
+        interview_preps_limit=limits["interview_prep"],
         onboarding_plans_used=usage.get_usage(db, user.id, "onboarding_plan"),
-        onboarding_plans_limit=settings.free_tier_max_onboarding_plans_per_month,
+        onboarding_plans_limit=limits["onboarding_plan"],
         job_buddy_messages_used=usage.get_usage(db, user.id, "job_buddy_message"),
-        job_buddy_messages_limit=settings.free_tier_max_job_buddy_messages_per_month,
+        job_buddy_messages_limit=limits["job_buddy_message"],
     )

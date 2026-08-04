@@ -35,6 +35,8 @@ class UserOut(BaseModel):
     notify_email: str
     auto_submit: bool
     resume_text: str
+    subscription_tier: str
+    subscription_status: str
 
     class Config:
         from_attributes = True
@@ -98,6 +100,7 @@ class ApplicationOut(BaseModel):
 
 
 class UsageOut(BaseModel):
+    tier: str
     matches_used: int
     matches_limit: int
     tailored_resumes_used: int

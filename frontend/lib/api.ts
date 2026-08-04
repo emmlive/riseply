@@ -60,6 +60,8 @@ export interface User {
   notify_email: string;
   auto_submit: boolean;
   resume_text: string;
+  subscription_tier: string;
+  subscription_status: string;
 }
 
 export interface SearchProfile {
@@ -92,6 +94,7 @@ export interface Application {
 }
 
 export interface Usage {
+  tier: string;
   matches_used: number;
   matches_limit: number;
   tailored_resumes_used: number;

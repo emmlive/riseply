@@ -27,6 +27,12 @@ class User(Base):
 
     tos_accepted_at = Column(DateTime, nullable=True)
 
+    # Billing
+    subscription_tier = Column(String, default="free", server_default="free")  # free | pro
+    subscription_status = Column(String, default="", server_default="")  # active | past_due | canceled | ""
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+
     # Rise Index — effort-based gamification, never tied to outcomes
     rise_points = Column(Integer, default=0, server_default="0")
     current_streak = Column(Integer, default=0, server_default="0")

@@ -32,7 +32,7 @@ def generate_onboarding_plan(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before generating an onboarding plan.")
 
-    usage.check_and_increment(db, user.id, "onboarding_plan", 1)
+    usage.check_and_increment(db, user, "onboarding_plan", 1)
     job = app_row.job
     try:
         plan_text = job_buddy_service.generate_onboarding_plan(
@@ -95,7 +95,7 @@ def send_job_buddy_message(
             detail="Generate an onboarding plan first — Job Buddy uses it as context.",
         )
 
-    usage.check_and_increment(db, user.id, "job_buddy_message", 1)
+    usage.check_and_increment(db, user, "job_buddy_message", 1)
 
     history_rows = db.query(models.JobBuddyMessage).filter_by(
         application_id=application_id, user_id=user.id

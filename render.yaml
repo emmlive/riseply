@@ -1,0 +1,78 @@
+# Render Blueprint for the Riseply backend.
+#
+# Note: this intentionally does NOT define a `databases:` block. The
+# actual deployment uses an external Neon Postgres instance rather than
+# Render's own managed Postgres -- DATABASE_URL is set manually (sync:
+# false below) to the Neon connection string, not auto-provisioned here.
+# If you'd rather use Render's native Postgres instead of Neon, add a
+# `databases:` block back and switch DATABASE_URL to `fromDatabase`.
+
+services:
+  - type: web
+    name: riseply-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # set manually to your Neon (or other Postgres) connection string
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: Riseply
+      - key: ALLOWED_ORIGINS
+        sync: false  # e.g. https://riseply.com,https://riseply.pages.dev
+
+      # --- Stripe ---
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID_PRO
+        sync: false
+      - key: STRIPE_SUCCESS_URL
+        sync: false  # e.g. https://riseply.com/dashboard/billing?upgrade=success
+      - key: STRIPE_CANCEL_URL
+        sync: false
+      - key: STRIPE_PORTAL_RETURN_URL
+        sync: false
+
+      # --- Free tier limits ---
+      - key: FREE_TIER_MAX_MATCHES_PER_MONTH
+        value: "50"
+      - key: FREE_TIER_MAX_TAILORED_RESUMES_PER_MONTH
+        value: "15"
+      - key: FREE_TIER_MAX_INTERVIEW_PREPS_PER_MONTH
+        value: "10"
+      - key: FREE_TIER_MAX_ONBOARDING_PLANS_PER_MONTH
+        value: "5"
+      - key: FREE_TIER_MAX_JOB_BUDDY_MESSAGES_PER_MONTH
+        value: "60"
+      - key: FREE_TIER_MAX_SEARCH_PROFILES
+        value: "1"
+
+      # --- Pro tier limits ---
+      - key: PRO_TIER_MAX_MATCHES_PER_MONTH
+        value: "300"
+      - key: PRO_TIER_MAX_TAILORED_RESUMES_PER_MONTH
+        value: "100"
+      - key: PRO_TIER_MAX_INTERVIEW_PREPS_PER_MONTH
+        value: "50"
+      - key: PRO_TIER_MAX_ONBOARDING_PLANS_PER_MONTH
+        value: "30"
+      - key: PRO_TIER_MAX_JOB_BUDDY_MESSAGES_PER_MONTH
+        value: "500"
+      - key: PRO_TIER_MAX_SEARCH_PROFILES
+        value: "10"
