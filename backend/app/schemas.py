@@ -146,3 +146,29 @@ class JobBuddyMessageOut(BaseModel):
 
 class JobBuddyChatRequest(BaseModel):
     message: str = Field(min_length=1)
+
+
+# --- Rise Index ---
+
+class CompanyStatsOut(BaseModel):
+    company: str
+    applied_count: int
+    response_rate: int
+    avg_days_to_respond: Optional[int] = None
+    recent_applications: Optional[int] = None
+
+
+class PointsEventOut(BaseModel):
+    amount: int
+    reason: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RiseIndexMeOut(BaseModel):
+    rise_points: int
+    current_streak: int
+    longest_streak: int
+    recent_events: list[PointsEventOut]

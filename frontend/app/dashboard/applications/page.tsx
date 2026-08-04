@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep } from "@/lib/api";
+import { api, Application, InterviewPrep, CompanyStats } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -21,6 +21,7 @@ export default function ApplicationsPage() {
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
 
   async function load(status: string) {
     const qs = status ? `?status=${status}` : "";
@@ -28,6 +29,21 @@ export default function ApplicationsPage() {
   }
 
   useEffect(() => { load(filter); }, [filter]);
+
+  // Quietly fetch the live response-rate stat for each company shown,
+  // so the Rise Index data surfaces right where it's most useful — next
+  // to the actual application, not buried on a separate page.
+  useEffect(() => {
+    const companies = Array.from(new Set(apps.map((a) => a.job_company))).filter(
+      (c) => c && !(c in companyStats)
+    );
+    companies.forEach((company) => {
+      api<CompanyStats>(`/rise-index/company-stats?company=${encodeURIComponent(company)}`)
+        .then((stats) => setCompanyStats((s) => ({ ...s, [company]: stats })))
+        .catch(() => setCompanyStats((s) => ({ ...s, [company]: "none" })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps]);
 
   // Once interviewing applications are loaded, quietly check whether each
   // already has a prep brief, so it renders immediately instead of behind
@@ -41,7 +57,7 @@ export default function ApplicationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apps]);
 
-  async function act(id: number, action: "approve" | "reject" | "mark-interviewing" | "mark-accepted") {
+  async function act(id: number, action: "approve" | "reject" | "mark-submitted" | "mark-interviewing" | "mark-accepted") {
     setBusyId(id);
     try {
       await api(`/applications/${id}/${action}`, { method: "POST" });
@@ -85,6 +101,7 @@ export default function ApplicationsPage() {
 
       {apps.map((app) => {
         const prep = preps[app.id];
+        const stat = companyStats[app.job_company];
         return (
           <div key={app.id} className="card">
             <div className="card-row">
@@ -96,6 +113,12 @@ export default function ApplicationsPage() {
                 <p className="muted" style={{ margin: "4px 0" }}>{app.job_location}</p>
                 <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
                 {app.notes && <p className="hint">{app.notes}</p>}
+                {stat && stat !== "none" && (
+                  <p className="hint" style={{ color: "var(--accent-hover)" }}>
+                    {stat.response_rate}% of {stat.applied_count} Riseply applicants heard back from {stat.company}
+                    {stat.avg_days_to_respond !== null && ` · ~${stat.avg_days_to_respond} days`}
+                  </p>
+                )}
                 <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem" }}>
                   <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
                   {app.tailored_resume_path && (
@@ -120,7 +143,14 @@ export default function ApplicationsPage() {
                   </div>
                 )}
 
-                {(app.status === "approved" || app.status === "submitted") && (
+                {app.status === "approved" && (
+                  <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
+                          onClick={() => act(app.id, "mark-submitted")}>
+                    Mark as applied
+                  </button>
+                )}
+
+                {app.status === "submitted" && (
                   <button className="btn btn-ghost btn-sm" disabled={busyId === app.id}
                           onClick={() => act(app.id, "mark-interviewing")}>
                     Mark interviewing

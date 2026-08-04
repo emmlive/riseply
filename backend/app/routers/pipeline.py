@@ -7,7 +7,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import matcher, resume_customizer, notifier, usage
+from app.services import matcher, resume_customizer, notifier, usage, rise_index
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -137,6 +137,7 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
             pass  # notification is a side effect — a failure here shouldn't lose the match itself
         queued.append(application.id)
 
+    rise_index.award_points(db, user, "run_search", "Ran a job search")
     return {"queued_application_ids": queued, "usage_limit_reached": limit_hit}
 
 
@@ -195,7 +196,9 @@ def approve_application(
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
     app_row.status = "approved"
+    app_row.status_updated_at = datetime.utcnow()
     db.commit()
+    rise_index.award_points(db, user, "approve_match", "Reviewed and approved a match")
     return {"status": "approved"}
 
 
@@ -207,8 +210,29 @@ def reject_application(
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
     app_row.status = "rejected"
+    app_row.status_updated_at = datetime.utcnow()
     db.commit()
+    rise_index.award_points(db, user, "review_match", "Reviewed a match")
     return {"status": "rejected"}
+
+
+@router.post("/applications/{application_id}/mark-submitted")
+def mark_submitted(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    """Confirms the application was actually sent — a manual step for now
+    since auto-submit isn't wired up yet. This is the real effort
+    milestone the Rise Index measures response times from."""
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.status = "submitted"
+    now = datetime.utcnow()
+    app_row.status_updated_at = now
+    app_row.submitted_at = now
+    db.commit()
+    rise_index.award_points(db, user, "mark_submitted", "Submitted an application")
+    return {"status": "submitted"}
 
 
 @router.post("/applications/{application_id}/mark-interviewing")
@@ -219,7 +243,11 @@ def mark_interviewing(
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
     app_row.status = "interviewing"
+    app_row.status_updated_at = datetime.utcnow()
     db.commit()
+    # No points here — landing an interview is an outcome, not effort.
+    # We still log the check-in for streak purposes only.
+    rise_index.record_activity(db, user)
     return {"status": "interviewing"}
 
 
@@ -231,7 +259,10 @@ def mark_accepted(
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
     app_row.status = "accepted"
+    app_row.status_updated_at = datetime.utcnow()
     db.commit()
+    # No points — an offer is an outcome, not effort. Streak check-in only.
+    rise_index.record_activity(db, user)
     return {"status": "accepted"}
 
 

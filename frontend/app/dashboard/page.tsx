@@ -1,23 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, Application, Usage } from "@/lib/api";
+import Link from "next/link";
+import { api, Application, Usage, RiseIndexMe } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [pending, setPending] = useState<Application[]>([]);
+  const [rise, setRise] = useState<RiseIndexMe | null>(null);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
     try {
-      const [u, apps] = await Promise.all([
+      const [u, apps, r] = await Promise.all([
         api<Usage>("/usage"),
         api<Application[]>("/applications?status=pending_approval"),
+        api<RiseIndexMe>("/rise-index/me"),
       ]);
       setUsage(u);
       setPending(apps);
+      setRise(r);
     } catch {
       // handled globally by api() redirecting to /login on 401
     }
@@ -68,6 +72,24 @@ export default function OverviewPage() {
         </div>
       )}
       {error && <p className="error-text">{error}</p>}
+
+      {rise && (
+        <div className="rise-hero">
+          <div className="rise-stat">
+            <div className="value">
+              <span className="streak-flame">🔥</span> {rise.current_streak}
+            </div>
+            <div className="label">Day streak</div>
+          </div>
+          <div className="rise-stat">
+            <div className="value">{rise.rise_points}</div>
+            <div className="label">Rise points</div>
+          </div>
+          <Link href="/dashboard/rise-index" className="rise-stat" style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div className="label" style={{ color: "var(--accent-hover)", fontWeight: 600 }}>See trending companies →</div>
+          </Link>
+        </div>
+      )}
 
       {usage && (
         <div className="card">

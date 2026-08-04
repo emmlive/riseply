@@ -27,6 +27,12 @@ class User(Base):
 
     tos_accepted_at = Column(DateTime, nullable=True)
 
+    # Rise Index — effort-based gamification, never tied to outcomes
+    rise_points = Column(Integer, default=0, server_default="0")
+    current_streak = Column(Integer, default=0, server_default="0")
+    longest_streak = Column(Integer, default=0, server_default="0")
+    last_active_date = Column(Date, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profiles = relationship("SearchProfile", back_populates="owner", cascade="all, delete-orphan")
@@ -92,6 +98,7 @@ class Application(Base):
     notes = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    status_updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     submitted_at = Column(DateTime, nullable=True)
 
     owner = relationship("User", back_populates="applications")
@@ -141,6 +148,20 @@ class JobBuddyMessage(Base):
 
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class PointsEvent(Base):
+    """One Rise Points award. Kept as a log (not just a running total) so
+    the activity feed can show a real history — 'why do I have 340 points'
+    should always have a visible answer."""
+    __tablename__ = "points_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    amount = Column(Integer, nullable=False)
+    reason = Column(String, nullable=False)  # short human-readable label
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

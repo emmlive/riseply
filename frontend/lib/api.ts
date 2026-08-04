@@ -124,3 +124,24 @@ export interface JobBuddyMessage {
   content: string;
   created_at: string;
 }
+
+export interface CompanyStats {
+  company: string;
+  applied_count: number;
+  response_rate: number;
+  avg_days_to_respond: number | null;
+  recent_applications: number | null;
+}
+
+export interface PointsEvent {
+  amount: number;
+  reason: string;
+  created_at: string;
+}
+
+export interface RiseIndexMe {
+  rise_points: number;
+  current_streak: number;
+  longest_streak: number;
+  recent_events: PointsEvent[];
+}

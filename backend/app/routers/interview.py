@@ -5,7 +5,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import interview_prep as interview_prep_service
-from app.services import usage
+from app.services import usage, rise_index
 
 router = APIRouter(prefix="/applications", tags=["interview-prep"])
 
@@ -51,6 +51,7 @@ def generate_interview_prep(
     db.add(prep)
     db.commit()
     db.refresh(prep)
+    rise_index.award_points(db, user, "generate_interview_prep", "Prepped for an interview")
     return prep
 
 

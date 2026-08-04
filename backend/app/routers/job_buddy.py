@@ -5,7 +5,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
-from app.services import usage
+from app.services import usage, rise_index
 
 router = APIRouter(prefix="/applications", tags=["job-buddy"])
 
@@ -50,6 +50,7 @@ def generate_onboarding_plan(
     db.add(plan)
     db.commit()
     db.refresh(plan)
+    rise_index.award_points(db, user, "generate_onboarding_plan", "Built an onboarding plan")
     return plan
 
 
@@ -129,4 +130,5 @@ def send_job_buddy_message(
     db.add(reply_msg)
     db.commit()
     db.refresh(reply_msg)
+    rise_index.award_points(db, user, "job_buddy_message", "Chatted with Job Buddy")
     return reply_msg
