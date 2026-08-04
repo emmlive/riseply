@@ -6,7 +6,10 @@ export default function HomePage() {
   return (
     <div className="auth-shell">
       <div style={{ textAlign: "center", maxWidth: 480 }}>
-        <h1 style={{ fontStyle: "italic" }}>Riseply</h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 4 }}>
+          <img src="/brand/icon.svg" alt="" width={40} height={40} />
+          <h1 style={{ fontStyle: "italic", margin: 0 }}>Riseply</h1>
+        </div>
         <p className="muted" style={{ marginBottom: 28 }}>
           Finds roles that fit, tailors your resume for each one, and waits
           for your OK before anything gets submitted.

@@ -34,7 +34,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-brand" style={{ fontStyle: "italic" }}>Riseply</div>
+        <div className="sidebar-brand" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src="/brand/icon.svg" alt="" width={26} height={26} />
+          <span style={{ fontStyle: "italic" }}>Riseply</span>
+        </div>
         {NAV.map((item) => (
           <Link
             key={item.href}
