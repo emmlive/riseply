@@ -1,0 +1,284 @@
+:root {
+  /* Color */
+  --paper: #F5F6F8;
+  --surface: #FFFFFF;
+  --border: #E2E5EA;
+  --border-strong: #C7CCD6;
+  --ink: #16233D;
+  --ink-muted: #5B6478;
+  --accent: #1F7A6C;
+  --accent-hover: #17604F;
+  --accent-soft: #E4F0EC;
+  --amber: #C97A2B;
+  --amber-soft: #FBEEE0;
+  --danger: #B23B3B;
+  --danger-soft: #FBEAEA;
+
+  /* Type */
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  padding: 0;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+a { color: inherit; }
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.4em 0;
+}
+
+h1 { font-size: 2rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.05rem; }
+
+p { margin: 0 0 1em 0; }
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* --- Layout shells --- */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 36px 32px;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-brand {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  padding: 0 8px 20px 8px;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--ink-muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.sidebar-link:hover { background: var(--paper); color: var(--ink); }
+.sidebar-link.active { background: var(--accent-soft); color: var(--accent-hover); }
+
+.main {
+  flex: 1;
+  padding: 40px 48px;
+  max-width: 920px;
+}
+
+/* --- Forms --- */
+
+.field { margin-bottom: 16px; }
+
+.field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.field input, .field textarea, .field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.field textarea { resize: vertical; min-height: 120px; font-family: var(--font-mono); font-size: 0.88rem; }
+
+.hint { font-size: 0.8rem; color: var(--ink-muted); margin-top: 4px; }
+
+.error-text { color: var(--danger); font-size: 0.85rem; margin: 8px 0; }
+
+/* --- Buttons --- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost { background: transparent; color: var(--ink-muted); border-color: var(--border-strong); }
+.btn-ghost:hover { color: var(--ink); border-color: var(--ink-muted); }
+
+.btn-danger-ghost { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn-danger-ghost:hover { background: var(--danger-soft); }
+
+.btn-block { width: 100%; justify-content: center; }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+
+/* --- Cards --- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+/* --- Signature element: the "ticket stub" match-score badge --- */
+/* A perforated ticket shape evokes a tracked application — the one
+   distinctive visual motif of this dashboard, used sparingly. */
+
+.ticket {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 12px;
+  border-radius: 999px;
+  border: 1px dashed var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+.ticket .score {
+  font-weight: 600;
+  color: var(--accent-hover);
+}
+
+.ticket.high { border-color: var(--accent); background: var(--accent-soft); }
+.ticket.high .score { color: var(--accent-hover); }
+
+/* --- Status pills --- */
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pill-pending { background: var(--amber-soft); color: var(--amber); }
+.pill-approved { background: var(--accent-soft); color: var(--accent-hover); }
+.pill-rejected { background: var(--danger-soft); color: var(--danger); }
+.pill-submitted { background: #E4E9FB; color: #3B4FA0; }
+.pill-default { background: var(--border); color: var(--ink-muted); }
+
+/* --- Misc --- */
+
+.muted { color: var(--ink-muted); }
+.mono { font-family: var(--font-mono); }
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--ink-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tag {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+@media (max-width: 720px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; flex-direction: row; overflow-x: auto; }
+  .main { padding: 24px; }
+}
