@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     stripe_cancel_url: str = "http://localhost:3000/dashboard/billing?upgrade=cancelled"
     stripe_portal_return_url: str = "http://localhost:3000/dashboard/billing"
 
+    # Estimate only, used for the admin MRR display -- the real price
+    # lives in Stripe (STRIPE_PRICE_ID_PRO). Keep this in sync manually
+    # if you change the price in Stripe's dashboard.
+    pro_price_usd_display: float = 9.99
+
+    # One-time admin bootstrap: POST /admin/bootstrap with this secret
+    # promotes an account to admin. There's no UI path to create the
+    # first admin otherwise. Generate a long random value and treat it
+    # like any other credential -- rotate/unset it once you've used it.
+    admin_bootstrap_secret: str = ""
+
     # --- Free tier limits (per user per calendar month) ---
     free_tier_max_matches_per_month: int = 50
     free_tier_max_tailored_resumes_per_month: int = 15

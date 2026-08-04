@@ -5,7 +5,7 @@ import os
 
 from app.database import Base, engine
 from app.config import settings
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin
 
 Base.metadata.create_all(bind=engine)
 
@@ -28,6 +28,7 @@ app.include_router(interview.router)
 app.include_router(job_buddy.router)
 app.include_router(rise_index.router)
 app.include_router(support.router)
+app.include_router(admin.router)
 
 # Serve tailored resume .docx files for download
 os.makedirs("data/tailored_resumes", exist_ok=True)

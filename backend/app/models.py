@@ -15,6 +15,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     token_version = Column(Integer, default=0, server_default="0")  # bumped on password reset to invalidate old JWTs
+    is_admin = Column(Boolean, default=False, server_default="false")
     full_name = Column(String, default="")
     phone = Column(String, default="")
     location = Column(String, default="")
@@ -185,6 +186,37 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
+
+
+class SupportMessage(Base):
+    """Persisted so admins can view and reply in-app, not just receive a
+    one-off email that's easy to lose track of."""
+    __tablename__ = "support_messages"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    subject = Column(String, default="")
+    message = Column(Text, default="")
+    status = Column(String, default="open", server_default="open")  # open | resolved
+
+    admin_reply = Column(Text, nullable=True)
+    replied_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class FailureLog(Base):
+    """Logged whenever a metered Claude API call fails (i.e. whenever
+    usage.decrement() is called to refund a failed attempt). This is a
+    real signal, not a synthetic one -- it only fires at the exact points
+    where a paid call genuinely failed."""
+    __tablename__ = "failure_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
 class UsageLog(Base):

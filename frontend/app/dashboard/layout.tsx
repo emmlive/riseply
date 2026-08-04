@@ -51,6 +51,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {item.label}
           </Link>
         ))}
+        {user?.is_admin && (
+          <Link
+            href="/dashboard/admin"
+            className={`sidebar-link ${pathname === "/dashboard/admin" ? "active" : ""}`}
+            style={{ color: "var(--danger)", fontWeight: 600 }}
+          >
+            Admin
+          </Link>
+        )}
         <div style={{ flex: 1 }} />
         {user && (
           <div style={{ padding: "0 8px", fontSize: "0.82rem" }} className="muted">

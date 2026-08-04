@@ -62,6 +62,7 @@ export interface User {
   resume_text: string;
   subscription_tier: string;
   subscription_status: string;
+  is_admin: boolean;
 }
 
 export interface SearchProfile {
@@ -147,4 +148,60 @@ export interface RiseIndexMe {
   current_streak: number;
   longest_streak: number;
   recent_events: PointsEvent[];
+}
+
+// --- Admin ---
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  full_name: string;
+  subscription_tier: string;
+  subscription_status: string;
+  is_admin: boolean;
+  rise_points: number;
+  current_streak: number;
+  created_at: string;
+}
+
+export interface AdminRevenue {
+  total_users: number;
+  free_count: number;
+  active_pro_count: number;
+  mrr_estimate_usd: number;
+  signups_this_week: number;
+  signups_this_month: number;
+}
+
+export interface AdminUsageActionStat {
+  count: number;
+  estimated_cost_usd: number;
+}
+
+export interface AdminUsage {
+  period: string;
+  by_action: Record<string, AdminUsageActionStat>;
+  total_estimated_cost_usd: number;
+}
+
+export interface AdminFailureActionStat {
+  action: string;
+  count: number;
+}
+
+export interface AdminErrors {
+  period: string;
+  by_action: AdminFailureActionStat[];
+  total_failures: number;
+}
+
+export interface AdminSupportMessage {
+  id: number;
+  user_email: string;
+  subject: string;
+  message: string;
+  status: string;
+  admin_reply: string | null;
+  replied_at: string | null;
+  created_at: string;
 }

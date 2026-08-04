@@ -182,11 +182,36 @@ never trusted from the client — it's set exclusively by the Stripe
 webhook handler based on actual subscription status, so there's no way
 to spoof Pro access from the frontend.
 
+## Admin dashboard
+
+Available at `/dashboard/admin` for any account with `is_admin = true`.
+Covers revenue (estimated MRR, active Pro count, signup trends), usage
+and estimated Claude API cost broken down by action, a real error-rate
+signal (hooks into the exact point where a metered Claude call already
+fails, not a synthetic metric), a user list, and an in-app support
+inbox (reply to a message and it emails the user directly).
+
+**Creating your first admin** — there's a chicken-and-egg problem since
+no UI exists to promote someone before an admin exists:
+1. Set `ADMIN_BOOTSTRAP_SECRET` on the backend (generate with
+   `python -c "import secrets; print(secrets.token_hex(24))"`).
+2. Sign up a normal account, then call the bootstrap endpoint once:
+   ```bash
+   curl -X POST https://your-backend.onrender.com/admin/bootstrap \
+     -H "Content-Type: application/json" \
+     -d '{"secret": "your-bootstrap-secret", "email": "you@example.com"}'
+   ```
+3. Log out and back in (or just refresh) — the Admin link appears in
+   the sidebar. Consider unsetting `ADMIN_BOOTSTRAP_SECRET` afterward,
+   or at least rotating it, since it's a standing credential that can
+   promote any account to admin as long as it's set.
+
+Revenue and cost numbers are estimates (`PRO_PRICE_USD_DISPLAY` for
+MRR, rough per-call token estimates for API cost) — real source of
+truth for money is always Stripe.
+
 ## Known gaps / next steps
 
-- **Admin dashboard doesn't exist yet.** No visibility into signups,
-  revenue, usage patterns, or moderation tools beyond querying the
-  database directly. Next big infra piece as the user base grows.
 - **Job Buddy currently requires going through Riseply's own matching
   pipeline to reach 'accepted' status.** Someone who already has a job
   and just wants the onboarding mentor has no way in yet — needs a

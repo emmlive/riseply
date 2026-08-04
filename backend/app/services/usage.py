@@ -91,11 +91,18 @@ def check_and_increment(db: Session, user: models.User, action: str, amount: int
 def decrement(db: Session, user_id: int, action: str, amount: int = 1):
     """Compensating decrement for when a metered call was counted but then
     failed -- e.g. the Claude API call itself errored after the usage
-    check passed. Never goes below zero."""
+    check passed. Never goes below zero.
+
+    Also logs a FailureLog row -- this function is only ever called from
+    the exact points where a paid Claude call genuinely failed, which
+    makes it a real error-rate signal rather than a synthetic one.
+    """
     period = _current_period()
     row = db.query(models.UsageLog).filter_by(
         user_id=user_id, period=period, action=action
     ).first()
     if row and row.count > 0:
         row.count = max(0, row.count - amount)
-        db.commit()
+
+    db.add(models.FailureLog(user_id=user_id, action=action))
+    db.commit()
