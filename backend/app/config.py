@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
-    smtp_from_name: str = "Job Agent"
+    smtp_from_name: str = "Riseply"
 
     stripe_secret_key: str = ""
     stripe_success_url: str = "http://localhost:3000/dashboard?tip=success"

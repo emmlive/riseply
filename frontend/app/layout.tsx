@@ -22,7 +22,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Job Agent — application tracker",
+  title: "Riseply — job search, tailored per role",
   description: "Find, tailor, and track job applications automatically.",
 };
 

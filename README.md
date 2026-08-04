@@ -1,8 +1,8 @@
-# Job Agent — multi-user web app
+# Riseply — multi-user job search web app
 
-A public, multi-tenant version of the job application agent: anyone can
-sign up, add their resume, run several search profiles at once, and review
-matches before anything is submitted. Built as two services:
+A public, multi-tenant job application agent: anyone can sign up, add
+their resume, run several search profiles at once, and review matches
+before anything is submitted. Built as two services:
 
 - **`backend/`** — FastAPI + SQLAlchemy (Python). Auth, per-user search
   profiles, job matching/resume tailoring via the Claude API, usage

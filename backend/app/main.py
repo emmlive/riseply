@@ -9,7 +9,7 @@ from app.routers import auth, me, profiles, pipeline, billing, interview, job_bu
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Job Application Agent API")
+app = FastAPI(title="Riseply API")
 
 app.add_middleware(
     CORSMiddleware,
