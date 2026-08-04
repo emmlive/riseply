@@ -5,9 +5,14 @@ import os
 
 from app.database import Base, engine
 from app.config import settings
+from app.migrate import run_migration
 from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin
 
-Base.metadata.create_all(bind=engine)
+# Adds any columns/tables that are new in the code but missing from the
+# live database, so every deploy self-heals instead of needing a manual
+# migration step. See app/migrate.py for exactly what this can and can't
+# handle.
+run_migration()
 
 app = FastAPI(title="Riseply API")
 
