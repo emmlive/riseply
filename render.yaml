@@ -20,6 +20,10 @@ services:
         sync: false  # set manually to your Neon (or other Postgres) connection string
       - key: JWT_SECRET
         generateValue: true
+      - key: FRONTEND_URL
+        sync: false  # e.g. https://riseply.com
+      - key: PASSWORD_RESET_EXPIRE_MINUTES
+        value: "30"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: SMTP_HOST

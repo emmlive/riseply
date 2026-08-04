@@ -14,6 +14,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
+    token_version = Column(Integer, default=0, server_default="0")  # bumped on password reset to invalidate old JWTs
     full_name = Column(String, default="")
     phone = Column(String, default="")
     location = Column(String, default="")
@@ -169,6 +170,21 @@ class PointsEvent(Base):
     amount = Column(Integer, nullable=False)
     reason = Column(String, nullable=False)  # short human-readable label
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    """A single-use, short-lived password reset token. We store a hash of
+    the token, never the raw value -- same principle as password hashing,
+    so a database leak alone can't be used to reset anyone's password."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    token_hash = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
 
 
 class UsageLog(Base):

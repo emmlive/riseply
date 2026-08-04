@@ -24,9 +24,9 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(pw_bytes, hashed.encode("utf-8"))
 
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user: "models.User") -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": str(user_id), "exp": expire}
+    payload = {"sub": str(user.id), "tv": user.token_version, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -42,6 +42,7 @@ def get_current_user(
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
+        token_version = payload.get("tv")
         if user_id is None:
             raise credentials_error
     except JWTError:
@@ -49,5 +50,10 @@ def get_current_user(
 
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None:
+        raise credentials_error
+    # A token issued before a password reset carries the old token_version
+    # and must be rejected -- this is what actually logs out every other
+    # session when a user resets their password.
+    if token_version is not None and token_version != user.token_version:
         raise credentials_error
     return user

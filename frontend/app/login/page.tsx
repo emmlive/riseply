@@ -44,6 +44,9 @@ export default function LoginPage() {
             <label htmlFor="password">Password</label>
             <input id="password" type="password" required value={password}
                    onChange={(e) => setPassword(e.target.value)} />
+            <p className="hint" style={{ textAlign: "right" }}>
+              <Link href="/forgot-password">Forgot password?</Link>
+            </p>
           </div>
           {error && <p className="error-text">{error}</p>}
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>

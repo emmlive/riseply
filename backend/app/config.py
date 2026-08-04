@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 43200
     jwt_algorithm: str = "HS256"
 
+    frontend_url: str = "http://localhost:3000"
+    password_reset_expire_minutes: int = 30
+
     anthropic_api_key: str = ""
 
     smtp_host: str = ""

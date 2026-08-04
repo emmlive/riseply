@@ -6,7 +6,7 @@ from app.config import settings
 
 def send_email(to_addr: str, subject: str, body: str, attachment_path: str | None = None):
     if not settings.smtp_user or not settings.smtp_pass:
-        print(f"[notifier] SMTP not configured — skipping email to {to_addr}: {subject}")
+        print(f"[notifier] SMTP not configured — skipping email to {to_addr}: {subject}\n{body}\n")
         return
 
     msg = EmailMessage()
@@ -72,5 +72,19 @@ def notify_welcome(to_addr: str, full_name: str = ""):
             f"Everything gets queued for your review — nothing gets submitted without your OK.\n\n"
             f"Questions? Just reply to this email or use the Support tab in your dashboard.\n\n"
             f"— Riseply"
+        ),
+    )
+
+
+def notify_password_reset(to_addr: str, reset_url: str, expire_minutes: int):
+    send_email(
+        to_addr,
+        "Reset your Riseply password",
+        (
+            f"Someone (hopefully you) requested a password reset for this Riseply account.\n\n"
+            f"Reset your password here — this link expires in {expire_minutes} minutes and "
+            f"can only be used once:\n{reset_url}\n\n"
+            f"If you didn't request this, you can safely ignore this email — your password "
+            f"won't change unless you click the link above and set a new one."
         ),
     )

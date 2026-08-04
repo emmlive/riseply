@@ -1,8 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import settings
 from app import models, schemas, security
 from app.services import notifier
 
@@ -37,7 +40,7 @@ def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
     except Exception:
         pass  # welcome email is a nice-to-have -- never block signup on it
 
-    token = security.create_access_token(user.id)
+    token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 
 
@@ -47,5 +50,69 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     if not user or not security.verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    token = security.create_access_token(user.id)
+    token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
+
+
+def _hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Always returns the same generic response whether or not the email
+    is registered -- revealing that would let anyone probe for which
+    emails have Riseply accounts (account enumeration)."""
+    generic_response = {
+        "message": "If an account exists for that email, we've sent a password reset link."
+    }
+
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not user:
+        return generic_response
+
+    raw_token = secrets.token_urlsafe(32)
+    reset_row = models.PasswordResetToken(
+        user_id=user.id,
+        token_hash=_hash_token(raw_token),
+        expires_at=datetime.utcnow() + timedelta(minutes=settings.password_reset_expire_minutes),
+    )
+    db.add(reset_row)
+    db.commit()
+
+    reset_url = f"{settings.frontend_url}/reset-password?token={raw_token}"
+    try:
+        notifier.notify_password_reset(user.email, reset_url, settings.password_reset_expire_minutes)
+    except Exception:
+        pass  # don't leak send failures to the client -- same generic response either way
+
+    return generic_response
+
+
+@router.post("/reset-password")
+def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    token_hash = _hash_token(payload.token)
+    reset_row = db.query(models.PasswordResetToken).filter_by(token_hash=token_hash).first()
+
+    invalid_error = HTTPException(
+        status_code=400,
+        detail="This reset link is invalid or has expired. Request a new one.",
+    )
+
+    if not reset_row:
+        raise invalid_error
+    if reset_row.used_at is not None:
+        raise invalid_error
+    if reset_row.expires_at < datetime.utcnow():
+        raise invalid_error
+
+    user = db.query(models.User).filter_by(id=reset_row.user_id).first()
+    if not user:
+        raise invalid_error
+
+    user.hashed_password = security.hash_password(payload.new_password)
+    user.token_version += 1  # invalidates every previously issued JWT for this user
+    reset_row.used_at = datetime.utcnow()
+    db.commit()
+
+    return {"message": "Password updated. You've been logged out everywhere else for safety."}
