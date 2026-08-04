@@ -66,6 +66,10 @@ class ResumeUpdate(BaseModel):
     resume_text: str
 
 
+class ResumeParseOut(BaseModel):
+    resume_text: str
+
+
 # --- Search profiles ---
 
 class SearchProfileIn(BaseModel):

@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import resume_parser
 
 router = APIRouter(prefix="/me", tags=["me"])
+
+MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB -- generous for a resume, guards against abuse
 
 
 def _to_out(user: models.User) -> schemas.UserOut:
@@ -60,3 +63,21 @@ def update_resume(
     db.commit()
     db.refresh(user)
     return _to_out(user)
+
+
+@router.post("/resume/parse", response_model=schemas.ResumeParseOut)
+async def parse_resume_file(
+    file: UploadFile = File(...),
+    user: models.User = Depends(get_current_user),
+):
+    """Extracts text from an uploaded PDF/DOCX -- does NOT save it. The
+    frontend shows the extracted text for review/editing, and the user
+    explicitly saves it via PUT /me/resume, same as pasting text by hand.
+    This avoids silently overwriting an existing resume with a bad
+    extraction (e.g. a scanned PDF that yields garbage or empty text)."""
+    contents = await file.read()
+    if len(contents) > MAX_RESUME_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large — please keep it under 10MB.")
+
+    text = resume_parser.extract_resume_text(file.filename or "", contents)
+    return schemas.ResumeParseOut(resume_text=text)

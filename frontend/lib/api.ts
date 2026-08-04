@@ -18,8 +18,10 @@ export async function api<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = getToken();
+  const isFormData = options.body instanceof FormData;
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers as Record<string, string>),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
