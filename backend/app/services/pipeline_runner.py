@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 from sqlalchemy import not_
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
@@ -18,26 +20,39 @@ from app.services import discovery_sources
 
 
 def run_discovery(db: Session) -> dict:
-    """Pulls fresh postings into the shared job pool. Idempotent --
-    duplicate postings (same source + external_id) are skipped."""
+    """Pulls fresh postings into the shared job pool.
+
+    Uses a database-level INSERT ... ON CONFLICT DO NOTHING rather than a
+    manual "check if it exists, then insert" loop. The manual version had
+    a real gap: it only committed once at the end of the whole loop, so
+    two jobs with the same (source, external_id) landing in the same
+    batch -- or two near-simultaneous requests racing each other, since
+    this runs in a thread pool -- could both pass the "does this exist"
+    check before either had committed, then crash into each other's
+    INSERT with a UniqueViolation. Postgres and SQLite both resolve
+    ON CONFLICT atomically at the database level, which closes that gap
+    regardless of the exact interleaving.
+    """
     raw_jobs = []
     raw_jobs += greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
     raw_jobs += lever.fetch_all(discovery_sources.LEVER_COMPANIES)
     raw_jobs += rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
 
+    if not raw_jobs:
+        return {"discovered": 0, "new": 0}
+
+    insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+
     new_count = 0
     for j in raw_jobs:
-        existing = db.query(models.Job).filter_by(
-            source=j["source"], external_id=j["external_id"]
-        ).first()
-        if existing:
-            continue
-        db.add(models.Job(
+        stmt = insert_fn(models.Job).values(
             source=j["source"], external_id=j["external_id"], company=j["company"],
             title=j["title"], location=j["location"], url=j["url"],
             description=j["description"],
-        ))
-        new_count += 1
+        ).on_conflict_do_nothing(index_elements=["source", "external_id"])
+        result = db.execute(stmt)
+        if result.rowcount > 0:
+            new_count += 1
     db.commit()
     return {"discovered": len(raw_jobs), "new": new_count}
 
