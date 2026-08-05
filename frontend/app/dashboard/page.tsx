@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -11,6 +11,7 @@ export default function OverviewPage() {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
 
   async function load() {
     try {
@@ -35,20 +36,24 @@ export default function OverviewPage() {
     setRunning(true);
     setError("");
     setMessage("");
+    setNearMisses([]);
     try {
       await api("/pipeline/discover", { method: "POST" });
-      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean }>(
+      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[] }>(
         "/pipeline/match",
         { method: "POST" }
       );
       setMessage(
         result.queued_application_ids.length > 0
           ? `Found ${result.queued_application_ids.length} new match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
+          : result.near_misses.length > 0
+          ? "Nothing quite cleared your bar this run — here's what came closest."
           : "No new matches this run. Try again later as new postings come in."
       );
       if (result.usage_limit_reached) {
         setMessage((m) => m + " (Stopped early — monthly match limit reached.)");
       }
+      setNearMisses(result.near_misses);
       load();
     } catch (err: any) {
       setError(err.message || "Something went wrong running the search.");
@@ -72,6 +77,28 @@ export default function OverviewPage() {
         </div>
       )}
       {error && <p className="error-text">{error}</p>}
+
+      {nearMisses.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Closest this run</h3>
+          <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
+            None of these cleared your profile's match threshold, but they were the nearest —
+            worth a look, or a sign to loosen your search criteria a bit.
+          </p>
+          {nearMisses.map((nm, i) => (
+            <div key={i} className="points-event-row">
+              <div>
+                <div style={{ fontWeight: 600 }}>{nm.title} — {nm.company}</div>
+                <div className="hint">{nm.reason}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="ticket">match <span className="score">{nm.score}%</span></span>
+                <a href={nm.url} target="_blank" rel="noopener noreferrer" className="hint">View →</a>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {rise && (
         <div className="rise-hero">

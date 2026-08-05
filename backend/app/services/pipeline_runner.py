@@ -64,11 +64,11 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
     skipped_reason instead, since a batch job processing many users needs
     to move on to the next one rather than crash the whole run."""
     if not user.resume_text.strip():
-        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume"}
+        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume", "near_misses": []}
 
     profiles_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()
     if not profiles_rows:
-        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles"}
+        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles", "near_misses": []}
 
     profiles = [{
         "name": p.name,
@@ -90,6 +90,8 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
     ).all()
 
     queued = []
+    near_miss_candidates = []  # (score, {title, company, url, score, reason, matched_profile})
+    NEAR_MISS_CAP = 3
     limit_hit = False
 
     for job_row in unseen_jobs:
@@ -111,6 +113,18 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
             continue
 
         if not best["meets_threshold"]:
+            # Track the closest-scoring misses as we go, capped at
+            # NEAR_MISS_CAP, so a search that finds nothing real still
+            # has something concrete to show -- "nothing hit your bar,
+            # but here's what came closest" rather than a cold empty
+            # state that looks like the tool didn't do anything.
+            near_miss_candidates.append((best["score"], {
+                "title": job_row.title, "company": job_row.company, "url": job_row.url,
+                "score": best["score"], "reason": best["reason"],
+                "matched_profile": best["profile_name"],
+            }))
+            near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
+            near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
             continue
 
         application = models.Application(
@@ -152,5 +166,13 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
             pass
         queued.append(application.id)
 
+    # Near-misses are only worth surfacing when nothing real was found --
+    # if there are genuine matches to review, a "here's what almost
+    # worked" list would just be noise.
+    near_misses = [c[1] for c in near_miss_candidates] if not queued else []
+
     rise_index.award_points(db, user, "run_search", "Ran a job search")
-    return {"queued_application_ids": queued, "usage_limit_reached": limit_hit, "skipped_reason": None}
+    return {
+        "queued_application_ids": queued, "usage_limit_reached": limit_hit,
+        "skipped_reason": None, "near_misses": near_misses,
+    }

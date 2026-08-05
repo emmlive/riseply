@@ -8,7 +8,7 @@ const EMPTY: Omit<SearchProfile, "id"> = {
   titles: [],
   locations: [],
   seniority: [],
-  min_match_score: 70,
+  min_match_score: 60,
   exclude_companies: [],
   keywords_required: [],
   keywords_excluded: [],

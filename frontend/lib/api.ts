@@ -152,6 +152,15 @@ export interface RiseIndexMe {
   recent_events: PointsEvent[];
 }
 
+export interface NearMiss {
+  title: string;
+  company: string;
+  url: string;
+  score: number;
+  reason: string;
+  matched_profile: string;
+}
+
 // --- Admin ---
 
 export interface AdminUser {

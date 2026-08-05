@@ -60,7 +60,7 @@ class SearchProfile(Base):
     titles = Column(Text, default="[]")             # JSON list, stored as text
     locations = Column(Text, default="[]")
     seniority = Column(Text, default="[]")
-    min_match_score = Column(Integer, default=70)
+    min_match_score = Column(Integer, default=60)
     exclude_companies = Column(Text, default="[]")
     keywords_required = Column(Text, default="[]")
     keywords_excluded = Column(Text, default="[]")

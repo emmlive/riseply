@@ -36,7 +36,11 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
     result = pipeline_runner.run_matching_for_user(db, user)
-    return {"queued_application_ids": result["queued_application_ids"], "usage_limit_reached": result["usage_limit_reached"]}
+    return {
+        "queued_application_ids": result["queued_application_ids"],
+        "usage_limit_reached": result["usage_limit_reached"],
+        "near_misses": result["near_misses"],
+    }
 
 
 # --- Applications list + approve/reject ---

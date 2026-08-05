@@ -78,7 +78,7 @@ class SearchProfileIn(BaseModel):
     titles: list[str] = []
     locations: list[str] = []
     seniority: list[str] = []
-    min_match_score: int = 70
+    min_match_score: int = 60
     exclude_companies: list[str] = []
     keywords_required: list[str] = []
     keywords_excluded: list[str] = []
