@@ -12,9 +12,12 @@ RSS_JOB_FEEDS = [
 ]
 
 GREENHOUSE_COMPANIES: list[str] = [
-    # "stripe", "figma", ...
+    "anthropic",          # AI safety
+    "scaleai",            # AI/ML infrastructure
+    "hiddenlayer",        # AI/ML security is their entire business
+    "andurilindustries",  # defense tech, AI governance/compliance-adjacent roles
 ]
 
 LEVER_COMPANIES: list[str] = [
-    # "netflix", ...
+    "crypto",  # Crypto.com -- has posted AI Security Engineer roles directly
 ]
