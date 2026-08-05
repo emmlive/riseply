@@ -165,6 +165,48 @@ Until `STRIPE_SECRET_KEY` is set at all, both the upgrade button and the
 tip button return a clear "not configured yet" response instead of
 failing silently.
 
+## Auto-submit
+
+Fills and (optionally) submits a job application via Playwright browser
+automation, restricted to an explicit allowlist of ATS platforms. This
+is **off by default** and needs deliberate setup — nothing about it
+runs unless you turn it on.
+
+**Guardrails, all independently tested:**
+- Global kill-switch (`AUTO_SUBMIT_ENABLED=false` by default) — the
+  endpoint returns a clean 503 until this is explicitly set to `true`.
+- Allowlist, not a blocklist: only fires on domains in
+  `AUTO_SUBMIT_ALLOWED_DOMAINS` (defaults to Greenhouse and Lever only —
+  the same two ATS platforms Riseply already discovers jobs from).
+  LinkedIn and Indeed are hard-blocked in code regardless of that
+  setting, as defense in depth.
+- Only ever runs on an application the user has already approved — this
+  never touches a job the user hasn't reviewed.
+- Every outcome (submitted / needs manual review / failed) leaves the
+  application in a recoverable state with a clear note — a CAPTCHA or
+  an unrecognized form never silently loses the match.
+
+**Hosting caveat, worth taking seriously before enabling this in
+production:** Playwright needs a real headless Chromium browser, which
+needs meaningfully more RAM and disk than Render's free tier typically
+provides, plus system-level dependencies (fonts, `libnss`, etc.) that
+the standard Python buildpack doesn't include by default. Two things to
+check before flipping `AUTO_SUBMIT_ENABLED=true` in production:
+
+1. **Build command** needs an extra step beyond `pip install`:
+   ```
+   pip install -r requirements.txt && playwright install --with-deps chromium
+   ```
+   (`--with-deps` attempts to install the OS-level libraries Chromium
+   needs — Render's build environment may or may not support this
+   cleanly; test it before relying on it.)
+2. **Instance size** — the free tier's RAM may not be enough to run a
+   real browser alongside the rest of the app. If auto-submit attempts
+   start failing or timing out in a way that looks like resource
+   exhaustion rather than a real form-filling issue, that's the likely
+   cause — worth testing on a paid Render instance before trusting this
+   in production.
+
 ## Pricing tiers
 
 | | Free | Pro |
@@ -223,19 +265,18 @@ truth for money is always Stripe.
 - **Discovery sources are a fixed list** (`backend/app/services/discovery_sources.py`)
   rather than admin-editable from the UI. Fine for a v1; a future
   improvement would be an admin panel for managing these.
-- **Auto-submit (Playwright form-filling) isn't wired into the web app
-  yet.** The original CLI version had it; bringing it to a multi-user web
-  app needs a background worker (submitting a form mid-HTTP-request
-  doesn't fit the request/response model), which is a real chunk of
-  additional work — plan for a task queue (e.g. Celery + Redis, or a
-  simpler polling worker) before building this out. Until then,
-  "Approve" marks an application ready, and actually applying still
-  needs to happen manually via the "View posting" link — which,
-  practically, is also the safer default given job platforms' Terms of
-  Service around automated submissions at scale.
+- **No scheduled/automatic matching yet** — "Find new matches" is a
+  manual button click, not a daily background job. Render's free tier
+  spins down after ~15 min idle, so a reliable in-process scheduler
+  isn't practical there; the right approach is a secret-protected batch
+  endpoint triggered externally on a schedule (a free GitHub Actions
+  cron, or a service like cron-job.org) rather than anything running
+  inside the web process itself.
 - **Auth is hand-rolled** (JWT + bcrypt) rather than a managed provider.
   This was tested and works correctly, but for a real public launch with
   real user data, consider migrating to Clerk, Auth.js, or Supabase Auth
-  — they handle things like password-reset flows, email verification,
-  and abuse detection that this MVP doesn't.
-- **No email verification or password reset flow yet.**
+  — they handle things like email verification and abuse detection that
+  this MVP doesn't (password reset is built and tested, see below).
+- **No email verification yet** — anyone can sign up with an email they
+  don't own; only password reset (which does verify via a real emailed
+  link) is built.

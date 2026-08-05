@@ -22,6 +22,7 @@ export default function ApplicationsPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
   const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
+  const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
 
   async function load(status: string) {
     const qs = status ? `?status=${status}` : "";
@@ -57,6 +58,19 @@ export default function ApplicationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apps]);
 
+  // Quietly check auto-submit eligibility for approved applications, so
+  // the button only shows up when it could actually do something (server
+  // has it enabled, and the job is on a supported ATS).
+  useEffect(() => {
+    const toCheck = apps.filter((a) => a.status === "approved" && !(a.id in autoSubmitEligible));
+    toCheck.forEach((a) => {
+      api<{ eligible: boolean }>(`/applications/${a.id}/auto-submit-eligible`)
+        .then((r) => setAutoSubmitEligible((s) => ({ ...s, [a.id]: r.eligible })))
+        .catch(() => setAutoSubmitEligible((s) => ({ ...s, [a.id]: false })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps]);
+
   async function act(id: number, action: "approve" | "reject" | "mark-submitted" | "mark-interviewing" | "mark-accepted") {
     setBusyId(id);
     try {
@@ -75,6 +89,23 @@ export default function ApplicationsPage() {
     } catch (err: any) {
       setPreps((p) => ({ ...p, [id]: "none" }));
       alert(err.message || "Couldn't generate interview prep.");
+    }
+  }
+
+  async function attemptAutoSubmit(id: number) {
+    setBusyId(id);
+    try {
+      const result = await api<{ status: string; detail?: string }>(`/applications/${id}/auto-submit`, { method: "POST" });
+      if (result.status === "submitted") {
+        await load(filter);
+      } else {
+        alert(result.detail || "Needs a manual finish — the form may have been filled but not submitted.");
+        await load(filter);
+      }
+    } catch (err: any) {
+      alert(err.message || "Couldn't attempt auto-submit.");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -144,10 +175,19 @@ export default function ApplicationsPage() {
                 )}
 
                 {app.status === "approved" && (
-                  <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
-                          onClick={() => act(app.id, "mark-submitted")}>
-                    Mark as applied
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                    {autoSubmitEligible[app.id] && (
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === app.id}
+                              onClick={() => attemptAutoSubmit(app.id)}
+                              title="Fills and submits the form automatically — Greenhouse/Lever only">
+                        Attempt auto-submit
+                      </button>
+                    )}
+                    <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
+                            onClick={() => act(app.id, "mark-submitted")}>
+                      Mark as applied
+                    </button>
+                  </div>
                 )}
 
                 {app.status === "submitted" && (

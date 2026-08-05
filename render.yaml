@@ -14,6 +14,10 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
+    # If you enable auto-submit (see README), change this to:
+    # pip install -r requirements.txt && playwright install --with-deps chromium
+    # Left as plain pip install by default since installing Chromium adds
+    # real build time/disk even for anyone who never turns auto-submit on.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
@@ -61,6 +65,12 @@ services:
       - key: ADMIN_BOOTSTRAP_SECRET
         sync: false  # generate with: python -c "import secrets; print(secrets.token_hex(24))"
                       # POST /admin/bootstrap once to promote your account, then unset this
+
+      # --- Auto-submit (off by default -- see README before enabling) ---
+      - key: AUTO_SUBMIT_ENABLED
+        value: "false"
+      - key: AUTO_SUBMIT_ALLOWED_DOMAINS
+        value: "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co"
 
       # --- Free tier limits ---
       - key: FREE_TIER_MAX_MATCHES_PER_MONTH

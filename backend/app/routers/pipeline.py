@@ -7,7 +7,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import matcher, resume_customizer, notifier, usage, rise_index
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -220,9 +220,10 @@ def reject_application(
 def mark_submitted(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
 ):
-    """Confirms the application was actually sent — a manual step for now
-    since auto-submit isn't wired up yet. This is the real effort
-    milestone the Rise Index measures response times from."""
+    """Confirms the application was actually sent -- the manual path.
+    This is the real effort milestone the Rise Index measures response
+    times from, and is also what auto-submit calls internally on a
+    successful attempt, so both paths behave identically from here."""
     app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -233,6 +234,96 @@ def mark_submitted(
     db.commit()
     rise_index.award_points(db, user, "mark_submitted", "Submitted an application")
     return {"status": "submitted"}
+
+
+@router.get("/applications/{application_id}/auto-submit-eligible")
+def check_auto_submit_eligible(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    """Lets the frontend decide whether to show the auto-submit button at
+    all, without actually launching a browser."""
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if not settings.auto_submit_enabled:
+        return {"eligible": False, "reason": "Auto-submit isn't enabled on this server yet."}
+    if app_row.status != "approved":
+        return {"eligible": False, "reason": "Only approved applications can be auto-submitted."}
+
+    allowed, reason = submitter.is_supported_ats(job.url)
+    return {"eligible": allowed, "reason": reason}
+
+
+@router.post("/applications/{application_id}/auto-submit")
+def auto_submit_application(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    """Attempts to actually fill and submit the application via
+    Playwright. Guardrails, in order:
+    1. Global settings.auto_submit_enabled kill-switch
+    2. Application must already be human-approved
+    3. Job URL must be on the ATS allowlist (Greenhouse/Lever only,
+       LinkedIn/Indeed explicitly hard-blocked regardless of config)
+    Any failure leaves the application in 'approved' with a note
+    explaining what happened, rather than silently losing the match."""
+    if not settings.auto_submit_enabled:
+        raise HTTPException(status_code=503, detail="Auto-submit isn't enabled on this server yet.")
+
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if app_row.status != "approved":
+        raise HTTPException(status_code=400, detail="Only approved applications can be auto-submitted.")
+
+    allowed, reason = submitter.is_supported_ats(job.url)
+    if not allowed:
+        raise HTTPException(status_code=400, detail=reason)
+
+    name_parts = (user.full_name or "").split(" ", 1)
+    candidate = {
+        "first_name": name_parts[0] if name_parts else "",
+        "last_name": name_parts[1] if len(name_parts) > 1 else "",
+        "full_name": user.full_name or "",
+        "email": user.email,
+        "phone": user.phone or "",
+        "location": user.location or "",
+        "linkedin_url": user.linkedin_url or "",
+        "portfolio_url": user.portfolio_url or "",
+    }
+
+    result = submitter.submit_application(
+        job.url, app_row.tailored_resume_path, candidate, actually_submit=True,
+    )
+
+    if result["status"] == "submitted":
+        now = datetime.utcnow()
+        app_row.status = "submitted"
+        app_row.status_updated_at = now
+        app_row.submitted_at = now
+        app_row.notes = "Auto-submitted."
+        db.commit()
+        rise_index.award_points(db, user, "mark_submitted", "Submitted an application (auto-submit)")
+        try:
+            notifier.notify_submitted(user.notify_email or user.email, {
+                "title": job.title, "company": job.company, "url": job.url,
+            })
+        except Exception:
+            pass
+        return {"status": "submitted"}
+
+    # needs_manual_review or failed -- leave status as 'approved', record
+    # what happened, and let the user know rather than losing the thread
+    app_row.notes = f"Auto-submit: {result['detail']}"
+    db.commit()
+    return {"status": result["status"], "detail": result["detail"]}
 
 
 @router.post("/applications/{application_id}/mark-interviewing")

@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     # like any other credential -- rotate/unset it once you've used it.
     admin_bootstrap_secret: str = ""
 
+    # --- Auto-submit ---
+    # Global kill-switch. Defaults OFF -- must be explicitly enabled, and
+    # even then only ever fires on an application the user has already
+    # approved, and only against domains in the allowlist below.
+    auto_submit_enabled: bool = False
+    # Comma-separated list of domains auto-submit is allowed to touch.
+    # Deliberately an ALLOWLIST, not a blocklist -- LinkedIn, Indeed, and
+    # everything else are blocked by default, not just discouraged.
+    auto_submit_allowed_domains: str = "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co"
+
+    @property
+    def auto_submit_allowed_domains_list(self) -> list[str]:
+        return [d.strip().lower() for d in self.auto_submit_allowed_domains.split(",") if d.strip()]
+
     # --- Free tier limits (per user per calendar month) ---
     free_tier_max_matches_per_month: int = 50
     free_tier_max_tailored_resumes_per_month: int = 15
