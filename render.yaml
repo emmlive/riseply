@@ -82,7 +82,7 @@ services:
       - key: AUTO_SUBMIT_ENABLED
         value: "false"
       - key: AUTO_SUBMIT_ALLOWED_DOMAINS
-        value: "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co"
+        value: "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co,jobs.ashbyhq.com,apply.workable.com"
 
       # --- Free tier limits ---
       - key: FREE_TIER_MAX_MATCHES_PER_MONTH

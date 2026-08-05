@@ -50,13 +50,50 @@ def is_supported_ats(url: str) -> tuple[bool, str]:
 
 
 def _fill_common_fields(page, candidate: dict, resume_path: str):
-    """Best-effort generic filler for common Greenhouse/Lever field
-    patterns. Real forms vary; this handles the common cases and leaves
-    anything it can't confidently fill blank rather than guessing wrong."""
+    """Best-effort generic filler for common ATS field patterns
+    (Greenhouse, Lever, Ashby, Workable). Real forms vary; this handles
+    the common cases and leaves anything it can't confidently fill blank
+    rather than guessing wrong.
+
+    Two name conventions exist across these platforms: Greenhouse/Lever
+    typically split first/last name into separate fields, while Ashby/
+    Workable commonly use a single combined "Name" field. Filling both
+    conventions with one static field map caused a real bug once already
+    (a bare "name" search matched both "First Name" and "Last Name" and
+    overwrote the first-name value) -- so this checks which pattern is
+    actually present before deciding what to fill, rather than trying
+    every possible label unconditionally.
+    """
+    first_name = candidate.get("first_name", "")
+    last_name = candidate.get("last_name", "")
+    full_name = candidate.get("full_name", "")
+
+    split_name_found = False
+    if first_name:
+        try:
+            page.get_by_label("first name", exact=False).first.fill(first_name, timeout=1500)
+            split_name_found = True
+        except Exception:
+            pass
+    if last_name:
+        try:
+            page.get_by_label("last name", exact=False).first.fill(last_name, timeout=1500)
+        except Exception:
+            pass
+
+    if not split_name_found and full_name:
+        # No separate first/last fields found -- likely a single combined
+        # "Name" field (Ashby/Workable pattern). Safe to try broader
+        # matches here since we've already confirmed the split fields
+        # don't exist, so there's nothing left to collide with.
+        for label in ["full name", "name"]:
+            try:
+                page.get_by_label(label, exact=False).first.fill(full_name, timeout=1500)
+                break
+            except Exception:
+                continue
+
     field_map = {
-        "first name": candidate.get("first_name", ""),
-        "last name": candidate.get("last_name", ""),
-        "full name": candidate.get("full_name", ""),
         "email": candidate.get("email", ""),
         "phone": candidate.get("phone", ""),
         "location": candidate.get("location", ""),

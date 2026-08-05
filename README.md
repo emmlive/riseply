@@ -226,15 +226,34 @@ runs unless you turn it on.
 - Global kill-switch (`AUTO_SUBMIT_ENABLED=false` by default) — the
   endpoint returns a clean 503 until this is explicitly set to `true`.
 - Allowlist, not a blocklist: only fires on domains in
-  `AUTO_SUBMIT_ALLOWED_DOMAINS` (defaults to Greenhouse and Lever only —
-  the same two ATS platforms Riseply already discovers jobs from).
-  LinkedIn and Indeed are hard-blocked in code regardless of that
-  setting, as defense in depth.
+  `AUTO_SUBMIT_ALLOWED_DOMAINS` — defaults to Greenhouse, Lever, Ashby,
+  and Workable. LinkedIn and Indeed are hard-blocked in code regardless
+  of that setting, as defense in depth.
 - Only ever runs on an application the user has already approved — this
   never touches a job the user hasn't reviewed.
 - Every outcome (submitted / needs manual review / failed) leaves the
   application in a recoverable state with a clear note — a CAPTCHA or
   an unrecognized form never silently loses the match.
+
+**Why Workday and iCIMS aren't on the allowlist**, even though they're
+extremely common: they're a fundamentally different automation problem,
+not just "another form to fill." Workday requires creating a per-tenant
+account through a multi-step wizard before you even reach an
+application form, and has documented bot detection that blocks naive
+automation — the risk there isn't "might fail gracefully," it's "might
+get flagged." iCIMS is often multi-step, frequently requires login, and
+uses custom JS-driven form rendering that can block standard
+programmatic field-filling. Both would need meaningfully more
+sophisticated (and riskier) automation than the single-page form-fill
+this app does today. Worth revisiting if there's real demand, but not
+something to enable by just adding a domain to the list.
+
+**Two name-field conventions, both handled**: Greenhouse/Lever
+typically split first/last name into separate fields; Ashby/Workable
+commonly use a single combined "Name" field instead. The filler checks
+which pattern is actually present (tries first/last first; only falls
+back to a combined-name field if those genuinely don't exist) rather
+than guessing — verified against local mock forms of both patterns.
 
 **Hosting caveat, worth taking seriously before enabling this in
 production:** Playwright needs a real headless Chromium browser, which

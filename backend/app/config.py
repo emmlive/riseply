@@ -56,7 +56,16 @@ class Settings(BaseSettings):
     # Comma-separated list of domains auto-submit is allowed to touch.
     # Deliberately an ALLOWLIST, not a blocklist -- LinkedIn, Indeed, and
     # everything else are blocked by default, not just discouraged.
-    auto_submit_allowed_domains: str = "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co"
+    #
+    # Workday and iCIMS are deliberately NOT included, even though
+    # they're extremely common ATS platforms: Workday requires creating
+    # a per-tenant account through a multi-step wizard and has documented
+    # bot detection that blocks naive automation; iCIMS forms are often
+    # multi-step, frequently require login, and use custom JS-driven
+    # inputs that can block standard form-filling. Both would need a
+    # meaningfully more sophisticated (and riskier) automation approach
+    # than the single-page form-fill this app does today.
+    auto_submit_allowed_domains: str = "boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co,jobs.ashbyhq.com,apply.workable.com"
 
     @property
     def auto_submit_allowed_domains_list(self) -> list[str]:
