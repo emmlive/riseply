@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     password_reset_expire_minutes: int = 30
 
+    # Cloudflare Turnstile (CAPTCHA on signup). Leave blank to disable --
+    # signup works normally without it, just with no bot protection.
+    turnstile_secret_key: str = ""
+
     anthropic_api_key: str = ""
 
     smtp_host: str = ""
@@ -37,6 +41,12 @@ class Settings(BaseSettings):
     # first admin otherwise. Generate a long random value and treat it
     # like any other credential -- rotate/unset it once you've used it.
     admin_bootstrap_secret: str = ""
+
+    # --- Scheduled matching (external cron trigger) ---
+    # A shared secret the external scheduler sends as X-Cron-Secret.
+    # Blank means the endpoint is disabled (503), not open -- there's no
+    # "unauthenticated batch job that processes every user" default.
+    cron_secret: str = ""
 
     # --- Auto-submit ---
     # Global kill-switch. Defaults OFF -- must be explicitly enabled, and

@@ -7,7 +7,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -21,26 +21,7 @@ router = APIRouter(tags=["pipeline"])
 def discover(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Pulls fresh postings into the shared job pool. Any logged-in user can
     trigger this — it's idempotent (duplicate postings are skipped)."""
-    raw_jobs = []
-    raw_jobs += greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
-    raw_jobs += lever.fetch_all(discovery_sources.LEVER_COMPANIES)
-    raw_jobs += rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
-
-    new_count = 0
-    for j in raw_jobs:
-        existing = db.query(models.Job).filter_by(
-            source=j["source"], external_id=j["external_id"]
-        ).first()
-        if existing:
-            continue
-        db.add(models.Job(
-            source=j["source"], external_id=j["external_id"], company=j["company"],
-            title=j["title"], location=j["location"], url=j["url"],
-            description=j["description"],
-        ))
-        new_count += 1
-    db.commit()
-    return {"discovered": len(raw_jobs), "new": new_count}
+    return pipeline_runner.run_discovery(db)
 
 
 # --- Matching + tailoring for the current user ---
@@ -50,95 +31,12 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before running matching.")
 
-    profiles_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()
-    if not profiles_rows:
+    has_active_profile = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).first()
+    if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    profiles = [{
-        "name": p.name,
-        "titles": json.loads(p.titles),
-        "locations": json.loads(p.locations),
-        "seniority": json.loads(p.seniority),
-        "min_match_score": p.min_match_score,
-        "exclude_companies": json.loads(p.exclude_companies),
-        "keywords_required": json.loads(p.keywords_required),
-        "keywords_excluded": json.loads(p.keywords_excluded),
-        "active": p.active,
-    } for p in profiles_rows]
-
-    # Jobs this user hasn't already got an Application for
-    already_applied_subq = db.query(models.Application.job_id).filter(
-        models.Application.user_id == user.id
-    ).subquery()
-    unseen_jobs = db.query(models.Job).filter(
-        not_(models.Job.id.in_(already_applied_subq))
-    ).all()
-
-    queued = []
-    limit_hit = False
-
-    for job_row in unseen_jobs:
-        try:
-            usage.check_and_increment(db, user, "match", 1)
-        except HTTPException:
-            limit_hit = True
-            break
-
-        job = {
-            "title": job_row.title, "company": job_row.company,
-            "location": job_row.location, "url": job_row.url,
-            "description": job_row.description,
-        }
-        try:
-            best = matcher.best_profile_match(job, user.resume_text, profiles)
-        except Exception:
-            usage.decrement(db, user.id, "match", 1)
-            continue  # skip this job, don't let one API hiccup kill the whole batch
-
-        if not best["meets_threshold"]:
-            continue
-
-        application = models.Application(
-            user_id=user.id, job_id=job_row.id,
-            matched_profile=best["profile_name"], match_score=best["score"],
-            match_reason=best["reason"], status="pending_approval",
-        )
-        db.add(application)
-        db.commit()
-        db.refresh(application)
-
-        resume_path = ""
-        try:
-            usage.check_and_increment(db, user, "tailor_resume", 1)
-            job["matched_profile"] = best["profile_name"]
-            job["match_score"] = best["score"]
-            resume_path = resume_customizer.customize_for_job(
-                user.id, user.resume_text, job, application.id
-            )
-            application.tailored_resume_path = resume_path
-            db.commit()
-        except HTTPException:
-            application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
-            db.commit()
-        except Exception:
-            usage.decrement(db, user.id, "tailor_resume", 1)
-            application.notes = "Resume tailoring failed this run — using base resume. You can retry from the dashboard later."
-            db.commit()
-
-        notify_addr = user.notify_email or user.email
-        try:
-            notifier.notify_new_match(
-                notify_addr,
-                {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
-                 "match_reason": best["reason"]},
-                application.id, resume_path,
-            )
-        except Exception:
-            pass  # notification is a side effect — a failure here shouldn't lose the match itself
-        queued.append(application.id)
-
-    rise_index.award_points(db, user, "run_search", "Ran a job search")
-    return {"queued_application_ids": queued, "usage_limit_reached": limit_hit}
+    result = pipeline_runner.run_matching_for_user(db, user)
+    return {"queued_application_ids": result["queued_application_ids"], "usage_limit_reached": result["usage_limit_reached"]}
 
 
 # --- Applications list + approve/reject ---

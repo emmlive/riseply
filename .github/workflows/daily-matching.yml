@@ -1,0 +1,44 @@
+name: Daily job matching
+
+# Runs the scheduled matching batch job once a day, for free, via GitHub's
+# own infrastructure -- no server of ours needs to stay awake to trigger
+# this, which matters since Render's free tier spins down when idle.
+#
+# Setup:
+# 1. Set CRON_SECRET on the Render backend (README has the "Scheduled
+#    matching" section with details).
+# 2. Add the SAME value as a GitHub Actions secret on this repo:
+#    Settings -> Secrets and variables -> Actions -> New repository secret
+#    Name: CRON_SECRET
+# 3. Add a second secret for the backend URL:
+#    Name: BACKEND_URL, Value: https://your-backend.onrender.com
+#    (no trailing slash)
+# 4. That's it -- this runs automatically on the schedule below. You can
+#    also trigger it manually from the Actions tab any time
+#    ("workflow_dispatch" below enables the "Run workflow" button).
+#
+# Adjust the cron schedule to whatever time works for you. The one below
+# runs at 13:00 UTC daily (e.g. ~8am Eastern) -- cron times are always
+# UTC on GitHub Actions regardless of where you are.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger-matching:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the scheduled-run endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.BACKEND_URL }}/internal/scheduled-run" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if [ "$http_code" -ne 200 ]; then
+            echo "Scheduled run failed with HTTP $http_code"
+            exit 1
+          fi

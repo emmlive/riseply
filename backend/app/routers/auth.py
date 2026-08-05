@@ -1,24 +1,29 @@
 from datetime import datetime, timedelta
 import hashlib
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.config import settings
+from app.rate_limit import limiter, get_real_client_ip
 from app import models, schemas, security
-from app.services import notifier
+from app.services import notifier, captcha
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=schemas.TokenResponse)
-def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depends(get_db)):
     if not payload.agree_to_terms:
         raise HTTPException(
             status_code=400,
             detail="You need to agree to the Terms of Service and Privacy Policy to create an account.",
         )
+
+    if not captcha.verify_turnstile(payload.captcha_token, get_real_client_ip(request)):
+        raise HTTPException(status_code=400, detail="CAPTCHA verification failed — please try again.")
 
     existing = db.query(models.User).filter(models.User.email == payload.email).first()
     if existing:
@@ -45,7 +50,8 @@ def signup(payload: schemas.SignupRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("15/hour")
+def login(request: Request, payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user or not security.verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
@@ -59,10 +65,14 @@ def _hash_token(raw_token: str) -> str:
 
 
 @router.post("/forgot-password")
-def forgot_password(payload: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def forgot_password(request: Request, payload: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
     """Always returns the same generic response whether or not the email
     is registered -- revealing that would let anyone probe for which
-    emails have Riseply accounts (account enumeration)."""
+    emails have Riseply accounts (account enumeration). Rate-limited
+    separately from the enumeration protection: without a limit, someone
+    could email-bomb an arbitrary inbox by repeatedly requesting resets
+    for an address they don't own."""
     generic_response = {
         "message": "If an account exists for that email, we've sent a password reset link."
     }
@@ -90,7 +100,8 @@ def forgot_password(payload: schemas.ForgotPasswordRequest, db: Session = Depend
 
 
 @router.post("/reset-password")
-def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/hour")
+def reset_password(request: Request, payload: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
     token_hash = _hash_token(payload.token)
     reset_row = db.query(models.PasswordResetToken).filter_by(token_hash=token_hash).first()
 

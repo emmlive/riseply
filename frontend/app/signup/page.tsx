@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Script from "next/script";
 import { api, setToken } from "@/lib/api";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+
+declare global {
+  interface Window {
+    onTurnstileSuccess?: (token: string) => void;
+  }
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -11,8 +20,14 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    window.onTurnstileSuccess = (token: string) => setCaptchaToken(token);
+    return () => { delete window.onTurnstileSuccess; };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,11 +40,18 @@ export default function SignupPage() {
       setError("You'll need to agree to the Terms of Service and Privacy Policy to continue.");
       return;
     }
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setError("Please complete the verification check below.");
+      return;
+    }
     setLoading(true);
     try {
       const { access_token } = await api<{ access_token: string }>("/auth/signup", {
         method: "POST",
-        body: JSON.stringify({ email, password, full_name: fullName, agree_to_terms: agreeToTerms }),
+        body: JSON.stringify({
+          email, password, full_name: fullName, agree_to_terms: agreeToTerms,
+          captcha_token: captchaToken,
+        }),
       });
       setToken(access_token);
       router.push("/dashboard");
@@ -42,6 +64,9 @@ export default function SignupPage() {
 
   return (
     <div className="auth-shell">
+      {TURNSTILE_SITE_KEY && (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" async defer />
+      )}
       <div className="auth-card">
         <h2>Create your account</h2>
         <form onSubmit={handleSubmit}>
@@ -74,6 +99,16 @@ export default function SignupPage() {
               <Link href="/privacy" target="_blank">Privacy Policy</Link>.
             </label>
           </div>
+
+          {TURNSTILE_SITE_KEY && (
+            <div
+              className="cf-turnstile"
+              data-sitekey={TURNSTILE_SITE_KEY}
+              data-callback="onTurnstileSuccess"
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           {error && <p className="error-text">{error}</p>}
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
             {loading ? "Creating account…" : "Create account"}

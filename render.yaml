@@ -66,6 +66,18 @@ services:
         sync: false  # generate with: python -c "import secrets; print(secrets.token_hex(24))"
                       # POST /admin/bootstrap once to promote your account, then unset this
 
+      # --- Scheduled matching (see README) ---
+      - key: CRON_SECRET
+        sync: false  # generate with: python -c "import secrets; print(secrets.token_hex(24))"
+                      # same value must also be set as a GitHub Actions secret
+
+      # --- Signup abuse protection (see README) ---
+      - key: TURNSTILE_SECRET_KEY
+        sync: false  # optional -- leave unset to disable CAPTCHA (rate
+                      # limiting is always on regardless). If set, the
+                      # frontend's NEXT_PUBLIC_TURNSTILE_SITE_KEY must
+                      # also be set or every signup will break.
+
       # --- Auto-submit (off by default -- see README before enabling) ---
       - key: AUTO_SUBMIT_ENABLED
         value: "false"

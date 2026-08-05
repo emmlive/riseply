@@ -165,6 +165,56 @@ Until `STRIPE_SECRET_KEY` is set at all, both the upgrade button and the
 tip button return a clear "not configured yet" response instead of
 failing silently.
 
+## Scheduled matching
+
+"Find new matches" on the Overview page is a manual click by default —
+there's no background job running inside the web process. Render's free
+tier spins down after ~15 min idle, so an in-process scheduler wouldn't
+reliably run anyway; the practical fix is an external trigger hitting a
+protected batch endpoint.
+
+**Setup (free, via GitHub Actions):**
+1. Generate a secret: `python -c "import secrets; print(secrets.token_hex(24))"`
+2. Set it as `CRON_SECRET` on Render.
+3. Add two repo secrets on GitHub (Settings → Secrets and variables →
+   Actions): `CRON_SECRET` (same value) and `BACKEND_URL` (your Render
+   backend URL, no trailing slash).
+4. That's it — `.github/workflows/daily-matching.yml` is already in this
+   repo and will run automatically at 13:00 UTC daily. Adjust the cron
+   schedule in that file to whatever time works for you, or trigger it
+   manually any time from the Actions tab ("Run workflow" button).
+
+The endpoint itself (`POST /internal/scheduled-run`) is disabled (503)
+until `CRON_SECRET` is set — there's no "unauthenticated batch job that
+processes every user" default. It runs discovery once, then matching for
+every user who has a resume and at least one active search profile,
+skipping everyone else without erroring.
+
+## Signup abuse protection
+
+Two independent layers, both optional and both degrade gracefully when
+unconfigured (signup works normally either way):
+
+**Rate limiting** — always on, no setup needed: 5 signups/hour, 15
+logins/hour, 5 password-reset requests/hour, 10 password-reset
+completions/hour, all keyed per IP address (reads `X-Forwarded-For`
+correctly behind Render's proxy, not just the raw connection IP, which
+would otherwise make every visitor look identical).
+
+**CAPTCHA (Cloudflare Turnstile)** — off by default, needs setup:
+1. Cloudflare dashboard → Turnstile → **Add site**, point it at your
+   domain.
+2. Copy the **Site Key** → set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on
+   Cloudflare Pages.
+3. Copy the **Secret Key** → set `TURNSTILE_SECRET_KEY` on Render.
+
+**Important**: these two need to be set together. If you set the
+backend secret without the frontend site key, every signup breaks — the
+backend will require a CAPTCHA token but the frontend never shows a
+widget to produce one. Setting only the frontend key is harmless (just
+an unused widget); the backend simply skips verification until its own
+key is set.
+
 ## Auto-submit
 
 Fills and (optionally) submits a job application via Playwright browser
@@ -265,18 +315,13 @@ truth for money is always Stripe.
 - **Discovery sources are a fixed list** (`backend/app/services/discovery_sources.py`)
   rather than admin-editable from the UI. Fine for a v1; a future
   improvement would be an admin panel for managing these.
-- **No scheduled/automatic matching yet** — "Find new matches" is a
-  manual button click, not a daily background job. Render's free tier
-  spins down after ~15 min idle, so a reliable in-process scheduler
-  isn't practical there; the right approach is a secret-protected batch
-  endpoint triggered externally on a schedule (a free GitHub Actions
-  cron, or a service like cron-job.org) rather than anything running
-  inside the web process itself.
 - **Auth is hand-rolled** (JWT + bcrypt) rather than a managed provider.
-  This was tested and works correctly, but for a real public launch with
-  real user data, consider migrating to Clerk, Auth.js, or Supabase Auth
-  — they handle things like email verification and abuse detection that
-  this MVP doesn't (password reset is built and tested, see below).
+  This was tested and works correctly, and now has rate limiting +
+  optional CAPTCHA against signup abuse (see above) plus a tested
+  password reset flow — but for a real public launch with real user
+  data, consider migrating to Clerk, Auth.js, or Supabase Auth anyway,
+  since they handle things this MVP still doesn't, like email
+  verification.
 - **No email verification yet** — anyone can sign up with an email they
   don't own; only password reset (which does verify via a real emailed
   link) is built.

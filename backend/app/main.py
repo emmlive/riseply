@@ -1,12 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.responses import JSONResponse
 import os
 
 from app.database import Base, engine
 from app.config import settings
 from app.migrate import run_migration
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin
+from app.rate_limit import limiter
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal
 
 # Adds any columns/tables that are new in the code but missing from the
 # live database, so every deploy self-heals instead of needing a manual
@@ -15,6 +19,18 @@ from app.routers import auth, me, profiles, pipeline, billing, interview, job_bu
 run_migration()
 
 app = FastAPI(title="Riseply API")
+
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests — please wait a bit and try again."},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +50,7 @@ app.include_router(job_buddy.router)
 app.include_router(rise_index.router)
 app.include_router(support.router)
 app.include_router(admin.router)
+app.include_router(internal.router)
 
 # Serve tailored resume .docx files for download
 os.makedirs("data/tailored_resumes", exist_ok=True)
