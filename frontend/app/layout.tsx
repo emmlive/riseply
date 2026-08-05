@@ -22,8 +22,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Riseply — job search, tailored per role",
-  description: "Find, tailor, and track job applications automatically.",
+  title: "Riseply — find, apply, and grow into the right role",
+  description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer — backed by live response-rate data from everyone using it. You approve every step.",
 };
 
 export default function RootLayout({
