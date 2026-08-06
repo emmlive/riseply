@@ -46,7 +46,7 @@ export default function HomePage() {
           <Link href="/signup" className="btn btn-primary">Get started</Link>
         </div>
         <p className="muted" style={{ marginTop: 28, fontSize: "0.8rem" }}>
-          <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link>
+          <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>
         </p>
       </div>
     </div>
