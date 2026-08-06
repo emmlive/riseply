@@ -78,6 +78,18 @@ services:
                       # frontend's NEXT_PUBLIC_TURNSTILE_SITE_KEY must
                       # also be set or every signup will break.
 
+      # --- OAuth sign-in (Google, Microsoft) -- see README ---
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: OAUTH_FRONTEND_BASE_URL
+        sync: false  # e.g. https://riseply.com
+
       # --- Auto-submit (off by default -- see README before enabling) ---
       - key: AUTO_SUBMIT_ENABLED
         value: "false"

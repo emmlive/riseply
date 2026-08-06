@@ -16,6 +16,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     token_version = Column(Integer, default=0, server_default="0")  # bumped on password reset to invalidate old JWTs
     is_admin = Column(Boolean, default=False, server_default="false")
+    oauth_provider = Column(String, nullable=True)  # "google" | "microsoft" | None (password-based account)
     full_name = Column(String, default="")
     phone = Column(String, default="")
     location = Column(String, default="")

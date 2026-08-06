@@ -215,6 +215,58 @@ widget to produce one. Setting only the frontend key is harmless (just
 an unused widget); the backend simply skips verification until its own
 key is set.
 
+## OAuth sign-in (Google, Microsoft)
+
+Off by default — the "Continue with Google/Microsoft" buttons on
+login/signup simply don't render until configured, same graceful-
+degradation pattern as CAPTCHA above.
+
+**Architecture**: the frontend redirects the browser directly to
+Google's/Microsoft's own authorization page (using the client ID,
+which isn't secret) with a random `state` value stored in
+`sessionStorage` first. When the provider redirects back to
+`/oauth-callback/{google,microsoft}` with a `code`, the frontend
+verifies the returned `state` matches what it stored *before* doing
+anything else — a mismatch means the request wasn't legitimately
+initiated by this browser, and the backend is never even called in
+that case (verified directly: sent a callback with a deliberately
+wrong state and confirmed zero backend calls happened). Only after
+that check passes does the frontend POST the `code` to the backend,
+which does the actual token exchange server-side using the client
+secret — the secret never reaches the browser, and the resulting JWT
+comes back in a JSON response body rather than sitting in a URL where
+it could end up in browser history or server logs.
+
+**Account linking**: signing in with an email that already has a
+password-based Riseply account logs into that same account rather than
+creating a duplicate (verified directly — created a password account,
+signed in via mocked Google OAuth with the same email, confirmed it
+resolved to the same user ID with exactly one row for that email).
+New accounts created via OAuth get a random, cryptographically
+unguessable password hash rather than a nullable password column —
+deliberately minimal-blast-radius: the existing password-login code
+path needed zero changes, and if someone wants password access later,
+the existing "forgot password" flow already handles setting a real one
+for any account regardless of how it was created.
+
+**Setup**:
+1. **Google**: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) →
+   create an OAuth 2.0 Client ID (Web application) → add
+   `https://riseply.com/oauth-callback/google` as an authorized redirect
+   URI → copy the Client ID and Client Secret.
+2. **Microsoft**: [Azure Portal](https://portal.azure.com) → App registrations →
+   New registration → add `https://riseply.com/oauth-callback/microsoft`
+   as a Web redirect URI → under "Certificates & secrets," create a
+   client secret → copy the Application (client) ID and the secret.
+3. Set `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` and/or
+   `MICROSOFT_OAUTH_CLIENT_ID` / `MICROSOFT_OAUTH_CLIENT_SECRET` on
+   Render, plus `OAUTH_FRONTEND_BASE_URL` (e.g. `https://riseply.com`).
+4. Set the matching `NEXT_PUBLIC_GOOGLE_CLIENT_ID` /
+   `NEXT_PUBLIC_MICROSOFT_CLIENT_ID` (client ID only, not the secret) on
+   Cloudflare Pages.
+
+Rate-limited the same way as signup/login (10 attempts/hour per IP).
+
 ## Auto-submit
 
 Fills and (optionally) submits a job application via Playwright browser

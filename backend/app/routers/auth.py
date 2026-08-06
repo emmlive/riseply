@@ -8,7 +8,7 @@ from app.database import get_db
 from app.config import settings
 from app.rate_limit import limiter, get_real_client_ip
 from app import models, schemas, security
-from app.services import notifier, captcha
+from app.services import notifier, captcha, oauth
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -56,6 +56,56 @@ def login(request: Request, payload: schemas.LoginRequest, db: Session = Depends
     if not user or not security.verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
+    token = security.create_access_token(user)
+    return schemas.TokenResponse(access_token=token)
+
+
+def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str) -> models.User:
+    """Links by email -- an OAuth sign-in with an email that already has
+    a password-based account signs them into that same account rather
+    than creating a duplicate. A brand-new account gets a random,
+    unguessable password hash (not a nullable password column) --
+    minimal-blast-radius choice that keeps the existing password-login
+    code path completely untouched; if they later want password access,
+    the existing 'forgot password' flow already handles setting a real
+    one for any account."""
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user:
+        return user
+
+    user = models.User(
+        email=email,
+        hashed_password=security.hash_password(secrets.token_urlsafe(32)),
+        full_name=name,
+        notify_email=email,
+        tos_accepted_at=datetime.utcnow(),
+        oauth_provider=provider,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    try:
+        notifier.notify_welcome(user.email, user.full_name)
+    except Exception:
+        pass
+    return user
+
+
+@router.post("/oauth/google/callback", response_model=schemas.TokenResponse)
+@limiter.limit("10/hour")
+def google_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
+    info = oauth.exchange_google_code(payload.code)
+    user = _find_or_create_oauth_user(db, info["email"], info["name"], "google")
+    token = security.create_access_token(user)
+    return schemas.TokenResponse(access_token=token)
+
+
+@router.post("/oauth/microsoft/callback", response_model=schemas.TokenResponse)
+@limiter.limit("10/hour")
+def microsoft_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
+    info = oauth.exchange_microsoft_code(payload.code)
+    user = _find_or_create_oauth_user(db, info["email"], info["name"], "microsoft")
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 

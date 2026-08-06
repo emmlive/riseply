@@ -27,6 +27,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class OAuthCallbackRequest(BaseModel):
+    code: str = Field(min_length=1)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

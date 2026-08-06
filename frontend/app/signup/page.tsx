@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
 import { api, setToken } from "@/lib/api";
+import OAuthButtons from "@/lib/OAuthButtons";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
@@ -69,6 +70,7 @@ export default function SignupPage() {
       )}
       <div className="auth-card">
         <h2>Create your account</h2>
+        <OAuthButtons />
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="name">Full name</label>

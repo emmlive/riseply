@@ -15,6 +15,21 @@ class Settings(BaseSettings):
     # signup works normally without it, just with no bot protection.
     turnstile_secret_key: str = ""
 
+    # --- OAuth sign-in (Google, Microsoft) ---
+    # Client secrets are backend-only, never sent to the frontend. The
+    # client IDs ARE also needed on the frontend (not secret, safe to
+    # expose) via NEXT_PUBLIC_GOOGLE_CLIENT_ID / NEXT_PUBLIC_MICROSOFT_CLIENT_ID
+    # -- keep those in sync with these if you change them.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    microsoft_oauth_client_id: str = ""
+    microsoft_oauth_client_secret: str = ""
+    # Frontend base URL, used to build the redirect_uri sent to Google/
+    # Microsoft during token exchange -- must exactly match what's
+    # registered in each provider's app console AND what the frontend
+    # actually redirected from.
+    oauth_frontend_base_url: str = "http://localhost:3000"
+
     anthropic_api_key: str = ""
 
     smtp_host: str = ""

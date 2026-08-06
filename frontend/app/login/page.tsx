@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, setToken } from "@/lib/api";
+import OAuthButtons from "@/lib/OAuthButtons";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function LoginPage() {
     <div className="auth-shell">
       <div className="auth-card">
         <h2>Log in</h2>
+        <OAuthButtons />
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="email">Email</label>
