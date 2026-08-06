@@ -249,6 +249,34 @@ class HandoffRequestCreate(BaseModel):
     note: str = Field(min_length=1, max_length=2000)
 
 
+# --- Knowledge base ---
+
+class KBArticleCreate(BaseModel):
+    category: str = Field(default="General", max_length=100)
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(min_length=1, max_length=20000)
+
+
+class KBArticleOut(BaseModel):
+    id: int
+    category: str
+    title: str
+    content: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KBAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+
+
+class KBAskResponse(BaseModel):
+    answer: str
+    sources: list[KBArticleOut]
+
+
 # --- Support ---
 
 class SupportContactRequest(BaseModel):

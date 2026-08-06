@@ -6,17 +6,27 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import JSONResponse
 import os
 
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal
 from app.config import settings
 from app.migrate import run_migration
+from app.kb_seed import seed_kb_if_empty
 from app.rate_limit import limiter
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb
 
 # Adds any columns/tables that are new in the code but missing from the
 # live database, so every deploy self-heals instead of needing a manual
 # migration step. See app/migrate.py for exactly what this can and can't
 # handle.
 run_migration()
+
+# One-time (idempotent) seed of real starter knowledge base content, so
+# the KB is genuinely useful immediately rather than empty until an
+# admin manually writes a dozen articles first.
+_seed_db = SessionLocal()
+try:
+    seed_kb_if_empty(_seed_db)
+finally:
+    _seed_db.close()
 
 app = FastAPI(title="Riseply API")
 
@@ -52,6 +62,7 @@ app.include_router(support.router)
 app.include_router(admin.router)
 app.include_router(internal.router)
 app.include_router(org_buddy.router)
+app.include_router(kb.router)
 
 # Serve tailored resume .docx files for download
 os.makedirs("data/tailored_resumes", exist_ok=True)

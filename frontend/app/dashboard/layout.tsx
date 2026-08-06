@@ -15,6 +15,7 @@ const NAV = [
   { href: "/dashboard/org-buddy", label: "Org Buddy" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/profile", label: "Profile" },
+  { href: "/dashboard/knowledge-base", label: "Knowledge Base" },
   { href: "/dashboard/support", label: "Support" },
 ];
 

@@ -171,6 +171,19 @@ export interface OrgContact {
   created_at: string;
 }
 
+export interface KBArticle {
+  id: number;
+  category: string;
+  title: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface KBAskResponse {
+  answer: string;
+  sources: KBArticle[];
+}
+
 export interface JobBuddyMessage {
   id: number;
   role: "user" | "assistant";

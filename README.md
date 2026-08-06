@@ -439,6 +439,34 @@ provider (Merge, Unified.to, Knit) rather than a direct Workday
 partnership — they abstract Workday *and* BambooHR, ADP, Rippling,
 etc. behind one integration effort. Not on the roadmap otherwise.
 
+## Knowledge Base
+
+A grounded Q&A assistant, deliberately conservative: the model is only
+ever allowed to answer from real, admin-curated articles retrieved for
+the specific question asked — never from general knowledge about how
+similar products typically work, since that could be confidently wrong
+about Riseply's actual pricing, privacy behavior, or feature details.
+
+**Retrieval** is simple keyword overlap (no embeddings/vector search —
+no new infrastructure dependency, good enough for a KB in the
+dozens-to-low-hundreds of articles range; worth upgrading to real
+semantic search if the article count grows large enough that keyword
+matching starts missing relevant content). One real gap this surfaced
+during testing: the product's own name ("Riseply") naturally appears in
+nearly every article, which made it act as a false-positive match
+trigger rather than a useful signal — fixed by excluding it from
+retrieval scoring, then re-verified the exact failing case.
+
+**The critical safety property**: when nothing relevant is found, the
+model is never called at all (verified directly — mocked the API call
+and asserted it was never invoked) rather than being asked to guess.
+
+Auto-seeded on first startup with 10 real starter articles across 6
+categories, written with direct knowledge of how each feature actually
+works rather than generic placeholder text — an admin can edit or add
+to these via the in-app management UI (`GET /kb/*` for
+browsing/asking, `POST/PUT/DELETE /kb/articles` admin-only).
+
 ## Known gaps / next steps
 
 - **No resource library / career content yet** (resume guides, interview

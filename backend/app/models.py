@@ -319,6 +319,24 @@ class HandoffRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class KnowledgeBaseArticle(Base):
+    """Riseply-wide help content (not org-specific -- see
+    OrganizationBuddyContent for that). Admin-curated, and the ONLY
+    source the KB assistant is allowed to answer from -- deliberately
+    never lets the model answer from general knowledge about how
+    similar products typically work, since that could be confidently
+    wrong about Riseply's actual pricing, privacy behavior, or feature
+    details."""
+    __tablename__ = "kb_articles"
+
+    id = Column(Integer, primary_key=True)
+    category = Column(String, default="General")
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+
+
 class FailureLog(Base):
     """Logged whenever a metered Claude API call fails (i.e. whenever
     usage.decrement() is called to refund a failed attempt). This is a
