@@ -230,6 +230,25 @@ class OrgBillingOut(BaseModel):
     overage_cost_usd: float
 
 
+class OrgContactCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: EmailStr
+    description: str = Field(default="", max_length=300)
+
+
+class OrgContactOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    description: str
+    created_at: datetime
+
+
+class HandoffRequestCreate(BaseModel):
+    contact_id: int
+    note: str = Field(min_length=1, max_length=2000)
+
+
 # --- Support ---
 
 class SupportContactRequest(BaseModel):

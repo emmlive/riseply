@@ -5,7 +5,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
-from app.services import usage, rise_index
+from app.services import usage, rise_index, notifier
 
 router = APIRouter(prefix="/applications", tags=["job-buddy"])
 
@@ -18,16 +18,29 @@ def _get_owned_application(db: Session, application_id: int, user_id: int) -> mo
 
 
 def _org_content_for(db: Session, app_row: models.Application) -> str:
-    """Concatenates an org's uploaded custom content for use in prompts.
-    Empty string if this application isn't linked to an org -- the
-    service functions treat that as 'no custom content' and fall back
-    to generic advice, same as before this feature existed."""
+    """Concatenates an org's uploaded custom content AND human contacts
+    for use in prompts. Empty string if this application isn't linked to
+    an org -- the service functions treat that as 'no custom content'
+    and fall back to generic advice, same as before this feature
+    existed."""
     if not app_row.organization_id:
         return ""
-    rows = db.query(models.OrganizationBuddyContent).filter_by(
+    content_rows = db.query(models.OrganizationBuddyContent).filter_by(
         organization_id=app_row.organization_id
     ).all()
-    return "\n\n".join(f"[{r.title}]\n{r.content}" for r in rows)
+    parts = [f"[{r.title}]\n{r.content}" for r in content_rows]
+
+    contacts = db.query(models.OrgHumanContact).filter_by(organization_id=app_row.organization_id).all()
+    if contacts:
+        contact_lines = "\n".join(f"- {c.name} ({c.email}): {c.description}" for c in contacts)
+        parts.append(
+            "[People at this company who can help with things you (the AI) can't do "
+            "directly, like an office tour or a face-to-face intro -- mention the right "
+            "one by name when it's relevant, and let the person know they can use the "
+            "\"Request a handoff\" option to actually connect]\n" + contact_lines
+        )
+
+    return "\n\n".join(parts)
 
 
 @router.post("/current-job", response_model=schemas.ApplicationOut)
@@ -222,3 +235,67 @@ def send_job_buddy_message(
     db.refresh(reply_msg)
     rise_index.award_points(db, user, "job_buddy_message", "Chatted with Job Buddy")
     return reply_msg
+
+
+# --- Handoff to a real human (things AI structurally can't do) ---
+
+@router.get("/{application_id}/handoff-contacts", response_model=list[schemas.OrgContactOut])
+def get_handoff_contacts(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        return []  # not an org-linked job -- no company contacts to hand off to
+    return db.query(models.OrgHumanContact).filter_by(organization_id=app_row.organization_id).all()
+
+
+@router.post("/{application_id}/handoff")
+def request_handoff(
+    application_id: int,
+    payload: schemas.HandoffRequestCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Sends the employee's own note (never their Job Buddy chat history)
+    to a real contact at their company. This is what keeps the handoff
+    consistent with the privacy model established for Org Buddy: the
+    employee decides exactly what leaves their private conversation, in
+    their own words -- nothing here is an AI-generated summary of what
+    they've been discussing."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        raise HTTPException(status_code=400, detail="This job isn't linked to an organization.")
+
+    contact = db.query(models.OrgHumanContact).filter_by(
+        id=payload.contact_id, organization_id=app_row.organization_id
+    ).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
+
+    job = app_row.job
+    try:
+        notifier.send_email(
+            contact.email,
+            f"[Riseply] {user.full_name or user.email} would like to connect",
+            (
+                f"{user.full_name or '(no name given)'} ({user.email}), "
+                f"{job.title} at {job.company}, would like to connect with you"
+                f"{f' — {contact.description}' if contact.description else ''}.\n\n"
+                f"Their note:\n{payload.note}"
+            ),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't send that right now — try again shortly.",
+        )
+
+    handoff = models.HandoffRequest(
+        application_id=application_id, organization_id=app_row.organization_id,
+        contact_id=contact.id, note=payload.note,
+    )
+    db.add(handoff)
+    db.commit()
+    return {"sent": True, "contact_name": contact.name}

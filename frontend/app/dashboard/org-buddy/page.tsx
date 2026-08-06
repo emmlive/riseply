@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling } from "@/lib/api";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -73,6 +73,12 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [stats, setStats] = useState<OrgUsageStats | null>(null);
   const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
+  const [contacts, setContacts] = useState<OrgContact[]>([]);
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactDesc, setContactDesc] = useState("");
+  const [addingContact, setAddingContact] = useState(false);
+  const [contactError, setContactError] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [adding, setAdding] = useState(false);
@@ -86,6 +92,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats);
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling);
+    api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
   }
 
   useEffect(() => { load(); }, [org.id]);
@@ -136,6 +143,28 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     } catch (err: any) {
       alert(err.message || "Couldn't start checkout.");
     }
+  }
+
+  async function addContact() {
+    setAddingContact(true);
+    setContactError("");
+    try {
+      await api(`/orgs/${org.id}/contacts`, {
+        method: "POST",
+        body: JSON.stringify({ name: contactName, email: contactEmail, description: contactDesc }),
+      });
+      setContactName(""); setContactEmail(""); setContactDesc("");
+      load();
+    } catch (err: any) {
+      setContactError(err.message || "Couldn't add that contact.");
+    } finally {
+      setAddingContact(false);
+    }
+  }
+
+  async function removeContactEntry(contactId: number) {
+    await api(`/orgs/${org.id}/contacts/${contactId}`, { method: "DELETE" });
+    load();
   }
 
   return (
@@ -241,6 +270,46 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             ))}
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Human contacts</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Real people at your company for things AI can't do directly — an office
+          tour, a face-to-face intro. Job Buddy will naturally mention them, and
+          employees can request an actual handoff (a real email gets sent, containing
+          only what the employee chooses to write — never their chat history).
+        </p>
+
+        {contacts.map((c) => (
+          <div key={c.id} className="points-event-row">
+            <div>
+              <div style={{ fontWeight: 600 }}>{c.name} — {c.email}</div>
+              <div className="hint">{c.description || "(no description)"}</div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => removeContactEntry(c.id)}>Remove</button>
+          </div>
+        ))}
+
+        <div style={{ marginTop: contacts.length > 0 ? 16 : 0 }}>
+          <div className="field">
+            <label>Name</label>
+            <input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="e.g. Sarah Chen" />
+          </div>
+          <div className="field">
+            <label>Email</label>
+            <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="sarah@acme.com" />
+          </div>
+          <div className="field">
+            <label>What they help with</label>
+            <input value={contactDesc} onChange={(e) => setContactDesc(e.target.value)} placeholder="e.g. Office tours & facilities" />
+          </div>
+          {contactError && <p className="error-text">{contactError}</p>}
+          <button className="btn btn-primary btn-sm" onClick={addContact}
+                  disabled={addingContact || !contactName.trim() || !contactEmail.trim()}>
+            {addingContact ? "Adding…" : "Add contact"}
+          </button>
+        </div>
       </div>
 
       <div className="card">

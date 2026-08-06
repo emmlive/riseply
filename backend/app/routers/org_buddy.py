@@ -26,6 +26,18 @@ def _require_admin(db: Session, organization_id: int, user_id: int) -> models.Or
     return member
 
 
+def _require_member(db: Session, organization_id: int, user_id: int) -> models.OrganizationMember:
+    """Admin OR employee -- used for things any org member should be able
+    to see, like the human contacts list (an employee needs to see who
+    they can request a handoff from)."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user_id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="You're not a member of this organization.")
+    return member
+
+
 @router.post("", response_model=schemas.OrganizationOut)
 def create_organization(
     payload: schemas.OrganizationCreate,
@@ -230,6 +242,54 @@ def list_roster(
         )
         for r in rows
     ]
+
+
+# --- Human contacts (for handoffs -- things AI structurally can't do) ---
+
+@router.post("/{organization_id}/contacts", response_model=schemas.OrgContactOut)
+def add_contact(
+    organization_id: int,
+    payload: schemas.OrgContactCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    contact = models.OrgHumanContact(
+        organization_id=organization_id, name=payload.name,
+        email=payload.email, description=payload.description,
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+@router.get("/{organization_id}/contacts", response_model=list[schemas.OrgContactOut])
+def list_contacts(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Any org member can see this -- an employee needs to know who's
+    available before they can request a handoff to them."""
+    _require_member(db, organization_id, user.id)
+    return db.query(models.OrgHumanContact).filter_by(organization_id=organization_id).all()
+
+
+@router.delete("/{organization_id}/contacts/{contact_id}")
+def delete_contact(
+    organization_id: int,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    contact = db.query(models.OrgHumanContact).filter_by(id=contact_id, organization_id=organization_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
+    db.delete(contact)
+    db.commit()
+    return {"deleted": True}
 
 
 # --- Billing: hybrid (base plan subscription + seat overage) ---

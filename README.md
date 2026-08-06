@@ -390,6 +390,22 @@ the roster's data wins). The roster view shows enrollment status
 status, not conversation content, so it doesn't cross the privacy line
 above.
 
+**Human handoff**: AI can't give someone an office tour or a
+face-to-face introduction — the traditional buddy program's real value
+is often precisely those in-person moments. An org admin maintains a
+list of real contacts (`POST /orgs/{id}/contacts` — name, email, what
+they help with), which feeds into the Job Buddy prompt so it can
+naturally mention the right person, and an employee can explicitly
+"Request a handoff" — pick a contact, write their own short note, and a
+real email goes out. Critically, this carries **only what the employee
+themselves wrote**, never their Job Buddy chat history — verified this
+directly by planting a deliberately sensitive private message in a
+test conversation beforehand and confirming it never appeared in the
+resulting email, only the employee's own explicitly-written note did.
+This is what keeps the handoff consistent with the privacy model above:
+the employee decides exactly what leaves their private conversation,
+nothing is auto-summarized or silently forwarded on their behalf.
+
 **Pricing — hybrid (base plan + seat overage)**: Starter ($199/mo, 10
 seats) and Growth ($599/mo, 50 seats) are real Stripe subscriptions,
 using the exact same Checkout pattern as the individual Pro plan (see
@@ -406,21 +422,22 @@ records) and wasn't something to build and claim working without a
 real Stripe account to verify it against end to end. For now, overage
 is visible, not hidden, but reconciling it is a manual step.
 
-**Not integrated with Workday or other HRIS platforms directly.**
-Researched this rather than assumed: Workday requires each customer's
-own IT admin to configure a per-tenant Integration System User (there's
-no generic OAuth "connect your account" flow Riseply could build once),
+**Deliberately not integrating with Workday or other HRIS platforms
+directly** — a considered decision, not an unfinished item. Researched
+this rather than assumed: Workday requires each customer's own IT
+admin to configure a per-tenant Integration System User (there's no
+generic OAuth "connect your account" flow Riseply could build once),
 software vendors typically need a formal Workday partnership just to
 authenticate at all, there are no native webhooks (polling only), and
-Workday ships breaking API changes twice a year. This is why CSV
-roster upload is what's built instead — it works today for Workday
-*and* every other HRIS, since CSV export is universal, without waiting
-on a partnership agreement or per-customer bespoke integration work
-that only makes sense to invest in once a real paying company asks for
-live sync specifically. If that demand shows up, the practical next
-step is a third-party unified HRIS API provider (Merge, Unified.to,
-Knit) rather than a direct Workday partnership — they abstract Workday
-*and* BambooHR, ADP, Rippling, etc. behind one integration effort.
+Workday ships breaking API changes twice a year. CSV roster upload is
+the deliberate substitute — it works today for Workday *and* every
+other HRIS, since CSV export is universal, without a partnership
+agreement or per-customer bespoke integration work that would only pay
+off once a specific paying company asks for live sync. If that demand
+ever shows up, the practical path is a third-party unified HRIS API
+provider (Merge, Unified.to, Knit) rather than a direct Workday
+partnership — they abstract Workday *and* BambooHR, ADP, Rippling,
+etc. behind one integration effort. Not on the roadmap otherwise.
 
 ## Known gaps / next steps
 

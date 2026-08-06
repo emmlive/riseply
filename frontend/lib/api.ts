@@ -163,6 +163,14 @@ export interface OrgBilling {
   overage_cost_usd: number;
 }
 
+export interface OrgContact {
+  id: number;
+  name: string;
+  email: string;
+  description: string;
+  created_at: string;
+}
+
 export interface JobBuddyMessage {
   id: number;
   role: "user" | "assistant";

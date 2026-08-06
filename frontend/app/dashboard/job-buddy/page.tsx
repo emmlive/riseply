@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage } from "@/lib/api";
+import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact } from "@/lib/api";
 
 export default function JobBuddyPage() {
   return (
@@ -149,10 +149,17 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
+  const [handoffContacts, setHandoffContacts] = useState<OrgContact[]>([]);
+  const [showHandoffForm, setShowHandoffForm] = useState(false);
+  const [handoffContactId, setHandoffContactId] = useState<number | null>(null);
+  const [handoffNote, setHandoffNote] = useState("");
+  const [handoffSending, setHandoffSending] = useState(false);
+  const [handoffSent, setHandoffSent] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api<Application>(`/applications/${applicationId}`).then(setApp);
+    api<OrgContact[]>(`/applications/${applicationId}/handoff-contacts`).then(setHandoffContacts).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
       .then((p) => {
@@ -203,6 +210,24 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     }
   }
 
+  async function sendHandoff() {
+    if (!handoffContactId || !handoffNote.trim()) return;
+    setHandoffSending(true);
+    try {
+      const result = await api<{ sent: boolean; contact_name: string }>(
+        `/applications/${applicationId}/handoff`,
+        { method: "POST", body: JSON.stringify({ contact_id: handoffContactId, note: handoffNote }) }
+      );
+      setHandoffSent(`Sent to ${result.contact_name}.`);
+      setHandoffNote("");
+      setShowHandoffForm(false);
+    } catch (err: any) {
+      alert(err.message || "Couldn't send that — try again.");
+    } finally {
+      setHandoffSending(false);
+    }
+  }
+
   if (plan === null) return <p className="muted">Loading…</p>;
 
   return (
@@ -236,6 +261,46 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
             </div>
             {showPlan && <div className="brief">{plan.plan}</div>}
           </div>
+
+          {handoffContacts.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Need an actual person?</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                For things Job Buddy can't do directly — a tour, a face-to-face intro —
+                you can request a real handoff. Only your own note gets sent, never this chat.
+              </p>
+              {handoffSent && <p style={{ color: "var(--accent)" }}>{handoffSent}</p>}
+              {!showHandoffForm ? (
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowHandoffForm(true)}>
+                  Request a handoff
+                </button>
+              ) : (
+                <>
+                  <div className="field">
+                    <label>Who</label>
+                    <select value={handoffContactId ?? ""} onChange={(e) => setHandoffContactId(Number(e.target.value))}>
+                      <option value="" disabled>Choose someone…</option>
+                      {handoffContacts.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} — {c.description}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Your note</label>
+                    <textarea rows={3} value={handoffNote} onChange={(e) => setHandoffNote(e.target.value)}
+                              placeholder="What would you like their help with?" />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={sendHandoff}
+                            disabled={handoffSending || !handoffContactId || !handoffNote.trim()}>
+                      {handoffSending ? "Sending…" : "Send"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowHandoffForm(false)}>Cancel</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="card">
             <h3>Chat with your Job Buddy</h3>

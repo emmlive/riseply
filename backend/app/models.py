@@ -286,6 +286,39 @@ class OrgRosterEntry(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class OrgHumanContact(Base):
+    """A real person at the company an employee can be handed off to for
+    things AI structurally can't do -- an office tour, a face-to-face
+    intro, physical equipment setup. Fed into the Job Buddy prompt so it
+    can naturally mention the right person, and selectable when an
+    employee explicitly requests a handoff."""
+    __tablename__ = "org_human_contacts"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    description = Column(String, default="")  # e.g. "Office tours & facilities"
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class HandoffRequest(Base):
+    """An employee-initiated request to connect with a real human contact.
+    Deliberately carries ONLY what the employee themselves wrote in
+    `note` -- never their Job Buddy chat history. This is what keeps the
+    handoff consistent with the privacy model: the employee controls
+    exactly what leaves their private conversation, nothing is
+    auto-summarized or silently forwarded on their behalf."""
+    __tablename__ = "handoff_requests"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    contact_id = Column(Integer, ForeignKey("org_human_contacts.id"), nullable=False)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class FailureLog(Base):
     """Logged whenever a metered Claude API call fails (i.e. whenever
     usage.decrement() is called to refund a failed attempt). This is a
