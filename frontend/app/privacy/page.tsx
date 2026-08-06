@@ -1,6 +1,11 @@
-"use client";
-
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy — Riseply",
+  description: "How Riseply collects, uses, and protects your data — job search info, resume content, and Job Buddy conversations.",
+  alternates: { canonical: "https://riseply.com/privacy" },
+};
 
 export default function PrivacyPage() {
   return (

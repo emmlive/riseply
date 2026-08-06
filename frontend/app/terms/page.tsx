@@ -1,6 +1,11 @@
-"use client";
-
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Terms of Service — Riseply",
+  description: "Riseply's Terms of Service — the rules for using our AI-powered job search and employee onboarding platform.",
+  alternates: { canonical: "https://riseply.com/terms" },
+};
 
 export default function TermsPage() {
   return (

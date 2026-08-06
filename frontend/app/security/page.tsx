@@ -1,6 +1,11 @@
-"use client";
-
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Security & Trust — Riseply",
+  description: "How Riseply secures your account and protects your privacy — bcrypt password hashing, private Job Buddy conversations, anonymized Rise Index data, and more, explained specifically.",
+  alternates: { canonical: "https://riseply.com/security" },
+};
 
 export default function SecurityPage() {
   return (

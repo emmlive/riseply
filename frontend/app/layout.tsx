@@ -22,8 +22,13 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Riseply — find, apply, and grow into the right role",
+  metadataBase: new URL("https://riseply.com"),
+  title: {
+    default: "Riseply — find, apply, and grow into the right role",
+    template: "%s",
+  },
   description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer — backed by live response-rate data from everyone using it. You approve every step.",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({

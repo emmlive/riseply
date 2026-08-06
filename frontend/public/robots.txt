@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard/
+Disallow: /reset-password
+Disallow: /forgot-password
+
+Sitemap: https://riseply.com/sitemap.xml

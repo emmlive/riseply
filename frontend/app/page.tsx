@@ -1,6 +1,23 @@
-"use client";
-
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Riseply — AI job search, resume tailoring, and employee onboarding",
+  description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer. Also powers Buddy as a Service — a company-customized AI onboarding buddy for new hires.",
+  alternates: { canonical: "https://riseply.com/" },
+  openGraph: {
+    title: "Riseply — AI job search & employee onboarding",
+    description: "Find roles that fit, tailor your resume per job, and get an AI onboarding buddy once you land it — with live response-rate data from everyone using it.",
+    url: "https://riseply.com/",
+    siteName: "Riseply",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Riseply — AI job search & employee onboarding",
+    description: "Find roles that fit, tailor your resume per job, and get an AI onboarding buddy once you land it.",
+  },
+};
 
 const FEATURES = [
   { label: "Find", desc: "Matches roles to your resume, scored by AI" },
@@ -9,9 +26,22 @@ const FEATURES = [
   { label: "Rise", desc: "Live response-rate data from everyone using it" },
 ];
 
+const ORG_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Riseply",
+  url: "https://riseply.com",
+  logo: "https://riseply.com/brand/icon.svg",
+  description: "AI-powered job search platform: job matching, resume tailoring, interview prep, and employee onboarding, including Buddy as a Service for companies.",
+};
+
 export default function HomePage() {
   return (
     <div className="auth-shell">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }}
+      />
       <div style={{ textAlign: "center", maxWidth: 560 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 4 }}>
           <img src="/brand/icon.svg" alt="" width={40} height={40} />
@@ -45,7 +75,10 @@ export default function HomePage() {
           <Link href="/login" className="btn btn-ghost">Log in</Link>
           <Link href="/signup" className="btn btn-primary">Get started</Link>
         </div>
-        <p className="muted" style={{ marginTop: 28, fontSize: "0.8rem" }}>
+        <p className="muted" style={{ marginTop: 20, fontSize: "0.85rem" }}>
+          Hiring? See <Link href="/buddy-as-a-service">Buddy as a Service</Link> for your team's onboarding.
+        </p>
+        <p className="muted" style={{ marginTop: 8, fontSize: "0.8rem" }}>
           <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>
         </p>
       </div>

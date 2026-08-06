@@ -467,6 +467,37 @@ works rather than generic placeholder text — an admin can edit or add
 to these via the in-app management UI (`GET /kb/*` for
 browsing/asking, `POST/PUT/DELETE /kb/articles` admin-only).
 
+## SEO
+
+Public pages (`/`, `/buddy-as-a-service`, `/security`, `/terms`,
+`/privacy`, `/login`, `/signup`) were converted from client to server
+components where they had no actual interactivity (home, security,
+terms, privacy — just static content and links), so each can export
+real per-page metadata directly. `/login` and `/signup` genuinely need
+`"use client"` for form state, so they keep their page.tsx as a client
+component and carry metadata via a sibling `layout.tsx` instead — the
+standard pattern for this in Next.js App Router. A real, measurable
+side effect: the converted pages' shipped JS dropped from ~1KB+ to
+187 bytes each, since they no longer hydrate any client-side React at
+all.
+
+**`/buddy-as-a-service`** is the centerpiece — a public marketing page
+for Org Buddy that didn't exist before (it previously only lived behind
+login in the dashboard, meaning nothing on the public site could ever
+rank for or explain that offering to a prospective company). Includes
+`Service`/`Offer` structured data for the two paid tiers and `FAQPage`
+structured data for the FAQ section, both verified by actually parsing
+the JSON-LD out of the built static HTML, not just checking it compiles.
+
+`public/robots.txt` and `public/sitemap.xml` are static files (this app
+ships as a static export, so no dynamic sitemap generation) — robots.txt
+disallows `/dashboard/*` and the two single-purpose auth transition
+pages (forgot/reset password) from being crawled, since none of that is
+meant for search discovery.
+
+Root layout adds `metadataBase` (needed for Open Graph URLs to resolve
+correctly) and Organization structured data on the homepage.
+
 ## Known gaps / next steps
 
 - **No resource library / career content yet** (resume guides, interview
