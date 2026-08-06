@@ -46,11 +46,17 @@ def add_current_job(
     custom content too. An invalid code is a clean 400, not a silent
     no-op, so a typo doesn't quietly lose the org context."""
     organization_id = None
+    company = payload.company
+    title = payload.title
+    tenure = payload.tenure
+
     if payload.org_join_code:
         org = db.query(models.Organization).filter_by(join_code=payload.org_join_code.upper()).first()
         if not org:
             raise HTTPException(status_code=400, detail="That organization join code isn't valid.")
         organization_id = org.id
+        company = org.name  # the org IS the company -- no need to re-type it
+
         already_member = db.query(models.OrganizationMember).filter_by(
             organization_id=org.id, user_id=user.id
         ).first()
@@ -58,10 +64,25 @@ def add_current_job(
             db.add(models.OrganizationMember(organization_id=org.id, user_id=user.id, role="employee"))
             db.commit()
 
+        # If the org admin pre-registered this person via CSV roster
+        # upload, use their real title/tenure instead of asking the
+        # employee to hand-type it again -- and mark the roster entry as
+        # matched, which is what makes it show up as "joined" in the
+        # admin's roster view.
+        roster_entry = db.query(models.OrgRosterEntry).filter_by(
+            organization_id=org.id, email=user.email
+        ).first()
+        if roster_entry:
+            if roster_entry.title:
+                title = roster_entry.title
+            tenure = roster_entry.tenure
+            roster_entry.matched_user_id = user.id
+            db.commit()
+
     import time
     job = models.Job(
         source="manual", external_id=f"manual-{user.id}-{int(time.time() * 1000)}",
-        company=payload.company, title=payload.title, location="",
+        company=company, title=title, location="",
         url="", description=payload.description,
     )
     db.add(job)
@@ -72,7 +93,7 @@ def add_current_job(
         user_id=user.id, job_id=job.id,
         matched_profile="", match_score=0,
         match_reason="Added manually — an existing job, not matched through Riseply.",
-        status="accepted", tenure_hint=payload.tenure, organization_id=organization_id,
+        status="accepted", tenure_hint=tenure, organization_id=organization_id,
     )
     db.add(application)
     db.commit()

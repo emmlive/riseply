@@ -128,34 +128,65 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event_type = event["type"] if isinstance(event, dict) else event.type
     data_object = event["data"]["object"] if isinstance(event, dict) else event.data.object
 
+    def _get(obj, key):
+        return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
     def _find_user_by_customer(customer_id: str):
         return db.query(models.User).filter_by(stripe_customer_id=customer_id).first()
 
+    def _find_org_by_customer(customer_id: str):
+        return db.query(models.Organization).filter_by(stripe_customer_id=customer_id).first()
+
+    customer_id = _get(data_object, "customer")
+
     if event_type == "checkout.session.completed":
-        customer_id = data_object.get("customer") if isinstance(data_object, dict) else data_object.customer
-        subscription_id = data_object.get("subscription") if isinstance(data_object, dict) else data_object.subscription
+        subscription_id = _get(data_object, "subscription")
+        metadata = _get(data_object, "metadata") or {}
+        org_id_from_metadata = metadata.get("organization_id") if isinstance(metadata, dict) else None
+
         user = _find_user_by_customer(customer_id)
-        if user and subscription_id:
+        if user and subscription_id and not org_id_from_metadata:
             user.stripe_subscription_id = subscription_id
             user.subscription_tier = "pro"
             user.subscription_status = "active"
             db.commit()
 
+        org = _find_org_by_customer(customer_id)
+        if org and subscription_id:
+            plan = metadata.get("plan", "starter") if isinstance(metadata, dict) else "starter"
+            org.stripe_subscription_id = subscription_id
+            org.plan = plan
+            org.subscription_status = "active"
+            org.included_seats = (
+                settings.org_plan_growth_seats if plan == "growth" else settings.org_plan_starter_seats
+            )
+            db.commit()
+
     elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
-        customer_id = data_object.get("customer") if isinstance(data_object, dict) else data_object.customer
-        status = data_object.get("status") if isinstance(data_object, dict) else data_object.status
+        status = _get(data_object, "status")
+
         user = _find_user_by_customer(customer_id)
         if user:
             user.subscription_status = status
             user.subscription_tier = "pro" if status == "active" else "free"
             db.commit()
 
+        org = _find_org_by_customer(customer_id)
+        if org:
+            org.subscription_status = status
+            db.commit()
+
     elif event_type == "customer.subscription.deleted":
-        customer_id = data_object.get("customer") if isinstance(data_object, dict) else data_object.customer
         user = _find_user_by_customer(customer_id)
         if user:
             user.subscription_tier = "free"
             user.subscription_status = "canceled"
+            db.commit()
+
+        org = _find_org_by_customer(customer_id)
+        if org:
+            org.subscription_status = "canceled"
+            org.included_seats = 0
             db.commit()
 
     return {"received": True}

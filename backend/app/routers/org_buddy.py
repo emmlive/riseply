@@ -1,9 +1,12 @@
+import csv
+import io
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
+from app.config import settings
 from app.security import get_current_user
 from app import models, schemas
 
@@ -140,4 +143,170 @@ def org_usage_stats(
         plans_generated=plans_generated,
         total_messages=total_messages,
         avg_messages_per_employee=avg,
+    )
+
+
+# --- CSV roster upload -- pre-register expected employees so they don't
+# have to hand-type their own title/tenure when they join ---
+
+MAX_ROSTER_UPLOAD_BYTES = 2 * 1024 * 1024  # 2MB is generous for a CSV roster
+
+
+@router.post("/{organization_id}/roster/upload", response_model=schemas.OrgRosterUploadResult)
+async def upload_roster(
+    organization_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Expects a CSV with headers: email, title, tenure (tenure optional,
+    defaults to just_started if blank/missing). Upserts by email -- a
+    re-upload with updated info replaces the existing entry rather than
+    duplicating it."""
+    _require_admin(db, organization_id, user.id)
+
+    contents = await file.read()
+    if len(contents) > MAX_ROSTER_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large — please keep it under 2MB.")
+
+    try:
+        text = contents.decode("utf-8-sig")  # handles Excel's BOM-prefixed UTF-8 exports
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Couldn't read that file as text — please upload a plain CSV.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames is None or "email" not in [f.strip().lower() for f in reader.fieldnames]:
+        raise HTTPException(status_code=400, detail="CSV must have an 'email' column (title and tenure optional).")
+
+    valid_tenures = {"just_started", "a_few_months", "well_established"}
+    added, updated, errors = 0, 0, []
+
+    for i, row in enumerate(reader, start=2):  # start=2: row 1 is the header
+        row = {k.strip().lower(): (v or "").strip() for k, v in row.items()}
+        email = row.get("email", "")
+        if not email or "@" not in email:
+            errors.append(f"Row {i}: missing or invalid email, skipped.")
+            continue
+
+        tenure = row.get("tenure", "") or "just_started"
+        if tenure not in valid_tenures:
+            errors.append(f"Row {i}: unrecognized tenure '{tenure}', defaulted to just_started.")
+            tenure = "just_started"
+
+        existing = db.query(models.OrgRosterEntry).filter_by(
+            organization_id=organization_id, email=email
+        ).first()
+        if existing:
+            existing.title = row.get("title", existing.title)
+            existing.tenure = tenure
+            updated += 1
+        else:
+            db.add(models.OrgRosterEntry(
+                organization_id=organization_id, email=email,
+                title=row.get("title", ""), tenure=tenure,
+            ))
+            added += 1
+
+    db.commit()
+    return schemas.OrgRosterUploadResult(added=added, updated=updated, errors=errors)
+
+
+@router.get("/{organization_id}/roster", response_model=list[schemas.OrgRosterEntryOut])
+def list_roster(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Enrollment status only (has this person joined yet) -- never
+    conversation content. Same distinction as the usage stats endpoint:
+    this is onboarding-coordination visibility, not a way to read
+    anyone's chat with their buddy."""
+    _require_admin(db, organization_id, user.id)
+    rows = db.query(models.OrgRosterEntry).filter_by(organization_id=organization_id).all()
+    return [
+        schemas.OrgRosterEntryOut(
+            id=r.id, email=r.email, title=r.title, tenure=r.tenure,
+            joined=r.matched_user_id is not None, created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+# --- Billing: hybrid (base plan subscription + seat overage) ---
+
+def _stripe():
+    if not settings.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Billing isn't configured yet.")
+    import stripe
+    stripe.api_key = settings.stripe_secret_key
+    return stripe
+
+
+
+
+
+
+@router.post("/{organization_id}/subscribe")
+def subscribe_org(
+    organization_id: int,
+    plan: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    if plan not in ("starter", "growth"):
+        raise HTTPException(status_code=400, detail="Plan must be 'starter' or 'growth' (contact us for Enterprise).")
+
+    org = _require_admin(db, organization_id, user.id)
+    org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    price_id = settings.stripe_price_id_org_starter if plan == "starter" else settings.stripe_price_id_org_growth
+    if not price_id:
+        raise HTTPException(status_code=503, detail=f"The {plan} plan isn't configured yet — its Stripe Price ID is unset.")
+
+    stripe = _stripe()
+    if not org_row.stripe_customer_id:
+        customer = stripe.Customer.create(name=org_row.name)
+        org_row.stripe_customer_id = customer.id
+        db.commit()
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        customer=org_row.stripe_customer_id,
+        line_items=[{"price": price_id, "quantity": 1}],
+        success_url=settings.stripe_success_url,
+        cancel_url=settings.stripe_cancel_url,
+        metadata={"organization_id": str(organization_id), "plan": plan},
+    )
+    return {"checkout_url": session.url}
+
+
+@router.get("/{organization_id}/billing", response_model=schemas.OrgBillingOut)
+def org_billing(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Overage is calculated and shown here, but NOT automatically
+    invoiced yet -- that needs Stripe metered/usage-based billing, which
+    is real additional infrastructure beyond this flat-subscription
+    pattern (see README). For now this is visibility, not automated
+    billing -- an org that's over their seat count sees it clearly, and
+    reconciling that today is a manual step, not a hidden one."""
+    _require_admin(db, organization_id, user.id)
+    org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    employees_joined = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, role="employee"
+    ).count()
+
+    overage_seats = max(0, employees_joined - org_row.included_seats)
+    overage_cost = round(overage_seats * settings.org_plan_overage_price_per_seat_usd, 2)
+
+    return schemas.OrgBillingOut(
+        plan=org_row.plan or "none",
+        subscription_status=org_row.subscription_status or "inactive",
+        included_seats=org_row.included_seats,
+        employees_joined=employees_joined,
+        overage_seats=overage_seats,
+        overage_cost_usd=overage_cost,
     )

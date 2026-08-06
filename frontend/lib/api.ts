@@ -145,6 +145,24 @@ export interface OrgUsageStats {
   avg_messages_per_employee: number;
 }
 
+export interface OrgRosterEntry {
+  id: number;
+  email: string;
+  title: string;
+  tenure: string;
+  joined: boolean;
+  created_at: string;
+}
+
+export interface OrgBilling {
+  plan: string;
+  subscription_status: string;
+  included_seats: number;
+  employees_joined: number;
+  overage_seats: number;
+  overage_cost_usd: number;
+}
+
 export interface JobBuddyMessage {
   id: number;
   role: "user" | "assistant";

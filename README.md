@@ -378,6 +378,50 @@ company, same self-serve pattern as the rest of Riseply. Worth adding
 verification (e.g. confirming a work email domain) before this is
 opened up to real companies at scale.
 
+**Roster upload**: an admin can upload a CSV (`email, title, tenure`
+columns) via `POST /orgs/{id}/roster/upload` to pre-register expected
+hires — exported from Workday or any HRIS, since this is a plain file
+upload with no live API dependency. When someone joins with the org's
+code and their email matches a roster entry, their real title/tenure
+from the roster is used instead of whatever they typed (verified this
+directly — deliberately submitted wrong data in a test and confirmed
+the roster's data wins). The roster view shows enrollment status
+("joined" / "not yet joined") per person — this is administrative
+status, not conversation content, so it doesn't cross the privacy line
+above.
+
+**Pricing — hybrid (base plan + seat overage)**: Starter ($199/mo, 10
+seats) and Growth ($599/mo, 50 seats) are real Stripe subscriptions,
+using the exact same Checkout pattern as the individual Pro plan (see
+`STRIPE_PRICE_ID_ORG_STARTER` / `_GROWTH` in `.env.example`). **Being
+precise about what's automated and what isn't**: the base subscription
+charge is fully automated via Stripe, verified through the same
+webhook mechanism as individual billing. The *overage* portion (cost
+for employees beyond the included seat count) is calculated and shown
+clearly on the admin dashboard, but is **not yet automatically
+invoiced** — that needs Stripe's metered/usage-based billing, which is
+materially more infrastructure than a flat subscription (recurring
+usage reporting, a different Price type, webhook handling for usage
+records) and wasn't something to build and claim working without a
+real Stripe account to verify it against end to end. For now, overage
+is visible, not hidden, but reconciling it is a manual step.
+
+**Not integrated with Workday or other HRIS platforms directly.**
+Researched this rather than assumed: Workday requires each customer's
+own IT admin to configure a per-tenant Integration System User (there's
+no generic OAuth "connect your account" flow Riseply could build once),
+software vendors typically need a formal Workday partnership just to
+authenticate at all, there are no native webhooks (polling only), and
+Workday ships breaking API changes twice a year. This is why CSV
+roster upload is what's built instead — it works today for Workday
+*and* every other HRIS, since CSV export is universal, without waiting
+on a partnership agreement or per-customer bespoke integration work
+that only makes sense to invest in once a real paying company asks for
+live sync specifically. If that demand shows up, the practical next
+step is a third-party unified HRIS API provider (Merge, Unified.to,
+Knit) rather than a direct Workday partnership — they abstract Workday
+*and* BambooHR, ADP, Rippling, etc. behind one integration effort.
+
 ## Known gaps / next steps
 
 - **No resource library / career content yet** (resume guides, interview

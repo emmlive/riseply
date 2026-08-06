@@ -48,7 +48,20 @@ class Settings(BaseSettings):
     # "unauthenticated batch job that processes every user" default.
     cron_secret: str = ""
 
-    # --- Auto-submit ---
+    # --- Org Buddy as a Service: hybrid pricing (base plan + overage) ---
+    # Real prices live in Stripe (like the individual Pro plan) -- these
+    # are display/reference values and the included-seat counts used to
+    # detect overage. Update to match whatever's actually configured in
+    # Stripe's dashboard.
+    org_plan_starter_price_usd: float = 199.0
+    org_plan_starter_seats: int = 10
+    org_plan_growth_price_usd: float = 599.0
+    org_plan_growth_seats: int = 50
+    org_plan_overage_price_per_seat_usd: float = 8.0
+    # Stripe Price IDs for each plan's base subscription -- set these once
+    # you've created the recurring Prices in Stripe's dashboard.
+    stripe_price_id_org_starter: str = ""
+    stripe_price_id_org_growth: str = ""
     # Global kill-switch. Defaults OFF -- must be explicitly enabled, and
     # even then only ever fires on an application the user has already
     # approved, and only against domains in the allowlist below.

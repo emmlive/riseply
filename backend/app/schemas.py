@@ -206,6 +206,30 @@ class OrgUsageStats(BaseModel):
     avg_messages_per_employee: float
 
 
+class OrgRosterUploadResult(BaseModel):
+    added: int
+    updated: int
+    errors: list[str]
+
+
+class OrgRosterEntryOut(BaseModel):
+    id: int
+    email: str
+    title: str
+    tenure: str
+    joined: bool
+    created_at: datetime
+
+
+class OrgBillingOut(BaseModel):
+    plan: str
+    subscription_status: str
+    included_seats: int
+    employees_joined: int
+    overage_seats: int
+    overage_cost_usd: float
+
+
 # --- Support ---
 
 class SupportContactRequest(BaseModel):

@@ -229,6 +229,13 @@ class Organization(Base):
     join_code = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
+    # --- Billing: hybrid (base plan + per-seat overage) ---
+    plan = Column(String, default="", server_default="")  # "" | starter | growth | enterprise
+    subscription_status = Column(String, default="", server_default="")
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    included_seats = Column(Integer, default=0, server_default="0")
+
 
 class OrganizationMember(Base):
     """Links a User to an Organization. 'admin' can upload custom content
@@ -255,6 +262,27 @@ class OrganizationBuddyContent(Base):
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     title = Column(String, default="")
     content = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OrgRosterEntry(Base):
+    """A pre-registered expected employee, uploaded by an org admin via
+    CSV, so a new hire doesn't have to hand-type their own title/tenure
+    when they join -- the org already told us. This is enrollment/roster
+    data (did this specific person join yet), NOT conversation content --
+    that distinction matters: an admin seeing 'Jane hasn't joined yet' is
+    normal onboarding-coordination visibility (like an LMS showing who's
+    completed a training module), fundamentally different from an admin
+    seeing what Jane said to her buddy, which stays private always."""
+    __tablename__ = "org_roster_entries"
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_org_roster_email"),)
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    email = Column(String, nullable=False)
+    title = Column(String, default="")
+    tenure = Column(String, default="just_started")
+    matched_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # set once they actually join
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

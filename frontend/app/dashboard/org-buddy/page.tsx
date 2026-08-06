@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -71,14 +71,21 @@ export default function OrgBuddyPage() {
 function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organization[]; onSwitch: (o: Organization) => void }) {
   const [content, setContent] = useState<OrgContent[]>([]);
   const [stats, setStats] = useState<OrgUsageStats | null>(null);
+  const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
+  const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [rosterUploading, setRosterUploading] = useState(false);
+  const [rosterResult, setRosterResult] = useState<{ added: number; updated: number; errors: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function load() {
     api<OrgContent[]>(`/orgs/${org.id}/content`).then(setContent);
     api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats);
+    api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
+    api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling);
   }
 
   useEffect(() => { load(); }, [org.id]);
@@ -100,6 +107,35 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   async function removeContent(contentId: number) {
     await api(`/orgs/${org.id}/content/${contentId}`, { method: "DELETE" });
     load();
+  }
+
+  async function uploadRoster(file: File) {
+    setRosterUploading(true);
+    setRosterResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await api<{ added: number; updated: number; errors: string[] }>(
+        `/orgs/${org.id}/roster/upload`, { method: "POST", body: formData }
+      );
+      setRosterResult(result);
+      load();
+    } catch (err: any) {
+      setRosterResult({ added: 0, updated: 0, errors: [err.message || "Upload failed."] });
+    } finally {
+      setRosterUploading(false);
+    }
+  }
+
+  async function subscribe(plan: "starter" | "growth") {
+    try {
+      const { checkout_url } = await api<{ checkout_url: string }>(
+        `/orgs/${org.id}/subscribe?plan=${plan}`, { method: "POST" }
+      );
+      window.location.href = checkout_url;
+    } catch (err: any) {
+      alert(err.message || "Couldn't start checkout.");
+    }
   }
 
   return (
@@ -133,6 +169,79 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Billing</h3>
+        {billing && (
+          <>
+            <p style={{ margin: 0 }}>
+              Plan: <strong>{billing.plan === "none" ? "No plan yet" : billing.plan}</strong>
+              {billing.plan !== "none" && <> — {billing.subscription_status}</>}
+            </p>
+            <p className="hint" style={{ marginTop: 4 }}>
+              {billing.employees_joined} employee{billing.employees_joined === 1 ? "" : "s"} joined,
+              {" "}{billing.included_seats} included in your plan.
+              {billing.overage_seats > 0 && (
+                <span style={{ color: "var(--danger)" }}>
+                  {" "}{billing.overage_seats} over your included seats (${billing.overage_cost_usd} — reconciled manually for now, not yet auto-billed).
+                </span>
+              )}
+            </p>
+            {billing.plan === "none" && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button className="btn btn-primary btn-sm" onClick={() => subscribe("starter")}>
+                  Starter — $199/mo (10 seats)
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => subscribe("growth")}>
+                  Growth — $599/mo (50 seats)
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Employee roster</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Upload a CSV (columns: email, title, tenure) to pre-register expected
+          hires — they won't need to hand-type their title when they join.
+          Export from Workday or any HRIS.
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRoster(f); e.target.value = ""; }}
+        />
+        <button className="btn btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()} disabled={rosterUploading}>
+          {rosterUploading ? "Uploading…" : "Upload roster CSV"}
+        </button>
+
+        {rosterResult && (
+          <p className="hint" style={{ marginTop: 8 }}>
+            Added {rosterResult.added}, updated {rosterResult.updated}.
+            {rosterResult.errors.length > 0 && ` ${rosterResult.errors.length} row(s) had issues: ${rosterResult.errors.join(" ")}`}
+          </p>
+        )}
+
+        {roster.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            {roster.map((r) => (
+              <div key={r.id} className="points-event-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>{r.email}</div>
+                  <div className="hint">{r.title || "(no title given)"}</div>
+                </div>
+                <span className={`pill ${r.joined ? "pill-approved" : "pill-default"}`}>
+                  {r.joined ? "Joined" : "Not yet joined"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Custom onboarding content</h3>
