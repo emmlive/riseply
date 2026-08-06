@@ -166,6 +166,13 @@ class JobBuddyChatRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class AddCurrentJobRequest(BaseModel):
+    company: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=200)
+    tenure: str = Field(pattern="^(just_started|a_few_months|well_established)$")
+    description: str = Field(default="", max_length=5000)
+
+
 # --- Support ---
 
 class SupportContactRequest(BaseModel):

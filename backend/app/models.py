@@ -97,6 +97,13 @@ class Application(Base):
     matched_profile = Column(String, default="")
     match_score = Column(Integer, default=0)
     match_reason = Column(Text, default="")
+    tenure_hint = Column(String, default="", server_default="")
+    # "" (came through normal matching) | "just_started" | "a_few_months" |
+    # "well_established" -- set when a user adds a job they already have,
+    # via the manual entry point rather than Riseply's own matching. Lets
+    # Job Buddy generate a genuinely different kind of plan (onboarding vs.
+    # ongoing growth/support) instead of giving a "your first 90 days"
+    # plan to someone who's been in the role for two years.
 
     status = Column(String, default="pending_approval", server_default="pending_approval")
     # pending_approval | approved | rejected | submitted | interviewing |

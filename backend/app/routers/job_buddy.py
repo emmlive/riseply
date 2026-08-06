@@ -17,6 +17,40 @@ def _get_owned_application(db: Session, application_id: int, user_id: int) -> mo
     return app_row
 
 
+@router.post("/current-job", response_model=schemas.ApplicationOut)
+def add_current_job(
+    payload: schemas.AddCurrentJobRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Lets a user unlock Job Buddy for a job they already have, without
+    going through Riseply's own discovery/matching pipeline at all --
+    someone who found their job elsewhere (or has had it for years)
+    shouldn't need a fake 'match' to get ongoing mentor support."""
+    import time
+    job = models.Job(
+        source="manual", external_id=f"manual-{user.id}-{int(time.time() * 1000)}",
+        company=payload.company, title=payload.title, location="",
+        url="", description=payload.description,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    application = models.Application(
+        user_id=user.id, job_id=job.id,
+        matched_profile="", match_score=0,
+        match_reason="Added manually — an existing job, not matched through Riseply.",
+        status="accepted", tenure_hint=payload.tenure,
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+
+    from app.routers.pipeline import _to_out
+    return _to_out(application, job)
+
+
 @router.post("/{application_id}/onboarding-plan", response_model=schemas.OnboardingPlanOut)
 def generate_onboarding_plan(
     application_id: int,
@@ -38,6 +72,7 @@ def generate_onboarding_plan(
         plan_text = job_buddy_service.generate_onboarding_plan(
             user.resume_text,
             {"title": job.title, "company": job.company, "description": job.description},
+            tenure=app_row.tenure_hint or "just_started",
         )
     except Exception:
         usage.decrement(db, user.id, "onboarding_plan", 1)
@@ -116,6 +151,7 @@ def send_job_buddy_message(
             plan.plan,
             history,
             payload.message,
+            tenure=app_row.tenure_hint or "just_started",
         )
     except Exception:
         usage.decrement(db, user.id, "job_buddy_message", 1)

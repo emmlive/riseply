@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, Application, OnboardingPlan, JobBuddyMessage } from "@/lib/api";
 
@@ -24,28 +24,97 @@ function JobBuddyContent() {
 }
 
 function JobBuddyPicker() {
+  const router = useRouter();
   const [apps, setApps] = useState<Application[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [company, setCompany] = useState("");
+  const [title, setTitle] = useState("");
+  const [tenure, setTenure] = useState<"just_started" | "a_few_months" | "well_established">("just_started");
+  const [description, setDescription] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
+  function load() {
     api<Application[]>("/applications?status=accepted").then((a) => {
       setApps(a);
       setLoaded(true);
     });
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function addCurrentJob() {
+    setAdding(true);
+    setError("");
+    try {
+      const app = await api<Application>("/applications/current-job", {
+        method: "POST",
+        body: JSON.stringify({ company, title, tenure, description }),
+      });
+      router.push(`/dashboard/job-buddy?applicationId=${app.id}`);
+    } catch (err: any) {
+      setError(err.message || "Couldn't add that job.");
+      setAdding(false);
+    }
+  }
 
   return (
     <div>
       <h1>Job Buddy</h1>
       <p className="muted">
-        Your onboarding mentor for a role you've accepted — a plan for your
-        first weeks, and someone to ask "how do I handle this" as you settle in.
+        Your ongoing work mentor — whether you just landed a role through
+        Riseply, or you already have a job and want support for what comes
+        next. A plan tailored to where you actually are, and someone to ask
+        "how do I handle this" as things come up.
       </p>
 
-      {loaded && apps.length === 0 && (
+      {!showAddForm ? (
+        <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>
+          + Add a job you already have
+        </button>
+      ) : (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Add your current job</h3>
+          <p className="hint" style={{ marginTop: -6 }}>
+            Doesn't need to have come through Riseply — this just unlocks Job Buddy for it.
+          </p>
+          <div className="field">
+            <label>Company</label>
+            <input value={company} onChange={(e) => setCompany(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Job title</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>How long have you been there?</label>
+            <select value={tenure} onChange={(e) => setTenure(e.target.value as typeof tenure)}>
+              <option value="just_started">Just started / about to start</option>
+              <option value="a_few_months">A few months in</option>
+              <option value="well_established">Well established</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>What do you do there? (optional, helps Job Buddy give better advice)</label>
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Brief description of your role and responsibilities…" />
+          </div>
+          {error && <p className="error-text">{error}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={addCurrentJob}
+                    disabled={adding || !company.trim() || !title.trim()}>
+              {adding ? "Adding…" : "Add & open Job Buddy"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowAddForm(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {loaded && apps.length === 0 && !showAddForm && (
         <div className="empty-state">
-          No accepted offers yet. Once you mark an application "Accepted" on
-          the Applications page, it'll show up here.
+          No accepted offers yet. Mark an application "Accepted" on the
+          Applications page, or add a job you already have above.
         </div>
       )}
 
@@ -103,7 +172,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       setPlan(p);
     } catch (err: any) {
       setPlan("none");
-      alert(err.message || "Couldn't generate your onboarding plan.");
+      alert(err.message || "Couldn't generate your plan.");
     }
   }
 
@@ -112,7 +181,6 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     const text = input;
     setInput("");
     setSending(true);
-    // Optimistically show the user's message
     setMessages((m) => [...m, { id: -1, role: "user", content: text, created_at: new Date().toISOString() }]);
     try {
       await api(`/applications/${applicationId}/job-buddy/messages`, {
@@ -122,7 +190,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       await loadMessages();
     } catch (err: any) {
       alert(err.message || "Job Buddy couldn't respond — try again.");
-      await loadMessages(); // resync in case the user message was saved despite the error
+      await loadMessages();
     } finally {
       setSending(false);
     }
@@ -137,16 +205,16 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
           <h1>Job Buddy</h1>
           {app && <p className="muted" style={{ marginTop: -12 }}>{app.job_title} — {app.job_company}</p>}
         </div>
-        <Link href="/dashboard/applications" className="btn btn-ghost btn-sm">← Applications</Link>
+        <Link href="/dashboard/job-buddy" className="btn btn-ghost btn-sm">← Job Buddy</Link>
       </div>
 
-      {plan === "loading" && <p className="muted">Generating your onboarding plan…</p>}
+      {plan === "loading" && <p className="muted">Generating your plan…</p>}
 
       {plan === "none" && (
         <div className="card">
-          <h3>No onboarding plan yet</h3>
+          <h3>No plan yet</h3>
           <p className="muted">Generate one first — Job Buddy uses it as context for the chat.</p>
-          <button className="btn btn-primary btn-sm" onClick={generatePlan}>Generate onboarding plan</button>
+          <button className="btn btn-primary btn-sm" onClick={generatePlan}>Generate my plan</button>
         </div>
       )}
 
@@ -154,7 +222,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
         <>
           <div className="card">
             <div className="card-row">
-              <h3 style={{ margin: 0 }}>Your onboarding plan</h3>
+              <h3 style={{ margin: 0 }}>Your plan</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowPlan((s) => !s)}>
                 {showPlan ? "Hide" : "Show"}
               </button>
@@ -165,7 +233,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
           <div className="card">
             <h3>Chat with your Job Buddy</h3>
             <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
-              General career guidance only — not legal, medical, tax, or
+              General career and day-to-day work guidance only — not legal, medical, tax, or
               immigration advice. For harassment, discrimination, safety, or
               other serious workplace issues, please contact HR, an
               employment lawyer, or the relevant authority directly.
@@ -173,9 +241,9 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
             <div className="chat-window" ref={scrollRef}>
               {messages.length === 0 && (
                 <p className="muted">
-                  Ask anything about settling in — how to approach your first
-                  week, handling a tricky conversation, prioritizing your
-                  early projects, whatever's on your mind.
+                  Ask anything about this role — settling in, a tricky
+                  conversation, prioritizing your work, asking for more
+                  scope or a raise, whatever's on your mind.
                 </p>
               )}
               {messages.map((m) => (

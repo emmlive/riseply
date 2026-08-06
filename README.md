@@ -321,13 +321,33 @@ Revenue and cost numbers are estimates (`PRO_PRICE_USD_DISPLAY` for
 MRR, rough per-call token estimates for API cost) — real source of
 truth for money is always Stripe.
 
+## Job Buddy
+
+Not limited to onboarding-after-a-Riseply-match anymore. A user with an
+existing job (found through Riseply or not) can add it directly via
+"+ Add a job you already have" on the Job Buddy page — `POST
+/applications/current-job` creates a `Job` + `Application` straight at
+`status='accepted'`, skipping discovery/matching/approval entirely.
+
+The user selects how long they've been in the role (`tenure_hint` on
+the `Application`: `just_started` / `a_few_months` / `well_established`),
+which changes what kind of plan gets generated — a genuine content
+difference, not just a label:
+- `just_started`: first-week checklist + 30/60/90-day plan (the
+  original onboarding framing)
+- `a_few_months`: where you likely stand + next-90-days goals + common
+  stall points at this stage
+- `well_established`: where growth typically comes from + next-level
+  goals + traps established people fall into
+
+The chat itself is scoped the same way regardless of entry point —
+same safety guardrails (redirect legal/medical/harassment/safety
+issues to real professionals), broadened from "onboarding topics only"
+to ongoing day-to-day work questions for that specific role: a tricky
+conversation, asking for more scope or a raise, prioritization, etc.
+
 ## Known gaps / next steps
 
-- **Job Buddy currently requires going through Riseply's own matching
-  pipeline to reach 'accepted' status.** Someone who already has a job
-  and just wants the onboarding mentor has no way in yet — needs a
-  manual "add a job I already have" entry point that skips discovery/
-  matching and creates an application straight at 'accepted'.
 - **No resource library / career content yet** (resume guides, interview
   skill articles, negotiation tips) — flagged as a growth/content lever,
   not yet built.
