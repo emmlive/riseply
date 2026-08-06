@@ -346,6 +346,38 @@ issues to real professionals), broadened from "onboarding topics only"
 to ongoing day-to-day work questions for that specific role: a tricky
 conversation, asking for more scope or a raise, prioritization, etc.
 
+## Org Buddy as a Service
+
+A separate offering built on the same underlying Job Buddy capability:
+lets a company digitize the traditional "assign a buddy to new hires"
+practice, grounded in their own real materials instead of generic
+advice.
+
+**Trust model, deliberate and non-negotiable**: employee conversation
+*content* is never visible to the org admin — only aggregate usage
+(`GET /orgs/{id}/usage`: employees joined, plans generated, total/avg
+messages). This mirrors how a real human workplace buddy works — they
+don't report private conversations back to HR either — and reuses the
+same anonymity principle already established by the Rise Index
+elsewhere in this app. The response schema for usage stats is
+structurally numeric-only; there's no code path that could leak
+message content even by accident.
+
+**How it works**: a company admin creates an org (`POST /orgs`), gets a
+join code, and uploads custom onboarding material (`POST
+/orgs/{id}/content` — handbook excerpts, culture notes, team/tool
+info). An employee adding their current job via the existing "current
+job" flow can optionally enter that join code; their
+`Application.organization_id` gets set, and every plan/chat generated
+for them folds in the org's uploaded content alongside their resume
+and role info — verified directly that this content actually reaches
+the Claude prompt, not just that the plumbing compiles.
+
+No approval flow for org creation — any user can spin one up for their
+company, same self-serve pattern as the rest of Riseply. Worth adding
+verification (e.g. confirming a work email domain) before this is
+opened up to real companies at scale.
+
 ## Known gaps / next steps
 
 - **No resource library / career content yet** (resume guides, interview

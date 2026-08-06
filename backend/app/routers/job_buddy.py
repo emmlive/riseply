@@ -17,6 +17,19 @@ def _get_owned_application(db: Session, application_id: int, user_id: int) -> mo
     return app_row
 
 
+def _org_content_for(db: Session, app_row: models.Application) -> str:
+    """Concatenates an org's uploaded custom content for use in prompts.
+    Empty string if this application isn't linked to an org -- the
+    service functions treat that as 'no custom content' and fall back
+    to generic advice, same as before this feature existed."""
+    if not app_row.organization_id:
+        return ""
+    rows = db.query(models.OrganizationBuddyContent).filter_by(
+        organization_id=app_row.organization_id
+    ).all()
+    return "\n\n".join(f"[{r.title}]\n{r.content}" for r in rows)
+
+
 @router.post("/current-job", response_model=schemas.ApplicationOut)
 def add_current_job(
     payload: schemas.AddCurrentJobRequest,
@@ -26,7 +39,25 @@ def add_current_job(
     """Lets a user unlock Job Buddy for a job they already have, without
     going through Riseply's own discovery/matching pipeline at all --
     someone who found their job elsewhere (or has had it for years)
-    shouldn't need a fake 'match' to get ongoing mentor support."""
+    shouldn't need a fake 'match' to get ongoing mentor support.
+
+    An optional org_join_code links this to a company's "Org Buddy as a
+    Service" account -- the plan/chat then draws on that org's uploaded
+    custom content too. An invalid code is a clean 400, not a silent
+    no-op, so a typo doesn't quietly lose the org context."""
+    organization_id = None
+    if payload.org_join_code:
+        org = db.query(models.Organization).filter_by(join_code=payload.org_join_code.upper()).first()
+        if not org:
+            raise HTTPException(status_code=400, detail="That organization join code isn't valid.")
+        organization_id = org.id
+        already_member = db.query(models.OrganizationMember).filter_by(
+            organization_id=org.id, user_id=user.id
+        ).first()
+        if not already_member:
+            db.add(models.OrganizationMember(organization_id=org.id, user_id=user.id, role="employee"))
+            db.commit()
+
     import time
     job = models.Job(
         source="manual", external_id=f"manual-{user.id}-{int(time.time() * 1000)}",
@@ -41,7 +72,7 @@ def add_current_job(
         user_id=user.id, job_id=job.id,
         matched_profile="", match_score=0,
         match_reason="Added manually — an existing job, not matched through Riseply.",
-        status="accepted", tenure_hint=payload.tenure,
+        status="accepted", tenure_hint=payload.tenure, organization_id=organization_id,
     )
     db.add(application)
     db.commit()
@@ -73,6 +104,7 @@ def generate_onboarding_plan(
             user.resume_text,
             {"title": job.title, "company": job.company, "description": job.description},
             tenure=app_row.tenure_hint or "just_started",
+            org_content=_org_content_for(db, app_row),
         )
     except Exception:
         usage.decrement(db, user.id, "onboarding_plan", 1)
@@ -152,6 +184,7 @@ def send_job_buddy_message(
             history,
             payload.message,
             tenure=app_row.tenure_hint or "just_started",
+            org_content=_org_content_for(db, app_row),
         )
     except Exception:
         usage.decrement(db, user.id, "job_buddy_message", 1)

@@ -104,6 +104,11 @@ class Application(Base):
     # Job Buddy generate a genuinely different kind of plan (onboarding vs.
     # ongoing growth/support) instead of giving a "your first 90 days"
     # plan to someone who's been in the role for two years.
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    # Set when this application was created via an org's join code --
+    # its onboarding plan/chat draws on that org's uploaded custom
+    # content (handbook, culture, department info) in addition to the
+    # normal resume + job info.
 
     status = Column(String, default="pending_approval", server_default="pending_approval")
     # pending_approval | approved | rejected | submitted | interviewing |
@@ -210,6 +215,46 @@ class SupportMessage(Base):
     admin_reply = Column(Text, nullable=True)
     replied_at = Column(DateTime, nullable=True)
 
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class Organization(Base):
+    """A company using 'Org Buddy as a Service' -- their own customized
+    version of the traditional workplace onboarding-buddy practice,
+    grounded in real company materials rather than generic advice."""
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    join_code = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OrganizationMember(Base):
+    """Links a User to an Organization. 'admin' can upload custom content
+    and see aggregate usage; 'employee' just uses their join code once to
+    associate their own onboarding Application with the org."""
+    __tablename__ = "organization_members"
+    __table_args__ = (UniqueConstraint("organization_id", "user_id", name="uq_org_user"),)
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, default="employee", server_default="employee")  # admin | employee
+    joined_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OrganizationBuddyContent(Base):
+    """Custom onboarding material an org admin has uploaded -- handbook
+    excerpts, culture doc, department-specific info. Folded into the plan
+    generation and chat prompts for that org's employees, so advice is
+    grounded in the real company rather than generic assumptions."""
+    __tablename__ = "organization_buddy_content"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    title = Column(String, default="")
+    content = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

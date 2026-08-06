@@ -12,6 +12,7 @@ const NAV = [
   { href: "/dashboard/resume", label: "Resume" },
   { href: "/dashboard/applications", label: "Applications" },
   { href: "/dashboard/job-buddy", label: "Job Buddy" },
+  { href: "/dashboard/org-buddy", label: "Org Buddy" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/profile", label: "Profile" },
   { href: "/dashboard/support", label: "Support" },

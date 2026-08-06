@@ -124,6 +124,27 @@ export interface OnboardingPlan {
   created_at: string;
 }
 
+export interface Organization {
+  id: number;
+  name: string;
+  join_code: string;
+  created_at: string;
+}
+
+export interface OrgContent {
+  id: number;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
+export interface OrgUsageStats {
+  employees_joined: number;
+  plans_generated: number;
+  total_messages: number;
+  avg_messages_per_employee: number;
+}
+
 export interface JobBuddyMessage {
   id: number;
   role: "user" | "assistant";

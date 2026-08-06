@@ -171,6 +171,39 @@ class AddCurrentJobRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     tenure: str = Field(pattern="^(just_started|a_few_months|well_established)$")
     description: str = Field(default="", max_length=5000)
+    org_join_code: str = Field(default="", max_length=40)
+
+
+# --- Org Buddy as a Service ---
+
+class OrganizationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    join_code: str
+    created_at: datetime
+
+
+class OrgContentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=20000)
+
+
+class OrgContentOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    created_at: datetime
+
+
+class OrgUsageStats(BaseModel):
+    employees_joined: int
+    plans_generated: int
+    total_messages: int
+    avg_messages_per_employee: float
 
 
 # --- Support ---

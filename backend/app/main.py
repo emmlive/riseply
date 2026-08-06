@@ -10,7 +10,7 @@ from app.database import Base, engine
 from app.config import settings
 from app.migrate import run_migration
 from app.rate_limit import limiter
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy
 
 # Adds any columns/tables that are new in the code but missing from the
 # live database, so every deploy self-heals instead of needing a manual
@@ -51,6 +51,7 @@ app.include_router(rise_index.router)
 app.include_router(support.router)
 app.include_router(admin.router)
 app.include_router(internal.router)
+app.include_router(org_buddy.router)
 
 # Serve tailored resume .docx files for download
 os.makedirs("data/tailored_resumes", exist_ok=True)

@@ -32,6 +32,7 @@ function JobBuddyPicker() {
   const [title, setTitle] = useState("");
   const [tenure, setTenure] = useState<"just_started" | "a_few_months" | "well_established">("just_started");
   const [description, setDescription] = useState("");
+  const [orgJoinCode, setOrgJoinCode] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
 
@@ -50,7 +51,7 @@ function JobBuddyPicker() {
     try {
       const app = await api<Application>("/applications/current-job", {
         method: "POST",
-        body: JSON.stringify({ company, title, tenure, description }),
+        body: JSON.stringify({ company, title, tenure, description, org_join_code: orgJoinCode }),
       });
       router.push(`/dashboard/job-buddy?applicationId=${app.id}`);
     } catch (err: any) {
@@ -99,6 +100,12 @@ function JobBuddyPicker() {
             <label>What do you do there? (optional, helps Job Buddy give better advice)</label>
             <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
                       placeholder="Brief description of your role and responsibilities…" />
+          </div>
+          <div className="field">
+            <label>Organization join code (optional)</label>
+            <input value={orgJoinCode} onChange={(e) => setOrgJoinCode(e.target.value)}
+                   placeholder="If your employer set up Org Buddy, enter it here" />
+            <p className="hint">Links your plan to your company's own onboarding materials, if they've set this up.</p>
           </div>
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: "flex", gap: 8 }}>
