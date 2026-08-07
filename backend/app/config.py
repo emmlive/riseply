@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Riseply"
     support_email: str = ""  # where "Contact support" messages get sent -- defaults to smtp_user if blank
 
+    # --- SMS (Twilio) ---
+    # Empty by default, same kill-switch pattern as SMTP above -- until
+    # all three are set, sms.send_sms() prints and skips instead of
+    # sending, exactly like send_email() does when SMTP is unset. Get
+    # these from the Twilio console after setting up an account and a
+    # phone number capable of sending SMS (needs A2P 10DLC registration
+    # for US numbers before messages reliably deliver at any volume).
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_id_pro: str = ""  # a recurring monthly Price ID from your Stripe dashboard

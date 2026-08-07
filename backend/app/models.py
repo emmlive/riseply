@@ -30,6 +30,37 @@ class User(Base):
     resume_text = Column(Text, default="")
 
     notify_email = Column(String, default="")  # defaults to account email if blank
+    # "off" | "every_match" | "daily_digest" -- controls the new-match
+    # email notifier.notify_new_match() sends. Applies regardless of
+    # what triggered the match (manual "Find new matches" click or the
+    # scheduled daily run) -- same preference, same behavior either way,
+    # rather than a confusing split where manual clicks always notify
+    # but the scheduled run respects the setting.
+    notification_preference = Column(String, default="every_match", server_default="every_match")
+    # "email" | "sms" | "both" -- which channel(s) notification_preference
+    # actually gets delivered through. Kept as a separate field rather
+    # than folding into notification_preference's off/every_match/
+    # daily_digest values, since frequency and channel are independent
+    # choices -- combining them would mean 6+ enum values instead of 2
+    # orthogonal ones.
+    notification_channel = Column(String, default="email", server_default="email")
+    # Explicit TCPA opt-in -- required before notification_channel can
+    # include "sms" at all (enforced in routers/me.py, not just assumed
+    # true because a phone number happens to be on file). Separate from
+    # every other "I agree to..." checkbox in this app since SMS
+    # consent specifically has to be its own affirmative action, not
+    # bundled into ToS/Privacy/Subscription agreement.
+    sms_consent = Column(Boolean, default=False, server_default="false")
+    sms_consent_at = Column(DateTime, nullable=True)
+    # Only matches scoring at or above this get emailed at all, on top
+    # of whatever notification_preference says. 0 = no floor.
+    notification_min_score = Column(Integer, default=0, server_default="0")
+    # Last time this user's daily digest was actually sent -- lets the
+    # digest job query "what's new since last time" per user instead of
+    # a fixed 24h window, so it stays correct regardless of when in the
+    # day matches actually landed (manual clicks happen at arbitrary
+    # times, not just during the scheduled run).
+    last_digest_sent_at = Column(DateTime, nullable=True)
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
 
     tos_accepted_at = Column(DateTime, nullable=True)

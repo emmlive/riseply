@@ -49,6 +49,10 @@ class UserOut(BaseModel):
     portfolio_url: str
     notify_email: str
     auto_submit: bool
+    notification_preference: str = "every_match"
+    notification_min_score: int = 0
+    notification_channel: str = "email"
+    sms_consent: bool = False
     resume_text: str
     subscription_tier: str
     subscription_status: str
@@ -67,6 +71,10 @@ class UserUpdate(BaseModel):
     portfolio_url: Optional[str] = None
     notify_email: Optional[str] = None
     auto_submit: Optional[bool] = None
+    notification_preference: Optional[str] = None
+    notification_min_score: Optional[int] = Field(default=None, ge=0, le=100)
+    notification_channel: Optional[str] = None
+    sms_consent: Optional[bool] = None
 
 
 class ResumeUpdate(BaseModel):

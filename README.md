@@ -190,6 +190,50 @@ processes every user" default. It runs discovery once, then matching for
 every user who has a resume and at least one active search profile,
 skipping everyone else without erroring.
 
+Right after matching, the same workflow calls `POST
+/internal/send-digests` — same `CRON_SECRET`, nothing extra to set up.
+This sends the once-a-day summary email to anyone who's set their
+notification preference (Profile page) to "daily digest" instead of
+"email me for every match". It's tracked per-user via
+`last_digest_sent_at`, so it stays correct regardless of when in the
+day a match actually landed — a manual "Find new matches" click at 2pm
+still gets swept into that day's digest, not lost or double-counted the
+next day.
+
+## SMS notifications (optional, off by default)
+
+Same notification system as above, with a second delivery channel.
+A person picks Email / SMS / Both on their Profile page — SMS requires
+explicitly checking a consent box first (required by US law — TCPA —
+before sending anyone marketing/notification texts), and a phone
+number on file.
+
+**This is disabled until you configure it.** Until all three settings
+below are set, `services/sms.py` prints and skips instead of sending —
+same kill-switch pattern as SMTP.
+
+**Setup:**
+1. Create a [Twilio](https://www.twilio.com) account and a phone number
+   capable of sending SMS.
+2. **US numbers need A2P 10DLC registration** before messages reliably
+   deliver at any real volume — unregistered business SMS gets
+   filtered or blocked by carriers. Do this in the Twilio console
+   before relying on this in production; it can take a few days.
+3. Set three environment variables on Render: `TWILIO_ACCOUNT_SID`,
+   `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (find the first two on
+   your Twilio console dashboard, the third is the number you
+   provisioned).
+4. That's it — no new GitHub Actions secrets needed. SMS sends through
+   the same code paths as email (immediate per-match, or the daily
+   digest), just an additional `services/sms.py` call alongside
+   `services/notifier.py`.
+
+**What this doesn't do:** handle inbound STOP/START keyword replies
+itself — Twilio handles standard opt-out keywords automatically at the
+platform level for most number types, so no webhook code was needed
+for that here. Doesn't validate phone number format beyond checking
+it's non-empty; a malformed number will fail at Twilio's API instead.
+
 ## Culture Bot lessons
 
 Org onboarding lessons (spaced-repetition micro-lessons an org admin

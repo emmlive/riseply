@@ -6,7 +6,7 @@ EXACT same code path. Two implementations of this would drift apart the
 first time either one got a bugfix.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import not_
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -14,7 +14,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 
@@ -204,15 +204,34 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             db.commit()
 
         notify_addr = user.notify_email or user.email
-        try:
-            notifier.notify_new_match(
-                notify_addr,
-                {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
-                 "match_reason": best["reason"]},
-                application.id, resume_path, resume_bytes,
-            )
-        except Exception:
-            pass
+        preference = user.notification_preference or "every_match"
+        channel = user.notification_channel or "email"
+        clears_threshold = best["score"] >= (user.notification_min_score or 0)
+        # "off" -> never notify. "daily_digest" -> never notify HERE; the
+        # digest job (send_daily_digests, run once a day) picks up every
+        # Application created since the user's last digest, so this
+        # match still gets surfaced, just batched instead of immediate.
+        # Applies the same way regardless of whether this run came from
+        # a manual click or the scheduled job -- one preference, one
+        # behavior, not a confusing split by trigger source.
+        if preference == "every_match" and clears_threshold:
+            job_notify = {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
+                          "match_reason": best["reason"]}
+            if channel in ("email", "both"):
+                try:
+                    notifier.notify_new_match(notify_addr, job_notify, application.id, resume_path, resume_bytes)
+                except Exception:
+                    pass
+            # sms_consent is enforced at the point channel gets set
+            # (routers/me.py) -- checked again here as defense in depth,
+            # not because it should ever be false while channel includes
+            # sms, but a stale/directly-edited row shouldn't be able to
+            # bypass consent just because this check was skipped.
+            if channel in ("sms", "both") and user.sms_consent:
+                try:
+                    sms.notify_new_match_sms(user.phone, job_notify)
+                except Exception:
+                    pass
         queued.append(application.id)
 
     # Near-misses are only worth surfacing when nothing real was found --
@@ -225,3 +244,57 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         "queued_application_ids": queued, "usage_limit_reached": limit_hit,
         "skipped_reason": None, "near_misses": near_misses, "hit_job_cap": hit_job_cap,
     }
+
+
+def send_daily_digests(db: Session) -> dict:
+    """For every user on notification_preference='daily_digest', emails
+    one summary of every match queued since their last digest -- rather
+    than the immediate per-match email 'every_match' users get. Queried
+    per-user against last_digest_sent_at (not a fixed 24h window), so
+    this stays correct regardless of when in the day matches actually
+    landed -- manual 'Find new matches' clicks happen at arbitrary
+    times, not just during the scheduled run.
+
+    Meant to run once daily, after the scheduled matching run, via
+    POST /internal/send-digests -- same secret-gated, externally-
+    triggered pattern as scheduled-run and culture-bot-run."""
+    users = db.query(models.User).filter_by(notification_preference="daily_digest").all()
+    sent = 0
+
+    for user in users:
+        since = user.last_digest_sent_at or (datetime.utcnow() - timedelta(days=1))
+        rows = db.query(models.Application, models.Job).join(
+            models.Job, models.Application.job_id == models.Job.id
+        ).filter(
+            models.Application.user_id == user.id,
+            models.Application.created_at > since,
+            models.Application.match_score >= (user.notification_min_score or 0),
+        ).all()
+
+        matches = [
+            {
+                "title": job.title, "company": job.company, "location": job.location,
+                "match_score": app_row.match_score, "match_reason": app_row.match_reason, "url": job.url,
+            }
+            for app_row, job in rows
+        ]
+
+        if matches:
+            channel = user.notification_channel or "email"
+            if channel in ("email", "both"):
+                try:
+                    notifier.notify_digest(user.notify_email or user.email, matches)
+                    sent += 1
+                except Exception:
+                    pass
+            if channel in ("sms", "both") and user.sms_consent:
+                try:
+                    sms.notify_digest_sms(user.phone, len(matches))
+                    sent += 1
+                except Exception:
+                    pass
+
+        user.last_digest_sent_at = datetime.utcnow()
+        db.commit()
+
+    return {"digests_sent": sent}
