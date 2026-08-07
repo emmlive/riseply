@@ -54,6 +54,29 @@ def notify_submitted(to_addr: str, job: dict):
     )
 
 
+def notify_digest(to_addr: str, matches: list[dict]):
+    """One email summarizing every match since the last digest, for
+    users on notification_preference='daily_digest'. matches is a list
+    of {title, company, location, match_score, match_reason, url}."""
+    if not matches:
+        return
+    matches_sorted = sorted(matches, key=lambda m: m["match_score"], reverse=True)
+    lines = [
+        f"- {m['title']} @ {m['company']} ({m['match_score']}%) — {m['location']}\n  {m['url']}"
+        for m in matches_sorted
+    ]
+    count = len(matches)
+    send_email(
+        to_addr,
+        f"Your Riseply digest: {count} new match{'es' if count != 1 else ''}",
+        (
+            f"{count} new match{'es' if count != 1 else ''} since your last digest:\n\n"
+            + "\n\n".join(lines)
+            + "\n\nReview and approve/reject them in your dashboard."
+        ),
+    )
+
+
 def notify_welcome(to_addr: str, full_name: str = ""):
     name_part = f", {full_name}" if full_name else ""
     send_email(

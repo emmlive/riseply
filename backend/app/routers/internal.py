@@ -75,3 +75,20 @@ def culture_bot_run(
 
     from app.services import culture_bot
     return culture_bot.run_deliveries(db)
+
+
+@router.post("/send-digests")
+def send_digests(
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Sends the daily digest email to every user on
+    notification_preference='daily_digest' -- meant to run once a day,
+    after /internal/scheduled-run has finished matching, via the same
+    external scheduler and CRON_SECRET as the other /internal/* jobs."""
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Digests aren't configured (CRON_SECRET unset).")
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+
+    return pipeline_runner.send_daily_digests(db)

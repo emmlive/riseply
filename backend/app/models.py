@@ -30,6 +30,22 @@ class User(Base):
     resume_text = Column(Text, default="")
 
     notify_email = Column(String, default="")  # defaults to account email if blank
+    # "off" | "every_match" | "daily_digest" -- controls the new-match
+    # email notifier.notify_new_match() sends. Applies regardless of
+    # what triggered the match (manual "Find new matches" click or the
+    # scheduled daily run) -- same preference, same behavior either way,
+    # rather than a confusing split where manual clicks always notify
+    # but the scheduled run respects the setting.
+    notification_preference = Column(String, default="every_match", server_default="every_match")
+    # Only matches scoring at or above this get emailed at all, on top
+    # of whatever notification_preference says. 0 = no floor.
+    notification_min_score = Column(Integer, default=0, server_default="0")
+    # Last time this user's daily digest was actually sent -- lets the
+    # digest job query "what's new since last time" per user instead of
+    # a fixed 24h window, so it stays correct regardless of when in the
+    # day matches actually landed (manual clicks happen at arbitrary
+    # times, not just during the scheduled run).
+    last_digest_sent_at = Column(DateTime, nullable=True)
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
 
     tos_accepted_at = Column(DateTime, nullable=True)

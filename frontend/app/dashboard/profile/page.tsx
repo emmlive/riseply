@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const [form, setForm] = useState({
     full_name: "", phone: "", location: "", linkedin_url: "",
     portfolio_url: "", notify_email: "", auto_submit: false,
+    notification_preference: "every_match", notification_min_score: 0,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,6 +40,7 @@ export default function ProfilePage() {
         full_name: u.full_name, phone: u.phone, location: u.location,
         linkedin_url: u.linkedin_url, portfolio_url: u.portfolio_url,
         notify_email: u.notify_email, auto_submit: u.auto_submit,
+        notification_preference: u.notification_preference, notification_min_score: u.notification_min_score,
       });
     });
   }, []);
@@ -109,6 +111,34 @@ export default function ProfilePage() {
           <input value={form.notify_email} onChange={(e) => setForm({ ...form, notify_email: e.target.value })} />
           <p className="hint">Where match alerts and generated documents get sent. Defaults to your login email.</p>
         </div>
+
+        <div className="field">
+          <label>New match notifications</label>
+          <select value={form.notification_preference}
+                  onChange={(e) => setForm({ ...form, notification_preference: e.target.value })}>
+            <option value="every_match">Email me for every match</option>
+            <option value="daily_digest">Once-a-day digest instead</option>
+            <option value="off">Don't email me — I'll check the dashboard</option>
+          </select>
+          <p className="hint">
+            {form.notification_preference === "every_match" && "One email per match, as soon as it's found — from the scheduled daily search or a manual \"Find new matches\" click."}
+            {form.notification_preference === "daily_digest" && "One email a day listing everything found since your last digest, instead of one per match."}
+            {form.notification_preference === "off" && "No emails — matches will still show up on your Overview and Applications pages, you'll just need to check."}
+          </p>
+        </div>
+
+        {form.notification_preference !== "off" && (
+          <div className="field">
+            <label>Only notify me for matches at or above ({form.notification_min_score}%)</label>
+            <input type="range" min={0} max={100} value={form.notification_min_score}
+                   onChange={(e) => setForm({ ...form, notification_min_score: Number(e.target.value) })} />
+            <p className="hint">
+              A separate filter from your search profiles' own match threshold — this just controls
+              which of the matches you already get notified about, not which ones show up at all.
+              Leave at 0 to get notified about everything that clears your profile's own bar.
+            </p>
+          </div>
+        )}
 
         {saved && <p style={{ color: "var(--accent)" }}>Saved.</p>}
         {error && <p className="error-text">{error}</p>}

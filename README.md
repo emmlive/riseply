@@ -190,6 +190,16 @@ processes every user" default. It runs discovery once, then matching for
 every user who has a resume and at least one active search profile,
 skipping everyone else without erroring.
 
+Right after matching, the same workflow calls `POST
+/internal/send-digests` — same `CRON_SECRET`, nothing extra to set up.
+This sends the once-a-day summary email to anyone who's set their
+notification preference (Profile page) to "daily digest" instead of
+"email me for every match". It's tracked per-user via
+`last_digest_sent_at`, so it stays correct regardless of when in the
+day a match actually landed — a manual "Find new matches" click at 2pm
+still gets swept into that day's digest, not lost or double-counted the
+next day.
+
 ## Culture Bot lessons
 
 Org onboarding lessons (spaced-repetition micro-lessons an org admin

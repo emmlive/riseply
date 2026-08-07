@@ -28,6 +28,8 @@ def _to_out(user: models.User) -> schemas.UserOut:
         portfolio_url=user.portfolio_url or "",
         notify_email=user.notify_email or user.email,
         auto_submit=bool(user.auto_submit),
+        notification_preference=user.notification_preference or "every_match",
+        notification_min_score=user.notification_min_score or 0,
         resume_text=user.resume_text or "",
         subscription_tier=user.subscription_tier or "free",
         subscription_status=user.subscription_status or "",
@@ -47,7 +49,11 @@ def update_me(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if "notification_preference" in updates and updates["notification_preference"] not in ("off", "every_match", "daily_digest"):
+        raise HTTPException(status_code=400, detail="notification_preference must be off, every_match, or daily_digest.")
+
+    for field, value in updates.items():
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
