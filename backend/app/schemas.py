@@ -115,6 +115,7 @@ class ApplicationOut(BaseModel):
     job_company: str
     job_location: str
     job_url: str
+    organization_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -493,3 +494,67 @@ class RiseIndexMeOut(BaseModel):
     current_streak: int
     longest_streak: int
     recent_events: list[PointsEventOut]
+
+
+# --- Org Q&A ("Ghost Onboarder") ---
+
+class OrgAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class OrgAskResponse(BaseModel):
+    answer: str
+    sources: list[str]
+
+
+class OrgQALogOut(BaseModel):
+    id: int
+    application_id: int
+    user_email: str
+    question: str
+    answer: str
+    matched_content: bool
+    created_at: datetime
+
+
+# --- Culture Bot (spaced-repetition lessons) ---
+
+class OrgLessonCreate(BaseModel):
+    day_offset: int = Field(ge=0, le=365)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=5000)
+    quiz_question: str = Field(default="", max_length=500)
+    quiz_answer: str = Field(default="", max_length=200)
+    department_id: Optional[int] = None
+    order: int = 0
+
+
+class OrgLessonOut(BaseModel):
+    id: int
+    day_offset: int
+    title: str
+    content: str
+    quiz_question: str
+    quiz_answer: str
+    department_id: Optional[int]
+    order: int
+    created_at: datetime
+
+
+class LessonDeliveryOut(BaseModel):
+    id: int
+    lesson_id: int
+    title: str
+    content: str
+    quiz_question: str
+    delivered_at: datetime
+    quiz_response: Optional[str] = None
+    quiz_correct: Optional[bool] = None
+
+
+class LessonQuizResponseRequest(BaseModel):
+    response: str = Field(min_length=1, max_length=500)
+
+
+class CultureBotRunRequest(BaseModel):
+    secret: str

@@ -95,6 +95,7 @@ export interface Application {
   job_company: string;
   job_location: string;
   job_url: string;
+  organization_id: number | null;
 }
 
 export interface Usage {
@@ -345,4 +346,42 @@ export interface AdminFlaggedMessage {
   flag_reason: string;
   flag_resolved_at: string | null;
   created_at: string;
+}
+
+export interface OrgLesson {
+  id: number;
+  day_offset: number;
+  title: string;
+  content: string;
+  quiz_question: string;
+  quiz_answer: string;
+  department_id: number | null;
+  order: number;
+  created_at: string;
+}
+
+export interface LessonDelivery {
+  id: number;
+  lesson_id: number;
+  title: string;
+  content: string;
+  quiz_question: string;
+  delivered_at: string;
+  quiz_response: string | null;
+  quiz_correct: boolean | null;
+}
+
+export interface OrgQALog {
+  id: number;
+  application_id: number;
+  user_email: string;
+  question: string;
+  answer: string;
+  matched_content: boolean;
+  created_at: string;
+}
+
+export interface OrgAskResponse {
+  answer: string;
+  sources: string[];
 }
