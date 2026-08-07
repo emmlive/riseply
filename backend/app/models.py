@@ -255,6 +255,14 @@ class Organization(Base):
     name = Column(String, nullable=False)
     join_code = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    # True only for an admin's personal pilot/practice org, created via
+    # POST /orgs/sandbox -- never set by the normal self-serve org
+    # creation flow. Lets an admin genuinely exercise every Org Buddy
+    # feature (checklist, content, lessons, Ghost Onboarder) under their
+    # own account without ever touching a real customer's data, and
+    # without polluting real revenue/seat metrics -- every place that
+    # aggregates across organizations excludes rows where this is true.
+    is_sandbox = Column(Boolean, default=False, server_default="false")
 
     # --- Billing: hybrid (base plan + per-seat overage) ---
     plan = Column(String, default="", server_default="")  # "" | starter | growth | enterprise

@@ -94,6 +94,46 @@ def create_organization(
     return org
 
 
+@router.post("/sandbox", response_model=schemas.OrganizationOut)
+def create_sandbox_organization(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """An admin's personal pilot org -- lets them genuinely exercise
+    every Org Buddy feature (checklist, content, Culture Bot lessons,
+    Ghost Onboarder) under their own account, never a real customer's.
+    Admin-only, one per admin, auto-named so there's no fake company
+    name to invent. Flagged is_sandbox so it's excluded from every
+    place that aggregates real revenue/seat metrics across orgs."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Sandbox organizations are for admin accounts only.")
+
+    existing = (
+        db.query(models.Organization)
+        .join(models.OrganizationMember, models.OrganizationMember.organization_id == models.Organization.id)
+        .filter(models.OrganizationMember.user_id == user.id, models.Organization.is_sandbox.is_(True))
+        .first()
+    )
+    if existing:
+        return existing
+
+    join_code = _generate_join_code()
+    while db.query(models.Organization).filter_by(join_code=join_code).first():
+        join_code = _generate_join_code()
+
+    org = models.Organization(
+        name=f"Riseply Sandbox ({user.full_name or user.email})",
+        join_code=join_code, is_sandbox=True,
+    )
+    db.add(org)
+    db.commit()
+    db.refresh(org)
+
+    db.add(models.OrganizationMember(organization_id=org.id, user_id=user.id, role="admin"))
+    db.commit()
+    return org
+
+
 @router.get("/mine", response_model=list[schemas.OrganizationOut])
 def my_organizations(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Orgs this user has ADMIN-LEVEL access to -- either full org-wide
@@ -558,6 +598,9 @@ def subscribe_org(
 
     org = _require_admin(db, organization_id, user.id)
     org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    if org_row.is_sandbox:
+        raise HTTPException(status_code=400, detail="Sandbox organizations can't be billed — this one is for internal testing only.")
 
     price_id = settings.stripe_price_id_org_starter if plan == "starter" else settings.stripe_price_id_org_growth
     if not price_id:

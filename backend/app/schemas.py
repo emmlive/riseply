@@ -192,6 +192,7 @@ class OrganizationOut(BaseModel):
     name: str
     join_code: str
     created_at: datetime
+    is_sandbox: bool = False
 
 
 class DepartmentCreate(BaseModel):
@@ -434,6 +435,7 @@ class AdminOrganizationOut(BaseModel):
     overage_seats: int
     estimated_mrr_usd: float
     created_at: datetime
+    is_sandbox: bool = False
 
 
 # --- Admin: system health ---

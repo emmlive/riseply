@@ -324,7 +324,7 @@ def list_organizations(
     for org in orgs:
         member_count = db.query(models.OrganizationMember).filter_by(organization_id=org.id).count()
         overage_seats = max(0, member_count - (org.included_seats or 0))
-        is_billing = org.subscription_status == "active"
+        is_billing = org.subscription_status == "active" and not org.is_sandbox
         base_price = base_price_by_plan.get(org.plan, 0.0) if is_billing else 0.0
         overage_cost = overage_seats * settings.org_plan_overage_price_per_seat_usd if is_billing else 0.0
         out.append(schemas.AdminOrganizationOut(
@@ -333,7 +333,7 @@ def list_organizations(
             included_seats=org.included_seats or 0, member_count=member_count,
             overage_seats=overage_seats,
             estimated_mrr_usd=round(base_price + overage_cost, 2),
-            created_at=org.created_at,
+            created_at=org.created_at, is_sandbox=org.is_sandbox,
         ))
     return out
 

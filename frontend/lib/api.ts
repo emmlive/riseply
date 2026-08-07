@@ -131,6 +131,7 @@ export interface Organization {
   name: string;
   join_code: string;
   created_at: string;
+  is_sandbox: boolean;
 }
 
 export interface OrgContent {
@@ -322,6 +323,7 @@ export interface AdminOrganization {
   overage_seats: number;
   estimated_mrr_usd: number;
   created_at: string;
+  is_sandbox: boolean;
 }
 
 export interface AdminJobSourceHealth {

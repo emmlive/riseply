@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog } from "@/lib/api";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -9,6 +9,8 @@ export default function OrgBuddyPage() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [creatingSandbox, setCreatingSandbox] = useState(false);
 
   function load() {
     api<Organization[]>("/orgs/mine").then((orgList) => {
@@ -17,7 +19,10 @@ export default function OrgBuddyPage() {
     });
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api<User>("/me").then(setUser).catch(() => {});
+  }, []);
 
   async function createOrg() {
     setCreating(true);
@@ -34,7 +39,23 @@ export default function OrgBuddyPage() {
     }
   }
 
+  async function createSandbox() {
+    setCreatingSandbox(true);
+    setError("");
+    try {
+      const org = await api<Organization>("/orgs/sandbox", { method: "POST" });
+      load();
+      setSelected(org);
+    } catch (err: any) {
+      setError(err.message || "Couldn't create a sandbox.");
+    } finally {
+      setCreatingSandbox(false);
+    }
+  }
+
   if (orgs === null) return <p className="muted">Loading…</p>;
+
+  const hasSandbox = orgs.some((o) => o.is_sandbox);
 
   return (
     <div>
@@ -57,6 +78,21 @@ export default function OrgBuddyPage() {
           {error && <p className="error-text">{error}</p>}
           <button className="btn btn-primary btn-sm" onClick={createOrg} disabled={creating || !name.trim()}>
             {creating ? "Creating…" : "Create organization"}
+          </button>
+        </div>
+      )}
+
+      {user?.is_admin && !hasSandbox && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Try it yourself</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            A personal sandbox org, just for you — real Org Buddy, Culture Bot, and Ghost
+            Onboarder features, but never a real customer's account. Not billed, and excluded
+            from revenue and seat totals in the Admin panel.
+          </p>
+          {error && <p className="error-text">{error}</p>}
+          <button className="btn btn-ghost btn-sm" onClick={createSandbox} disabled={creatingSandbox}>
+            {creatingSandbox ? "Creating…" : "Create my sandbox"}
           </button>
         </div>
       )}
@@ -292,7 +328,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       )}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>{org.name}</h3>
+        <h3 style={{ marginTop: 0 }}>
+          {org.name}
+          {org.is_sandbox && <span className="pill pill-default" style={{ marginLeft: 8 }}>Sandbox</span>}
+        </h3>
+        {org.is_sandbox && (
+          <p className="hint" style={{ marginTop: -4, marginBottom: 8 }}>
+            Personal pilot access — not a real customer, can't be billed, and excluded from Admin panel totals.
+          </p>
+        )}
         <p className="muted" style={{ marginBottom: 4 }}>Join code — share this with new hires:</p>
         <span className="mono" style={{ fontSize: "1.3rem", fontWeight: 700, letterSpacing: 2 }}>{org.join_code}</span>
       </div>
@@ -487,7 +531,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
               </span>
             )}
           </p>
-          {billing.plan === "none" && (
+          {billing.plan === "none" && !org.is_sandbox && (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn btn-primary btn-sm" onClick={() => subscribe("starter")}>
                 Starter — $199/mo (10 seats)
@@ -496,6 +540,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                 Growth — $599/mo (50 seats)
               </button>
             </div>
+          )}
+          {org.is_sandbox && (
+            <p className="hint" style={{ marginTop: 10 }}>Sandbox orgs can't be billed.</p>
           )}
         </div>
       )}
