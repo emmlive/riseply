@@ -15,7 +15,15 @@ export default function OrgBuddyPage() {
   function load() {
     api<Organization[]>("/orgs/mine").then((orgList) => {
       setOrgs(orgList);
-      if (orgList.length > 0 && !selected) setSelected(orgList[0]);
+      if (orgList.length > 0 && !selected) {
+        // Supports deep-linking to a specific org, e.g. from the Admin
+        // panel's Sandbox orgs list (?org=<id>) -- falls back to the
+        // first org if there's no match or no param.
+        const params = new URLSearchParams(window.location.search);
+        const requestedId = params.get("org");
+        const requested = requestedId ? orgList.find((o) => o.id === Number(requestedId)) : null;
+        setSelected(requested || orgList[0]);
+      }
     });
   }
 
