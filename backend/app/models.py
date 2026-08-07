@@ -515,6 +515,32 @@ class LessonDelivery(Base):
     reminder_sent_at = Column(DateTime, nullable=True)
 
 
+class ScoredJob(Base):
+    """Every job a user's matcher has actually evaluated, regardless of
+    outcome (became an Application, was a near-miss, or just scored
+    below threshold with nothing recorded). Application rows already
+    exclude a job from future 'Find new matches' runs once it becomes
+    a real match -- this is the missing other half: without it, a job
+    that scored below threshold gets re-evaluated (and re-billed
+    against the user's monthly match quota) on every single run,
+    forever, since nothing ever marked it as already checked. That
+    meant repeated runs mostly re-scored the same jobs near the front
+    of the pool instead of making progress through the rest of it.
+
+    Only written on a genuinely successful score (see
+    pipeline_runner.run_matching_for_user) -- a job that errored out
+    (e.g. a transient Claude API failure) is deliberately left
+    unmarked so a later run retries it instead of silently
+    blacklisting it over a one-off failure."""
+    __tablename__ = "scored_jobs"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_job_scored"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    scored_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class FailureLog(Base):
     """Logged whenever a metered Claude API call fails (i.e. whenever
     usage.decrement() is called to refund a failed attempt). This is a

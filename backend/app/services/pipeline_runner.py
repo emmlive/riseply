@@ -85,8 +85,12 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
     already_applied_subq = db.query(models.Application.job_id).filter(
         models.Application.user_id == user.id
     ).subquery()
+    already_scored_subq = db.query(models.ScoredJob.job_id).filter(
+        models.ScoredJob.user_id == user.id
+    ).subquery()
     unseen_jobs = db.query(models.Job).filter(
-        not_(models.Job.id.in_(already_applied_subq))
+        not_(models.Job.id.in_(already_applied_subq)),
+        not_(models.Job.id.in_(already_scored_subq)),
     ).all()
 
     queued = []
@@ -111,6 +115,20 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
         except Exception:
             usage.decrement(db, user.id, "match", 1)
             continue
+
+        # Mark this job as evaluated for this user regardless of outcome,
+        # so a future run doesn't re-score (and re-bill quota for) it
+        # again just because it fell short this time. ON CONFLICT DO
+        # NOTHING guards the same race the discovery insert guards
+        # against -- two near-simultaneous runs for the same user
+        # shouldn't crash into each other's insert.
+        insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+        db.execute(
+            insert_fn(models.ScoredJob)
+            .values(user_id=user.id, job_id=job_row.id)
+            .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
+        )
+        db.commit()
 
         if not best["meets_threshold"]:
             # Track the closest-scoring misses as we go, capped at

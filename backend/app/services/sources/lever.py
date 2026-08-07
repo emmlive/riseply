@@ -7,9 +7,16 @@ import requests
 
 API_URL = "https://api.lever.co/v0/postings/{company}?mode=json"
 
+# Same reasoning as greenhouse.py / rss_boards.py -- a bare Python
+# requests UA gets blocked by some hosts as basic bot mitigation.
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 
 def fetch_jobs(company_slug: str):
-    resp = requests.get(API_URL.format(company=company_slug), timeout=20)
+    resp = requests.get(API_URL.format(company=company_slug), timeout=20, headers=HEADERS)
     resp.raise_for_status()
     data = resp.json()
 
