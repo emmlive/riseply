@@ -22,6 +22,12 @@ def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depen
             detail="You need to agree to the Terms of Service and Privacy Policy to create an account.",
         )
 
+    if not payload.agree_to_subscription_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="You need to agree to the Subscription Agreement to create an account.",
+        )
+
     if not captcha.verify_turnstile(payload.captcha_token, get_real_client_ip(request)):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed — please try again.")
 
@@ -35,6 +41,7 @@ def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depen
         full_name=payload.full_name,
         notify_email=payload.email,
         tos_accepted_at=datetime.utcnow(),
+        subscription_terms_accepted_at=datetime.utcnow(),
     )
     db.add(user)
     db.commit()
@@ -79,6 +86,7 @@ def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str
         full_name=name,
         notify_email=email,
         tos_accepted_at=datetime.utcnow(),
+        subscription_terms_accepted_at=datetime.utcnow(),
         oauth_provider=provider,
     )
     db.add(user)

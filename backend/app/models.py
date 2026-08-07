@@ -29,6 +29,7 @@ class User(Base):
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
 
     tos_accepted_at = Column(DateTime, nullable=True)
+    subscription_terms_accepted_at = Column(DateTime, nullable=True)
 
     # Billing
     subscription_tier = Column(String, default="free", server_default="free")  # free | pro

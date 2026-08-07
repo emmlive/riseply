@@ -10,6 +10,7 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8)
     full_name: str = ""
     agree_to_terms: bool = False
+    agree_to_subscription_terms: bool = False
     captcha_token: str = ""
 
 

@@ -21,6 +21,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [agreeToSubscription, setAgreeToSubscription] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,6 +42,10 @@ export default function SignupPage() {
       setError("You'll need to agree to the Terms of Service and Privacy Policy to continue.");
       return;
     }
+    if (!agreeToSubscription) {
+      setError("You'll need to agree to the Subscription Agreement to continue.");
+      return;
+    }
     if (TURNSTILE_SITE_KEY && !captchaToken) {
       setError("Please complete the verification check below.");
       return;
@@ -51,6 +56,7 @@ export default function SignupPage() {
         method: "POST",
         body: JSON.stringify({
           email, password, full_name: fullName, agree_to_terms: agreeToTerms,
+          agree_to_subscription_terms: agreeToSubscription,
           captcha_token: captchaToken,
         }),
       });
@@ -99,6 +105,18 @@ export default function SignupPage() {
             <label htmlFor="terms" style={{ fontWeight: 400, fontSize: "0.85rem", color: "var(--ink)" }}>
               I agree to the <Link href="/terms" target="_blank">Terms of Service</Link> and{" "}
               <Link href="/privacy" target="_blank">Privacy Policy</Link>.
+            </label>
+          </div>
+          <div className="field" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <input
+              id="subscription"
+              type="checkbox"
+              checked={agreeToSubscription}
+              onChange={(e) => setAgreeToSubscription(e.target.checked)}
+              style={{ width: "auto", marginTop: 3 }}
+            />
+            <label htmlFor="subscription" style={{ fontWeight: 400, fontSize: "0.85rem", color: "var(--ink)" }}>
+              I agree to the <Link href="/subscription-agreement" target="_blank">Subscription Agreement</Link>.
             </label>
           </div>
 
