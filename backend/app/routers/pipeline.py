@@ -174,8 +174,10 @@ def mark_submitted(
 def check_auto_submit_eligible(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
 ):
-    """Lets the frontend decide whether to show the auto-submit button at
-    all, without actually launching a browser."""
+    """Lets the frontend decide whether to show the auto-fill/auto-submit
+    buttons at all, without actually launching a browser. Same
+    eligibility criteria for both -- they differ only in whether the
+    final submit click happens, not in what's allowed to attempt it."""
     row = db.query(models.Application, models.Job).join(
         models.Job, models.Application.job_id == models.Job.id
     ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
@@ -192,6 +194,67 @@ def check_auto_submit_eligible(
     return {"eligible": allowed, "reason": reason}
 
 
+def _build_candidate_dict(user: models.User) -> dict:
+    name_parts = (user.full_name or "").split(" ", 1)
+    return {
+        "first_name": name_parts[0] if name_parts else "",
+        "last_name": name_parts[1] if len(name_parts) > 1 else "",
+        "full_name": user.full_name or "",
+        "email": user.email,
+        "phone": user.phone or "",
+        "location": user.location or "",
+        "linkedin_url": user.linkedin_url or "",
+        "portfolio_url": user.portfolio_url or "",
+    }
+
+
+def _run_submitter(app_row: models.Application, job: models.Job, user: models.User, actually_submit: bool) -> dict:
+    """Shared by auto-submit and auto-fill -- same guardrails, same
+    browser automation, the only difference is whether the final submit
+    click happens. submit_application() itself already stops one step
+    short of submitting when actually_submit=False (see submitter.py),
+    so this is just the shared plumbing around that call: building the
+    candidate dict and materializing the tailored resume as a temp file
+    for Playwright to upload, since it needs a real file on disk that
+    only has to survive this one request."""
+    candidate = _build_candidate_dict(user)
+
+    resume_file_path = ""
+    if app_row.tailored_resume_data:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+        tmp.write(app_row.tailored_resume_data)
+        tmp.close()
+        resume_file_path = tmp.name
+
+    try:
+        return submitter.submit_application(job.url, resume_file_path, candidate, actually_submit=actually_submit)
+    finally:
+        if resume_file_path:
+            os.unlink(resume_file_path)
+
+
+def _get_approved_application_for_submit(db: Session, application_id: int, user: models.User):
+    if not settings.auto_submit_enabled:
+        raise HTTPException(status_code=503, detail="Auto-submit isn't enabled on this server yet.")
+
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if app_row.status != "approved":
+        raise HTTPException(status_code=400, detail="Only approved applications can be auto-filled or auto-submitted.")
+
+    allowed, reason = submitter.is_supported_ats(job.url)
+    if not allowed:
+        raise HTTPException(status_code=400, detail=reason)
+
+    return app_row, job
+
+
 @router.post("/applications/{application_id}/auto-submit")
 def auto_submit_application(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
@@ -204,56 +267,8 @@ def auto_submit_application(
        LinkedIn/Indeed explicitly hard-blocked regardless of config)
     Any failure leaves the application in 'approved' with a note
     explaining what happened, rather than silently losing the match."""
-    if not settings.auto_submit_enabled:
-        raise HTTPException(status_code=503, detail="Auto-submit isn't enabled on this server yet.")
-
-    row = db.query(models.Application, models.Job).join(
-        models.Job, models.Application.job_id == models.Job.id
-    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Application not found")
-    app_row, job = row
-
-    if app_row.status != "approved":
-        raise HTTPException(status_code=400, detail="Only approved applications can be auto-submitted.")
-
-    allowed, reason = submitter.is_supported_ats(job.url)
-    if not allowed:
-        raise HTTPException(status_code=400, detail=reason)
-
-    name_parts = (user.full_name or "").split(" ", 1)
-    candidate = {
-        "first_name": name_parts[0] if name_parts else "",
-        "last_name": name_parts[1] if len(name_parts) > 1 else "",
-        "full_name": user.full_name or "",
-        "email": user.email,
-        "phone": user.phone or "",
-        "location": user.location or "",
-        "linkedin_url": user.linkedin_url or "",
-        "portfolio_url": user.portfolio_url or "",
-    }
-
-    # submit_application drives a real browser (Playwright) that needs an
-    # actual file on disk to upload -- writing a short-lived temp file
-    # from the DB-stored bytes is fine here (it only needs to exist for
-    # the few seconds this request takes), unlike the old approach of
-    # writing tailored resumes to persistent-looking disk paths that
-    # silently vanished on every Render redeploy.
-    resume_file_path = ""
-    if app_row.tailored_resume_data:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
-        tmp.write(app_row.tailored_resume_data)
-        tmp.close()
-        resume_file_path = tmp.name
-
-    try:
-        result = submitter.submit_application(
-            job.url, resume_file_path, candidate, actually_submit=True,
-        )
-    finally:
-        if resume_file_path:
-            os.unlink(resume_file_path)
+    app_row, job = _get_approved_application_for_submit(db, application_id, user)
+    result = _run_submitter(app_row, job, user, actually_submit=True)
 
     if result["status"] == "submitted":
         now = datetime.utcnow()
