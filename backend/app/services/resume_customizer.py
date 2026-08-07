@@ -1,6 +1,6 @@
+import io
 import os
 import re
-from pathlib import Path
 from anthropic import Anthropic
 from docx import Document
 
@@ -8,8 +8,6 @@ from app.config import settings
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
-
-OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "tailored_resumes"
 
 
 def tailor_resume_text(base_resume: str, job: dict) -> str:
@@ -44,7 +42,11 @@ Description:
     return resp.content[0].text.strip()
 
 
-def write_docx(resume_text: str, out_path: Path):
+def build_docx_bytes(resume_text: str) -> bytes:
+    """Builds the docx entirely in memory -- no disk write. See the note
+    on Application.tailored_resume_data for why: local disk on Render's
+    web service is ephemeral and doesn't survive a redeploy, so this
+    document has to be stored in Postgres to actually persist."""
     doc = Document()
     for line in resume_text.split("\n"):
         line = line.strip()
@@ -57,16 +59,18 @@ def write_docx(resume_text: str, out_path: Path):
             doc.add_paragraph(line[2:].strip(), style="List Bullet")
         else:
             doc.add_paragraph(line)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(out_path)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
-def customize_for_job(user_id: int, base_resume_text: str, job: dict, application_id: int) -> str:
-    """Returns a path (relative to OUTPUT_DIR's parent) to the generated docx."""
+def customize_for_job(user_id: int, base_resume_text: str, job: dict, application_id: int) -> tuple[str, bytes]:
+    """Returns (display_filename, docx_bytes). The caller is responsible
+    for storing docx_bytes on the Application row -- this function no
+    longer touches the filesystem at all."""
     tailored_text = tailor_resume_text(base_resume_text, job)
 
-    safe_company = re.sub(r"[^A-Za-z0-9]+", "_", job["company"])[:40]
-    filename = f"user{user_id}_app{application_id}_{safe_company}.docx"
-    out_path = OUTPUT_DIR / filename
-    write_docx(tailored_text, out_path)
-    return str(out_path)
+    safe_company = re.sub(r"[^A-Za-z0-9]+", "_", job.get("company") or "resume")[:40]
+    filename = f"{safe_company or 'resume'}.docx"
+    docx_bytes = build_docx_bytes(tailored_text)
+    return filename, docx_bytes

@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey,
-    UniqueConstraint, func,
+    UniqueConstraint, func, LargeBinary,
 )
 from sqlalchemy.orm import relationship
 
@@ -132,7 +132,14 @@ class Application(Base):
     # pending_approval | approved | rejected | submitted | interviewing |
     # offer | declined | closed
 
+    # Display filename only now, e.g. "Acme_Corp.docx" -- NOT a real
+    # filesystem path. Render's web service disk is ephemeral: any file
+    # written to local disk vanishes on the next deploy/restart, while
+    # this row survives (Postgres is the persistent store). The actual
+    # document lives in tailored_resume_data below; this column is kept
+    # only so the download link can show a sensible filename.
     tailored_resume_path = Column(String, default="", server_default="")
+    tailored_resume_data = Column(LargeBinary, nullable=True)
     notes = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
