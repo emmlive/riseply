@@ -6,6 +6,7 @@ from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
 from app.services import usage, rise_index, notifier
+from app.routers.org_buddy import resolve_join_code
 
 router = APIRouter(prefix="/applications", tags=["job-buddy"])
 
@@ -19,18 +20,33 @@ def _get_owned_application(db: Session, application_id: int, user_id: int) -> mo
 
 def _org_content_for(db: Session, app_row: models.Application) -> str:
     """Concatenates an org's uploaded custom content AND human contacts
-    for use in prompts. Empty string if this application isn't linked to
-    an org -- the service functions treat that as 'no custom content'
-    and fall back to generic advice, same as before this feature
-    existed."""
+    for use in prompts -- company-wide material plus (if this employee
+    belongs to a department) that department's own content layered on
+    top. Empty string if this application isn't linked to an org -- the
+    service functions treat that as 'no custom content' and fall back
+    to generic advice, same as before this feature existed."""
     if not app_row.organization_id:
         return ""
-    content_rows = db.query(models.OrganizationBuddyContent).filter_by(
-        organization_id=app_row.organization_id
-    ).all()
-    parts = [f"[{r.title}]\n{r.content}" for r in content_rows]
 
-    contacts = db.query(models.OrgHumanContact).filter_by(organization_id=app_row.organization_id).all()
+    content_q = db.query(models.OrganizationBuddyContent).filter_by(organization_id=app_row.organization_id)
+    if app_row.department_id:
+        content_q = content_q.filter(
+            (models.OrganizationBuddyContent.department_id == None)  # noqa: E711
+            | (models.OrganizationBuddyContent.department_id == app_row.department_id)
+        )
+    else:
+        content_q = content_q.filter(models.OrganizationBuddyContent.department_id == None)  # noqa: E711
+    parts = [f"[{r.title}]\n{r.content}" for r in content_q.all()]
+
+    contacts_q = db.query(models.OrgHumanContact).filter_by(organization_id=app_row.organization_id)
+    if app_row.department_id:
+        contacts_q = contacts_q.filter(
+            (models.OrgHumanContact.department_id == None)  # noqa: E711
+            | (models.OrgHumanContact.department_id == app_row.department_id)
+        )
+    else:
+        contacts_q = contacts_q.filter(models.OrgHumanContact.department_id == None)  # noqa: E711
+    contacts = contacts_q.all()
     if contacts:
         contact_lines = "\n".join(f"- {c.name} ({c.email}): {c.description}" for c in contacts)
         parts.append(
@@ -55,40 +71,48 @@ def add_current_job(
     shouldn't need a fake 'match' to get ongoing mentor support.
 
     An optional org_join_code links this to a company's "Org Buddy as a
-    Service" account -- the plan/chat then draws on that org's uploaded
-    custom content too. An invalid code is a clean 400, not a silent
-    no-op, so a typo doesn't quietly lose the org context."""
+    Service" account. The code can be either the org-wide code (company-
+    wide content only) or a specific department's code (company-wide
+    content plus that department's own material). An invalid code is a
+    clean 400, not a silent no-op, so a typo doesn't quietly lose the
+    org context."""
     organization_id = None
+    department_id = None
     company = payload.company
     title = payload.title
     tenure = payload.tenure
 
     if payload.org_join_code:
-        org = db.query(models.Organization).filter_by(join_code=payload.org_join_code.upper()).first()
-        if not org:
-            raise HTTPException(status_code=400, detail="That organization join code isn't valid.")
-        organization_id = org.id
+        organization_id, department_id = resolve_join_code(db, payload.org_join_code)
+        org = db.query(models.Organization).filter_by(id=organization_id).first()
         company = org.name  # the org IS the company -- no need to re-type it
 
         already_member = db.query(models.OrganizationMember).filter_by(
-            organization_id=org.id, user_id=user.id
+            organization_id=organization_id, user_id=user.id
         ).first()
         if not already_member:
-            db.add(models.OrganizationMember(organization_id=org.id, user_id=user.id, role="employee"))
+            db.add(models.OrganizationMember(
+                organization_id=organization_id, user_id=user.id, role="employee", department_id=department_id,
+            ))
             db.commit()
 
         # If the org admin pre-registered this person via CSV roster
         # upload, use their real title/tenure instead of asking the
         # employee to hand-type it again -- and mark the roster entry as
         # matched, which is what makes it show up as "joined" in the
-        # admin's roster view.
+        # admin's roster view. The roster entry's own department (if the
+        # admin set one) takes precedence over whatever code the
+        # employee happened to use, since it reflects what the admin
+        # actually knows about their real department assignment.
         roster_entry = db.query(models.OrgRosterEntry).filter_by(
-            organization_id=org.id, email=user.email
+            organization_id=organization_id, email=user.email
         ).first()
         if roster_entry:
             if roster_entry.title:
                 title = roster_entry.title
             tenure = roster_entry.tenure
+            if roster_entry.department_id is not None:
+                department_id = roster_entry.department_id
             roster_entry.matched_user_id = user.id
             db.commit()
 
@@ -106,7 +130,7 @@ def add_current_job(
         user_id=user.id, job_id=job.id,
         matched_profile="", match_score=0,
         match_reason="Added manually — an existing job, not matched through Riseply.",
-        status="accepted", tenure_hint=tenure, organization_id=organization_id,
+        status="accepted", tenure_hint=tenure, organization_id=organization_id, department_id=department_id,
     )
     db.add(application)
     db.commit()

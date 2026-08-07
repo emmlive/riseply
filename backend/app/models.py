@@ -110,6 +110,10 @@ class Application(Base):
     # its onboarding plan/chat draws on that org's uploaded custom
     # content (handbook, culture, department info) in addition to the
     # normal resume + job info.
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Set when joined via a department-specific code rather than the
+    # org-wide code -- plan/chat then also draws on that department's
+    # own content, layered on top of the company-wide material.
 
     status = Column(String, default="pending_approval", server_default="pending_approval")
     # pending_approval | approved | rejected | submitted | interviewing |
@@ -238,29 +242,52 @@ class Organization(Base):
     included_seats = Column(Integer, default=0, server_default="0")
 
 
+class Department(Base):
+    """A department within an org (Finance, Engineering, etc.) -- has its
+    own join code, distinct from the org-wide one. Someone joining with
+    the org-wide code gets company-wide content only; someone joining
+    with a department code gets company-wide content PLUS that
+    department's own material layered on top."""
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_org_department_name"),)
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    name = Column(String, nullable=False)
+    join_code = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class OrganizationMember(Base):
-    """Links a User to an Organization. 'admin' can upload custom content
-    and see aggregate usage; 'employee' just uses their join code once to
-    associate their own onboarding Application with the org."""
+    """Links a User to an Organization. role is 'admin' (manages the
+    whole org, every department), 'department_admin' (manages only their
+    own department's content/contacts/roster -- department_id required),
+    or 'employee' (just uses their join code once; department_id is set
+    if they joined via a department-specific code, null if they joined
+    via the org-wide code)."""
     __tablename__ = "organization_members"
     __table_args__ = (UniqueConstraint("organization_id", "user_id", name="uq_org_user"),)
 
     id = Column(Integer, primary_key=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    role = Column(String, default="employee", server_default="employee")  # admin | employee
+    role = Column(String, default="employee", server_default="employee")  # admin | department_admin | employee
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     joined_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
 class OrganizationBuddyContent(Base):
-    """Custom onboarding material an org admin has uploaded -- handbook
-    excerpts, culture doc, department-specific info. Folded into the plan
-    generation and chat prompts for that org's employees, so advice is
-    grounded in the real company rather than generic assumptions."""
+    """Custom onboarding material an org admin (or department admin, for
+    their own department) has uploaded -- handbook excerpts, culture
+    doc, department-specific info. department_id NULL means company-wide
+    (folded into every employee's plan/chat regardless of department);
+    set means it only applies to that specific department's employees,
+    layered on top of the company-wide material."""
     __tablename__ = "organization_buddy_content"
 
     id = Column(Integer, primary_key=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     title = Column(String, default="")
     content = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
@@ -280,6 +307,7 @@ class OrgRosterEntry(Base):
 
     id = Column(Integer, primary_key=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     email = Column(String, nullable=False)
     title = Column(String, default="")
     tenure = Column(String, default="just_started")
@@ -292,11 +320,14 @@ class OrgHumanContact(Base):
     things AI structurally can't do -- an office tour, a face-to-face
     intro, physical equipment setup. Fed into the Job Buddy prompt so it
     can naturally mention the right person, and selectable when an
-    employee explicitly requests a handoff."""
+    employee explicitly requests a handoff. department_id NULL means
+    company-wide (suggested to every employee); set means only suggested
+    to that specific department's employees."""
     __tablename__ = "org_human_contacts"
 
     id = Column(Integer, primary_key=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     description = Column(String, default="")  # e.g. "Office tours & facilities"

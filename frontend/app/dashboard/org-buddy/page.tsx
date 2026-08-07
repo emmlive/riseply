@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact } from "@/lib/api";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -77,8 +77,14 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactDesc, setContactDesc] = useState("");
+  const [contactDept, setContactDept] = useState<string>("");
   const [addingContact, setAddingContact] = useState(false);
   const [contactError, setContactError] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [deptName, setDeptName] = useState("");
+  const [addingDept, setAddingDept] = useState(false);
+  const [deptError, setDeptError] = useState("");
+  const [contentDept, setContentDept] = useState<string>("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [adding, setAdding] = useState(false);
@@ -93,6 +99,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling);
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
+    api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
   }
 
   useEffect(() => { load(); }, [org.id]);
@@ -101,13 +108,33 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     setAdding(true);
     setError("");
     try {
-      await api(`/orgs/${org.id}/content`, { method: "POST", body: JSON.stringify({ title, content: body }) });
+      await api(`/orgs/${org.id}/content`, {
+        method: "POST",
+        body: JSON.stringify({
+          title, content: body,
+          department_id: contentDept ? Number(contentDept) : null,
+        }),
+      });
       setTitle(""); setBody("");
       load();
     } catch (err: any) {
       setError(err.message || "Couldn't add that content.");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function addDepartment() {
+    setAddingDept(true);
+    setDeptError("");
+    try {
+      await api(`/orgs/${org.id}/departments`, { method: "POST", body: JSON.stringify({ name: deptName }) });
+      setDeptName("");
+      load();
+    } catch (err: any) {
+      setDeptError(err.message || "Couldn't add that department.");
+    } finally {
+      setAddingDept(false);
     }
   }
 
@@ -151,7 +178,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     try {
       await api(`/orgs/${org.id}/contacts`, {
         method: "POST",
-        body: JSON.stringify({ name: contactName, email: contactEmail, description: contactDesc }),
+        body: JSON.stringify({
+          name: contactName, email: contactEmail, description: contactDesc,
+          department_id: contactDept ? Number(contactDept) : null,
+        }),
       });
       setContactName(""); setContactEmail(""); setContactDesc("");
       load();
@@ -180,6 +210,28 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         <h3 style={{ marginTop: 0 }}>{org.name}</h3>
         <p className="muted" style={{ marginBottom: 4 }}>Join code — share this with new hires:</p>
         <span className="mono" style={{ fontSize: "1.3rem", fontWeight: 700, letterSpacing: 2 }}>{org.join_code}</span>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Departments</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Each department gets its own join code. Someone joining with a department's code sees
+          company-wide content plus that department's own material layered on top.
+        </p>
+        {departments.map((d) => (
+          <div key={d.id} className="points-event-row">
+            <div style={{ fontWeight: 600 }}>{d.name}</div>
+            <span className="mono hint">{d.join_code}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, marginTop: departments.length > 0 ? 16 : 0 }}>
+          <input value={deptName} onChange={(e) => setDeptName(e.target.value)}
+                 placeholder="e.g. Finance" style={{ flex: 1 }} />
+          <button className="btn btn-primary btn-sm" onClick={addDepartment} disabled={addingDept || !deptName.trim()}>
+            {addingDept ? "Adding…" : "Add department"}
+          </button>
+        </div>
+        {deptError && <p className="error-text">{deptError}</p>}
       </div>
 
       {stats && (
@@ -233,9 +285,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Employee roster</h3>
         <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
-          Upload a CSV (columns: email, title, tenure) to pre-register expected
-          hires — they won't need to hand-type their title when they join.
-          Export from Workday or any HRIS.
+          Upload a CSV (columns: email, title, tenure, department — all but
+          email optional) to pre-register expected hires — they won't need to
+          hand-type their title when they join. Export from Workday or any HRIS.
+          Department names must match a department you've already created above.
         </p>
         <input
           ref={fileInputRef}
@@ -261,7 +314,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
               <div key={r.id} className="points-event-row">
                 <div>
                   <div style={{ fontWeight: 600 }}>{r.email}</div>
-                  <div className="hint">{r.title || "(no title given)"}</div>
+                  <div className="hint">
+                    {r.title || "(no title given)"}
+                    {r.department_id && ` — ${departments.find((d) => d.id === r.department_id)?.name || "Department"}`}
+                  </div>
                 </div>
                 <span className={`pill ${r.joined ? "pill-approved" : "pill-default"}`}>
                   {r.joined ? "Joined" : "Not yet joined"}
@@ -304,6 +360,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <label>What they help with</label>
             <input value={contactDesc} onChange={(e) => setContactDesc(e.target.value)} placeholder="e.g. Office tours & facilities" />
           </div>
+          {departments.length > 0 && (
+            <div className="field">
+              <label>Scope</label>
+              <select value={contactDept} onChange={(e) => setContactDept(e.target.value)}>
+                <option value="">Company-wide (all employees)</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
+              </select>
+            </div>
+          )}
           {contactError && <p className="error-text">{contactError}</p>}
           <button className="btn btn-primary btn-sm" onClick={addContact}
                   disabled={addingContact || !contactName.trim() || !contactEmail.trim()}>
@@ -321,7 +386,14 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         {content.map((c) => (
           <div key={c.id} className="points-event-row">
             <div>
-              <div style={{ fontWeight: 600 }}>{c.title}</div>
+              <div style={{ fontWeight: 600 }}>
+                {c.title}
+                {c.department_id && (
+                  <span className="hint" style={{ marginLeft: 8 }}>
+                    ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
+                  </span>
+                )}
+              </div>
               <div className="hint">{c.content.slice(0, 100)}{c.content.length > 100 ? "…" : ""}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => removeContent(c.id)}>Remove</button>
@@ -338,6 +410,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)}
                       placeholder="Paste the relevant material here…" />
           </div>
+          {departments.length > 0 && (
+            <div className="field">
+              <label>Scope</label>
+              <select value={contentDept} onChange={(e) => setContentDept(e.target.value)}>
+                <option value="">Company-wide (all employees)</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
+              </select>
+            </div>
+          )}
           {error && <p className="error-text">{error}</p>}
           <button className="btn btn-primary btn-sm" onClick={addContent} disabled={adding || !title.trim() || !body.trim()}>
             {adding ? "Adding…" : "Add content"}

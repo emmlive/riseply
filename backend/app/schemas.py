@@ -191,15 +191,28 @@ class OrganizationOut(BaseModel):
     created_at: datetime
 
 
+class DepartmentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class DepartmentOut(BaseModel):
+    id: int
+    name: str
+    join_code: str
+    created_at: datetime
+
+
 class OrgContentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=20000)
+    department_id: int | None = None
 
 
 class OrgContentOut(BaseModel):
     id: int
     title: str
     content: str
+    department_id: int | None
     created_at: datetime
 
 
@@ -221,6 +234,7 @@ class OrgRosterEntryOut(BaseModel):
     email: str
     title: str
     tenure: str
+    department_id: int | None
     joined: bool
     created_at: datetime
 
@@ -238,6 +252,7 @@ class OrgContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: EmailStr
     description: str = Field(default="", max_length=300)
+    department_id: int | None = None
 
 
 class OrgContactOut(BaseModel):
@@ -245,6 +260,7 @@ class OrgContactOut(BaseModel):
     name: str
     email: str
     description: str
+    department_id: int | None
     created_at: datetime
 
 

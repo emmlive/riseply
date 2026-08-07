@@ -430,17 +430,38 @@ company, same self-serve pattern as the rest of Riseply. Worth adding
 verification (e.g. confirming a work email domain) before this is
 opened up to real companies at scale.
 
-**Roster upload**: an admin can upload a CSV (`email, title, tenure`
-columns) via `POST /orgs/{id}/roster/upload` to pre-register expected
-hires — exported from Workday or any HRIS, since this is a plain file
-upload with no live API dependency. When someone joins with the org's
-code and their email matches a roster entry, their real title/tenure
-from the roster is used instead of whatever they typed (verified this
-directly — deliberately submitted wrong data in a test and confirmed
-the roster's data wins). The roster view shows enrollment status
-("joined" / "not yet joined") per person — this is administrative
-status, not conversation content, so it doesn't cross the privacy line
-above.
+**Roster upload**: an admin can upload a CSV (`email, title, tenure,
+department` columns — all but email optional) via `POST
+/orgs/{id}/roster/upload` to pre-register expected hires — exported
+from Workday or any HRIS, since this is a plain file upload with no
+live API dependency. When someone joins with the org's code and their
+email matches a roster entry, their real title/tenure from the roster
+is used instead of whatever they typed (verified this directly —
+deliberately submitted wrong data in a test and confirmed the roster's
+data wins). The roster view shows enrollment status ("joined" / "not
+yet joined") per person — this is administrative status, not
+conversation content, so it doesn't cross the privacy line above.
+
+**Departments**: real department-level scoping, not just a filter tag.
+Each department (`POST /orgs/{id}/departments`) gets its own join
+code, distinct from the org-wide one — someone joining with the
+org-wide code sees company-wide content only; someone joining with a
+department's code sees company-wide content **plus** that
+department's own material layered on top. Content and human contacts
+can each be scoped company-wide (`department_id: null`) or to a
+specific department. A `department_admin` role can manage only their
+own department's content/contacts/roster — they cannot touch
+company-wide settings or another department's material, verified
+directly (a Finance department admin got a clean 403 attempting to
+edit both company-wide content and Engineering's content, while
+succeeding on Finance's own). If a roster entry has a department
+assigned, that takes precedence over whichever code the employee
+actually used to join — reflects what the admin knows about someone's
+real assignment rather than which specific link they happened to
+click. Verified the full layering end-to-end by capturing the actual
+prompt sent to Claude for employees in three different situations
+(org-wide join, department join, cross-department isolation) rather
+than just checking API response shapes.
 
 **Human handoff**: AI can't give someone an office tour or a
 face-to-face introduction — the traditional buddy program's real value

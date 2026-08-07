@@ -18,6 +18,8 @@ def _generate_join_code() -> str:
 
 
 def _require_admin(db: Session, organization_id: int, user_id: int) -> models.OrganizationMember:
+    """Org-wide admin only -- for company-wide actions (settings,
+    billing, creating departments, managing company-wide content)."""
     member = db.query(models.OrganizationMember).filter_by(
         organization_id=organization_id, user_id=user_id, role="admin"
     ).first()
@@ -27,15 +29,46 @@ def _require_admin(db: Session, organization_id: int, user_id: int) -> models.Or
 
 
 def _require_member(db: Session, organization_id: int, user_id: int) -> models.OrganizationMember:
-    """Admin OR employee -- used for things any org member should be able
-    to see, like the human contacts list (an employee needs to see who
-    they can request a handoff from)."""
+    """Admin OR employee OR department_admin -- used for things any org
+    member should be able to see, like the human contacts list (an
+    employee needs to see who they can request a handoff from)."""
     member = db.query(models.OrganizationMember).filter_by(
         organization_id=organization_id, user_id=user_id
     ).first()
     if not member:
         raise HTTPException(status_code=403, detail="You're not a member of this organization.")
     return member
+
+
+def _require_scope_admin(db: Session, organization_id: int, user_id: int, department_id) -> models.OrganizationMember:
+    """Authorizes an action scoped to `department_id` (None = company-wide).
+    An org-wide admin can act on anything. A department_admin can ONLY
+    act within their own department -- they can't touch company-wide
+    settings (department_id=None) or another department's content."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user_id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="You're not a member of this organization.")
+    if member.role == "admin":
+        return member
+    if department_id is not None and member.role == "department_admin" and member.department_id == department_id:
+        return member
+    raise HTTPException(status_code=403, detail="You don't have admin access to this scope.")
+
+
+def resolve_join_code(db: Session, code: str):
+    """Returns (organization_id, department_id). Checks the org-wide
+    code first, then department codes -- both live in the same
+    "namespace" of unique codes, but are different tables, so this is
+    a real two-step lookup, not a single query."""
+    org = db.query(models.Organization).filter_by(join_code=code.upper()).first()
+    if org:
+        return org.id, None
+    dept = db.query(models.Department).filter_by(join_code=code.upper()).first()
+    if dept:
+        return dept.organization_id, dept.id
+    raise HTTPException(status_code=400, detail="That organization join code isn't valid.")
 
 
 @router.post("", response_model=schemas.OrganizationOut)
@@ -48,8 +81,6 @@ def create_organization(
     for now -- any user can spin up an org for their company; this is
     the same self-serve pattern as the rest of Riseply's signup."""
     join_code = _generate_join_code()
-    # Extremely unlikely to collide given the entropy, but check anyway
-    # rather than trust it blindly.
     while db.query(models.Organization).filter_by(join_code=join_code).first():
         join_code = _generate_join_code()
 
@@ -65,12 +96,68 @@ def create_organization(
 
 @router.get("/mine", response_model=list[schemas.OrganizationOut])
 def my_organizations(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Orgs this user administers."""
+    """Orgs this user administers (org-wide admin only -- department
+    admins manage a department within an org, not the org's own
+    settings page, so they're intentionally not included here)."""
     rows = db.query(models.Organization).join(
         models.OrganizationMember, models.OrganizationMember.organization_id == models.Organization.id
     ).filter(models.OrganizationMember.user_id == user.id, models.OrganizationMember.role == "admin").all()
     return rows
 
+
+# --- Departments ---
+
+@router.post("/{organization_id}/departments", response_model=schemas.DepartmentOut)
+def create_department(
+    organization_id: int,
+    payload: schemas.DepartmentCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Org-wide admin only -- creating a department is a company-wide
+    structural change, not something a department admin does to
+    themselves."""
+    _require_admin(db, organization_id, user.id)
+
+    join_code = _generate_join_code()
+    while (db.query(models.Organization).filter_by(join_code=join_code).first()
+           or db.query(models.Department).filter_by(join_code=join_code).first()):
+        join_code = _generate_join_code()
+
+    dept = models.Department(organization_id=organization_id, name=payload.name, join_code=join_code)
+    db.add(dept)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="A department with that name already exists.")
+    db.refresh(dept)
+    return dept
+
+
+@router.get("/{organization_id}/departments", response_model=list[schemas.DepartmentOut])
+def list_departments(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Org-wide admins see every department (with join codes, so they
+    can distribute them). Department admins see only their own
+    department. Plain employees get nothing here -- they don't need
+    department join codes, only their own onboarding experience."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user.id
+    ).first()
+    if not member or member.role not in ("admin", "department_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    q = db.query(models.Department).filter_by(organization_id=organization_id)
+    if member.role == "department_admin":
+        q = q.filter_by(id=member.department_id)
+    return q.all()
+
+
+# --- Custom onboarding content (company-wide or department-specific) ---
 
 @router.post("/{organization_id}/content", response_model=schemas.OrgContentOut)
 def add_org_content(
@@ -79,9 +166,10 @@ def add_org_content(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    _require_admin(db, organization_id, user.id)
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
     content = models.OrganizationBuddyContent(
-        organization_id=organization_id, title=payload.title, content=payload.content,
+        organization_id=organization_id, department_id=payload.department_id,
+        title=payload.title, content=payload.content,
     )
     db.add(content)
     db.commit()
@@ -95,8 +183,22 @@ def list_org_content(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    _require_admin(db, organization_id, user.id)
-    return db.query(models.OrganizationBuddyContent).filter_by(organization_id=organization_id).all()
+    """Org-wide admins see everything (company-wide + every
+    department's content). Department admins see company-wide content
+    (read-only context for them) plus their own department's content."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user.id
+    ).first()
+    if not member or member.role not in ("admin", "department_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    q = db.query(models.OrganizationBuddyContent).filter_by(organization_id=organization_id)
+    if member.role == "department_admin":
+        q = q.filter(
+            (models.OrganizationBuddyContent.department_id == None)  # noqa: E711
+            | (models.OrganizationBuddyContent.department_id == member.department_id)
+        )
+    return q.all()
 
 
 @router.delete("/{organization_id}/content/{content_id}")
@@ -106,12 +208,12 @@ def delete_org_content(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    _require_admin(db, organization_id, user.id)
     content = db.query(models.OrganizationBuddyContent).filter_by(
         id=content_id, organization_id=organization_id
     ).first()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found.")
+    _require_scope_admin(db, organization_id, user.id, content.department_id)
     db.delete(content)
     db.commit()
     return {"deleted": True}
@@ -171,10 +273,11 @@ async def upload_roster(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Expects a CSV with headers: email, title, tenure (tenure optional,
-    defaults to just_started if blank/missing). Upserts by email -- a
-    re-upload with updated info replaces the existing entry rather than
-    duplicating it."""
+    """Expects a CSV with headers: email, title, tenure, department (all
+    but email optional). department is matched by NAME against this
+    org's existing departments -- an unrecognized name is reported as an
+    error for that row rather than silently dropped, so a typo doesn't
+    quietly leave someone without their department's content."""
     _require_admin(db, organization_id, user.id)
 
     contents = await file.read()
@@ -188,9 +291,13 @@ async def upload_roster(
 
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None or "email" not in [f.strip().lower() for f in reader.fieldnames]:
-        raise HTTPException(status_code=400, detail="CSV must have an 'email' column (title and tenure optional).")
+        raise HTTPException(status_code=400, detail="CSV must have an 'email' column (title, tenure, department optional).")
 
     valid_tenures = {"just_started", "a_few_months", "well_established"}
+    dept_by_name = {
+        d.name.strip().lower(): d.id
+        for d in db.query(models.Department).filter_by(organization_id=organization_id).all()
+    }
     added, updated, errors = 0, 0, []
 
     for i, row in enumerate(reader, start=2):  # start=2: row 1 is the header
@@ -205,17 +312,25 @@ async def upload_roster(
             errors.append(f"Row {i}: unrecognized tenure '{tenure}', defaulted to just_started.")
             tenure = "just_started"
 
+        department_id = None
+        dept_name = row.get("department", "")
+        if dept_name:
+            department_id = dept_by_name.get(dept_name.lower())
+            if department_id is None:
+                errors.append(f"Row {i}: unrecognized department '{dept_name}', left as company-wide.")
+
         existing = db.query(models.OrgRosterEntry).filter_by(
             organization_id=organization_id, email=email
         ).first()
         if existing:
             existing.title = row.get("title", existing.title)
             existing.tenure = tenure
+            existing.department_id = department_id if dept_name else existing.department_id
             updated += 1
         else:
             db.add(models.OrgRosterEntry(
                 organization_id=organization_id, email=email,
-                title=row.get("title", ""), tenure=tenure,
+                title=row.get("title", ""), tenure=tenure, department_id=department_id,
             ))
             added += 1
 
@@ -230,15 +345,23 @@ def list_roster(
     user: models.User = Depends(get_current_user),
 ):
     """Enrollment status only (has this person joined yet) -- never
-    conversation content. Same distinction as the usage stats endpoint:
-    this is onboarding-coordination visibility, not a way to read
-    anyone's chat with their buddy."""
-    _require_admin(db, organization_id, user.id)
-    rows = db.query(models.OrgRosterEntry).filter_by(organization_id=organization_id).all()
+    conversation content. Department admins see only their own
+    department's roster entries."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user.id
+    ).first()
+    if not member or member.role not in ("admin", "department_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    q = db.query(models.OrgRosterEntry).filter_by(organization_id=organization_id)
+    if member.role == "department_admin":
+        q = q.filter_by(department_id=member.department_id)
+    rows = q.all()
     return [
         schemas.OrgRosterEntryOut(
             id=r.id, email=r.email, title=r.title, tenure=r.tenure,
-            joined=r.matched_user_id is not None, created_at=r.created_at,
+            department_id=r.department_id, joined=r.matched_user_id is not None,
+            created_at=r.created_at,
         )
         for r in rows
     ]
@@ -253,10 +376,10 @@ def add_contact(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    _require_admin(db, organization_id, user.id)
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
     contact = models.OrgHumanContact(
-        organization_id=organization_id, name=payload.name,
-        email=payload.email, description=payload.description,
+        organization_id=organization_id, department_id=payload.department_id,
+        name=payload.name, email=payload.email, description=payload.description,
     )
     db.add(contact)
     db.commit()
@@ -271,9 +394,18 @@ def list_contacts(
     user: models.User = Depends(get_current_user),
 ):
     """Any org member can see this -- an employee needs to know who's
-    available before they can request a handoff to them."""
-    _require_member(db, organization_id, user.id)
-    return db.query(models.OrgHumanContact).filter_by(organization_id=organization_id).all()
+    available before they can request a handoff to them. A plain
+    employee sees company-wide contacts plus their own department's;
+    admins/department_admins see the same scope they can manage."""
+    member = _require_member(db, organization_id, user.id)
+    q = db.query(models.OrgHumanContact).filter_by(organization_id=organization_id)
+    if member.role != "admin":
+        dept_id = member.department_id
+        q = q.filter(
+            (models.OrgHumanContact.department_id == None)  # noqa: E711
+            | (models.OrgHumanContact.department_id == dept_id)
+        )
+    return q.all()
 
 
 @router.delete("/{organization_id}/contacts/{contact_id}")
@@ -283,10 +415,10 @@ def delete_contact(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    _require_admin(db, organization_id, user.id)
     contact = db.query(models.OrgHumanContact).filter_by(id=contact_id, organization_id=organization_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found.")
+    _require_scope_admin(db, organization_id, user.id, contact.department_id)
     db.delete(contact)
     db.commit()
     return {"deleted": True}
@@ -300,10 +432,6 @@ def _stripe():
     import stripe
     stripe.api_key = settings.stripe_secret_key
     return stripe
-
-
-
-
 
 
 @router.post("/{organization_id}/subscribe")

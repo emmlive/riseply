@@ -135,6 +135,7 @@ export interface OrgContent {
   id: number;
   title: string;
   content: string;
+  department_id: number | null;
   created_at: string;
 }
 
@@ -150,6 +151,7 @@ export interface OrgRosterEntry {
   email: string;
   title: string;
   tenure: string;
+  department_id: number | null;
   joined: boolean;
   created_at: string;
 }
@@ -168,6 +170,14 @@ export interface OrgContact {
   name: string;
   email: string;
   description: string;
+  department_id: number | null;
+  created_at: string;
+}
+
+export interface Department {
+  id: number;
+  name: string;
+  join_code: string;
   created_at: string;
 }
 
