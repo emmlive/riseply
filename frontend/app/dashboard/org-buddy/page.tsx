@@ -101,9 +101,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
 
   function load() {
     api<OrgContent[]>(`/orgs/${org.id}/content`).then(setContent);
-    api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats);
+    // Usage stats and billing are org-wide-admin-only on the backend --
+    // a department admin correctly gets a 403 on these two specifically
+    // (billing and aggregate usage across every department are legitimately
+    // out of their scope), so both need to fail silently here rather than
+    // surface as an error toast, and the cards themselves stay hidden
+    // rather than rendering an empty shell.
+    api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats).catch(() => {});
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
-    api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling);
+    api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
     api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
     api<ChecklistItem[]>(`/orgs/${org.id}/checklist`).then(setChecklist);
@@ -330,36 +336,34 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         </div>
       )}
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Billing</h3>
-        {billing && (
-          <>
-            <p style={{ margin: 0 }}>
-              Plan: <strong>{billing.plan === "none" ? "No plan yet" : billing.plan}</strong>
-              {billing.plan !== "none" && <> — {billing.subscription_status}</>}
-            </p>
-            <p className="hint" style={{ marginTop: 4 }}>
-              {billing.employees_joined} employee{billing.employees_joined === 1 ? "" : "s"} joined,
-              {" "}{billing.included_seats} included in your plan.
-              {billing.overage_seats > 0 && (
-                <span style={{ color: "var(--danger)" }}>
-                  {" "}{billing.overage_seats} over your included seats (${billing.overage_cost_usd} — reconciled manually for now, not yet auto-billed).
-                </span>
-              )}
-            </p>
-            {billing.plan === "none" && (
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => subscribe("starter")}>
-                  Starter — $199/mo (10 seats)
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => subscribe("growth")}>
-                  Growth — $599/mo (50 seats)
-                </button>
-              </div>
+      {billing && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Billing</h3>
+          <p style={{ margin: 0 }}>
+            Plan: <strong>{billing.plan === "none" ? "No plan yet" : billing.plan}</strong>
+            {billing.plan !== "none" && <> — {billing.subscription_status}</>}
+          </p>
+          <p className="hint" style={{ marginTop: 4 }}>
+            {billing.employees_joined} employee{billing.employees_joined === 1 ? "" : "s"} joined,
+            {" "}{billing.included_seats} included in your plan.
+            {billing.overage_seats > 0 && (
+              <span style={{ color: "var(--danger)" }}>
+                {" "}{billing.overage_seats} over your included seats (${billing.overage_cost_usd} — reconciled manually for now, not yet auto-billed).
+              </span>
             )}
-          </>
-        )}
-      </div>
+          </p>
+          {billing.plan === "none" && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => subscribe("starter")}>
+                Starter — $199/mo (10 seats)
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => subscribe("growth")}>
+                Growth — $599/mo (50 seats)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Employee roster</h3>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, clearToken, getToken, User } from "@/lib/api";
+import { api, clearToken, getToken, User, Organization } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -12,7 +12,6 @@ const NAV = [
   { href: "/dashboard/resume", label: "Resume" },
   { href: "/dashboard/applications", label: "Applications" },
   { href: "/dashboard/job-buddy", label: "Job Buddy" },
-  { href: "/dashboard/org-buddy", label: "Org Buddy" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/profile", label: "Profile" },
   { href: "/dashboard/knowledge-base", label: "Knowledge Base" },
@@ -24,6 +23,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [hasOrgAdminAccess, setHasOrgAdminAccess] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -31,6 +31,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return;
     }
     api<User>("/me").then(setUser).catch(() => {});
+    // "Org Buddy" only makes sense for someone who actually administers
+    // an org (fully, or as a department admin) -- a plain individual
+    // user, or an employee who just joined via a code, would otherwise
+    // hit a confusing "create an organization" prompt that doesn't
+    // apply to them. Everything relevant to a plain employee is already
+    // surfaced through Job Buddy.
+    api<Organization[]>("/orgs/mine").then((orgs) => setHasOrgAdminAccess(orgs.length > 0)).catch(() => {});
   }, [router]);
 
   function handleLogout() {
@@ -54,6 +61,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {item.label}
           </Link>
         ))}
+        {hasOrgAdminAccess && (
+          <Link
+            href="/dashboard/org-buddy"
+            className={`sidebar-link ${pathname === "/dashboard/org-buddy" ? "active" : ""}`}
+          >
+            Org Buddy
+          </Link>
+        )}
         {user?.is_admin && (
           <Link
             href="/dashboard/admin"

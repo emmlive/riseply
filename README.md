@@ -430,6 +430,29 @@ company, same self-serve pattern as the rest of Riseply. Worth adding
 verification (e.g. confirming a work email domain) before this is
 opened up to real companies at scale.
 
+**Sidebar visibility**: the "Org Buddy" nav item only shows for users
+who actually have admin-level access somewhere — full org admin or
+department admin — fetched via `GET /orgs/mine`, which now correctly
+includes both roles. A plain employee (joined via a code, no admin
+role) or a plain individual user with no org affiliation at all
+correctly never sees it, since everything relevant to them is already
+surfaced through Job Buddy. This closes a real bug that existed since
+department admins were first added: `/orgs/mine` originally only
+checked for `role == "admin"`, meaning a department admin got exactly
+the same broken "create an organization" prompt a plain employee would
+have hit — despite already being a legitimate admin of their own
+department. Verified live with all four role types side by side (org
+admin, department admin, plain employee, plain individual) that each
+sees exactly the sidebar entry appropriate to them, and confirmed the
+department admin can now actually reach and use the page correctly,
+not just see the link. Caught and fixed a second real bug during that
+same verification pass: the Billing card rendered its heading
+unconditionally even when the underlying fetch 403'd for a department
+admin (billing is legitimately org-wide-admin-only), producing a
+visible error toast and an empty card — fixed by catching that fetch
+gracefully and hiding the whole card, not just its contents, when it's
+out of scope for the viewer.
+
 **Roster upload**: an admin can upload a CSV (`email, title, tenure,
 department` columns — all but email optional) via `POST
 /orgs/{id}/roster/upload` to pre-register expected hires — exported

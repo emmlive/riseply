@@ -96,12 +96,21 @@ def create_organization(
 
 @router.get("/mine", response_model=list[schemas.OrganizationOut])
 def my_organizations(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Orgs this user administers (org-wide admin only -- department
-    admins manage a department within an org, not the org's own
-    settings page, so they're intentionally not included here)."""
+    """Orgs this user has ADMIN-LEVEL access to -- either full org-wide
+    admin, or department_admin for at least one department within it.
+    Both need to reach this page: an org admin manages everything, a
+    department admin manages their own department's content/contacts/
+    roster/checklist (already correctly scoped by the per-endpoint
+    access control elsewhere in this router -- this just controls
+    whether they can reach the page shell at all). Plain employees are
+    correctly excluded -- they have no admin-level access anywhere, and
+    everything relevant to them is already surfaced through Job Buddy."""
     rows = db.query(models.Organization).join(
         models.OrganizationMember, models.OrganizationMember.organization_id == models.Organization.id
-    ).filter(models.OrganizationMember.user_id == user.id, models.OrganizationMember.role == "admin").all()
+    ).filter(
+        models.OrganizationMember.user_id == user.id,
+        models.OrganizationMember.role.in_(["admin", "department_admin"]),
+    ).distinct().all()
     return rows
 
 
