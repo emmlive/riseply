@@ -7,10 +7,18 @@ import requests
 
 API_URL = "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
 
+# Some hosts block requests with no User-Agent (or a default
+# "python-requests/x.x" one) as basic bot mitigation -- see the longer
+# note in rss_boards.py. Same realistic browser-style UA for consistency.
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 
 def fetch_jobs(company_slug: str):
     """Returns a list of normalized job dicts for one company."""
-    resp = requests.get(API_URL.format(company=company_slug), timeout=20)
+    resp = requests.get(API_URL.format(company=company_slug), timeout=20, headers=HEADERS)
     resp.raise_for_status()
     data = resp.json()
 

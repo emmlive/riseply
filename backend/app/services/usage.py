@@ -64,11 +64,23 @@ def check_and_increment(db: Session, user: models.User, action: str, amount: int
     for their current tier. Otherwise increments the counter and returns
     the new count.
 
+    Admin accounts are exempt entirely -- not just given Pro's higher
+    limit, but never metered or capped at all. These are internal pilot
+    accounts (see Organization.is_sandbox and is_pro() for the same
+    reasoning), and a real customer's usage cap shouldn't be able to
+    block someone testing the product. This also means admin testing
+    never inflates the 'Usage & estimated API cost' figure on the Admin
+    Overview tab, since nothing gets logged for them -- same principle
+    as excluding sandbox orgs from revenue metrics.
+
     Call this BEFORE making the Claude API call it's metering. If the call
     you're metering can fail, pair this with decrement() in a try/except
     so a failed generation doesn't cost the user part of their monthly
     allowance for nothing.
     """
+    if user.is_admin:
+        return None
+
     limit = limits_for(user).get(action)
     if limit is None:
         return  # unmetered action
