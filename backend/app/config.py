@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # "unauthenticated batch job that processes every user" default.
     cron_secret: str = ""
 
+    # How many unseen jobs a single interactive "Find new matches" click
+    # scores before returning, so the request comes back in a reasonable
+    # time regardless of the user's monthly limit or pool size. The
+    # scheduled batch job isn't capped -- it works through the rest
+    # overnight without anyone waiting on it.
+    manual_match_run_job_cap: int = 25
+
     # --- Org Buddy as a Service: hybrid pricing (base plan + overage) ---
     # Real prices live in Stripe (like the individual Pro plan) -- these
     # are display/reference values and the included-seat counts used to

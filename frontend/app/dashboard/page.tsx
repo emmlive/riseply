@@ -39,7 +39,7 @@ export default function OverviewPage() {
     setNearMisses([]);
     try {
       await api("/pipeline/discover", { method: "POST" });
-      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[] }>(
+      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean }>(
         "/pipeline/match",
         { method: "POST" }
       );
@@ -52,6 +52,8 @@ export default function OverviewPage() {
       );
       if (result.usage_limit_reached) {
         setMessage((m) => m + " (Stopped early — monthly match limit reached.)");
+      } else if (result.hit_job_cap) {
+        setMessage((m) => m + " There are more unscored postings waiting — click \"Find new matches\" again to keep going, or check back after the nightly search runs.");
       }
       setNearMisses(result.near_misses);
       load();
@@ -66,9 +68,16 @@ export default function OverviewPage() {
     <div>
       <div className="topbar">
         <h1>Overview</h1>
-        <button className="btn btn-primary" onClick={runPipeline} disabled={running}>
-          {running ? "Searching…" : "Find new matches"}
-        </button>
+        <div style={{ textAlign: "right" }}>
+          <button className="btn btn-primary" onClick={runPipeline} disabled={running}>
+            {running ? "Searching…" : "Find new matches"}
+          </button>
+          {running && (
+            <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+              Scoring postings one at a time — this can take up to a minute or two.
+            </p>
+          )}
+        </div>
       </div>
 
       {message && (
