@@ -96,6 +96,7 @@ export interface Application {
   job_location: string;
   job_url: string;
   organization_id: number | null;
+  organization_logo_url: string;
 }
 
 export interface Usage {
@@ -132,6 +133,7 @@ export interface Organization {
   join_code: string;
   created_at: string;
   is_sandbox: boolean;
+  logo_url: string;
 }
 
 export interface OrgContent {

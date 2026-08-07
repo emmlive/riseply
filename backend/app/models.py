@@ -141,6 +141,7 @@ class Application(Base):
 
     owner = relationship("User", back_populates="applications")
     job = relationship("Job")
+    organization = relationship("Organization")
 
 
 class InterviewPrep(Base):
@@ -255,6 +256,11 @@ class Organization(Base):
     name = Column(String, nullable=False)
     join_code = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    # Optional logo shown on the org's own dashboard and to its employees
+    # on Job Buddy / onboarding pages -- a URL to an already-hosted image
+    # rather than a real upload, since there's no image storage (S3,
+    # Cloudflare R2, etc.) wired up anywhere in this codebase yet.
+    logo_url = Column(String, default="", server_default="")
     # True only for an admin's personal pilot/practice org, created via
     # POST /orgs/sandbox -- never set by the normal self-serve org
     # creation flow. Lets an admin genuinely exercise every Org Buddy

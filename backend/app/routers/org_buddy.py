@@ -134,6 +134,29 @@ def create_sandbox_organization(
     return org
 
 
+@router.put("/{organization_id}/settings", response_model=schemas.OrganizationOut)
+def update_org_settings(
+    organization_id: int,
+    payload: schemas.OrgSettingsUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Org-wide branding settings -- logo_url only for now. Org-wide
+    admin only (not department_admin -- branding applies to the whole
+    company, same scope as billing and creating departments)."""
+    _require_admin(db, organization_id, user.id)
+    org = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    logo_url = payload.logo_url.strip()
+    if logo_url and not (logo_url.startswith("http://") or logo_url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Logo URL must start with http:// or https://")
+
+    org.logo_url = logo_url
+    db.commit()
+    db.refresh(org)
+    return org
+
+
 @router.get("/mine", response_model=list[schemas.OrganizationOut])
 def my_organizations(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Orgs this user has ADMIN-LEVEL access to -- either full org-wide
