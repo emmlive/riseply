@@ -419,7 +419,13 @@ function OrganizationsTab() {
 
   useEffect(() => { api<AdminOrganization[]>("/admin/organizations").then(setOrgs); }, []);
 
-  const totalMrr = orgs.reduce((sum, o) => sum + o.estimated_mrr_usd, 0);
+  // Sandbox orgs (admin pilot access) are deliberately excluded from
+  // every real business metric here -- they can't be billed at all
+  // (blocked server-side), so their MRR is always 0, but member counts
+  // still get excluded too so "Total members" reflects real customers.
+  const realOrgs = orgs.filter((o) => !o.is_sandbox);
+  const sandboxOrgs = orgs.filter((o) => o.is_sandbox);
+  const totalMrr = realOrgs.reduce((sum, o) => sum + o.estimated_mrr_usd, 0);
 
   return (
     <div>
@@ -429,17 +435,17 @@ function OrganizationsTab() {
           <div className="label">Estimated org MRR</div>
         </div>
         <div className="rise-stat">
-          <div className="value">{orgs.length}</div>
+          <div className="value">{realOrgs.length}</div>
           <div className="label">Organizations</div>
         </div>
         <div className="rise-stat">
-          <div className="value">{orgs.reduce((sum, o) => sum + o.member_count, 0)}</div>
+          <div className="value">{realOrgs.reduce((sum, o) => sum + o.member_count, 0)}</div>
           <div className="label">Total members</div>
         </div>
       </div>
 
       <div className="card">
-        {orgs.map((org) => (
+        {realOrgs.map((org) => (
           <div key={org.id} className="points-event-row" style={{ alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 600 }}>{org.name}</div>
@@ -457,8 +463,26 @@ function OrganizationsTab() {
             </div>
           </div>
         ))}
-        {orgs.length === 0 && <p className="muted">No organizations yet.</p>}
+        {realOrgs.length === 0 && <p className="muted">No organizations yet.</p>}
       </div>
+
+      {sandboxOrgs.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Sandbox orgs</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            Admin pilot access — not counted in the totals above, and can't be billed.
+          </p>
+          {sandboxOrgs.map((org) => (
+            <div key={org.id} className="points-event-row" style={{ alignItems: "center" }}>
+              <div style={{ fontWeight: 600 }}>
+                {org.name}
+                <span className="pill pill-default" style={{ marginLeft: 8 }}>Sandbox</span>
+              </div>
+              <div className="hint">{org.member_count} member{org.member_count === 1 ? "" : "s"}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
