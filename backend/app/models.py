@@ -114,6 +114,14 @@ class Application(Base):
     # Set when joined via a department-specific code rather than the
     # org-wide code -- plan/chat then also draws on that department's
     # own content, layered on top of the company-wide material.
+    manager_email = Column(String, default="", server_default="")
+    # From the roster entry, if the admin provided one. Used only to
+    # send a factual completion notification when the checklist hits
+    # 100% -- never any conversation content.
+    manager_notified_at = Column(DateTime, nullable=True)
+    # Guards against re-notifying the manager every time (e.g. if an
+    # admin adds a new checklist item after the employee already
+    # finished, re-completing it shouldn't re-fire the notification).
 
     status = Column(String, default="pending_approval", server_default="pending_approval")
     # pending_approval | approved | rejected | submitted | interviewing |
@@ -311,6 +319,7 @@ class OrgRosterEntry(Base):
     email = Column(String, nullable=False)
     title = Column(String, default="")
     tenure = Column(String, default="just_started")
+    manager_email = Column(String, default="", server_default="")
     matched_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # set once they actually join
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
@@ -332,6 +341,36 @@ class OrgHumanContact(Base):
     email = Column(String, nullable=False)
     description = Column(String, default="")  # e.g. "Office tours & facilities"
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OrgChecklistItem(Base):
+    """A checklist item template an admin (or department admin, for
+    their own department) has defined -- e.g. 'Set up your laptop',
+    'Complete expense system training'. department_id NULL means
+    company-wide (every employee gets it); set means only that
+    department's employees get it, same layering as content/contacts."""
+    __tablename__ = "org_checklist_items"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(String, default="")
+    order = Column(Integer, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class ChecklistCompletion(Base):
+    """Tracks one employee's completion of one checklist item.
+    Enrollment/progress data, not conversation content -- same category
+    as roster 'joined' status, safe for admin visibility."""
+    __tablename__ = "checklist_completions"
+    __table_args__ = (UniqueConstraint("application_id", "checklist_item_id", name="uq_app_checklist_item"),)
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    checklist_item_id = Column(Integer, ForeignKey("org_checklist_items.id"), nullable=False)
+    completed_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
 class HandoffRequest(Base):

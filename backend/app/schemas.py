@@ -235,6 +235,7 @@ class OrgRosterEntryOut(BaseModel):
     title: str
     tenure: str
     department_id: int | None
+    manager_email: str
     joined: bool
     created_at: datetime
 
@@ -246,6 +247,30 @@ class OrgBillingOut(BaseModel):
     employees_joined: int
     overage_seats: int
     overage_cost_usd: float
+
+
+class ChecklistItemCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    description: str = Field(default="", max_length=1000)
+    department_id: int | None = None
+    order: int = 0
+
+
+class ChecklistItemOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    department_id: int | None
+    order: int
+    created_at: datetime
+
+
+class ChecklistProgressItem(BaseModel):
+    id: int
+    title: str
+    description: str
+    completed: bool
+    completed_at: datetime | None
 
 
 class OrgContactCreate(BaseModel):

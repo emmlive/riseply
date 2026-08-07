@@ -152,6 +152,7 @@ export interface OrgRosterEntry {
   title: string;
   tenure: string;
   department_id: number | null;
+  manager_email: string;
   joined: boolean;
   created_at: string;
 }
@@ -179,6 +180,23 @@ export interface Department {
   name: string;
   join_code: string;
   created_at: string;
+}
+
+export interface ChecklistItem {
+  id: number;
+  title: string;
+  description: string;
+  department_id: number | null;
+  order: number;
+  created_at: string;
+}
+
+export interface ChecklistProgressItem {
+  id: number;
+  title: string;
+  description: string;
+  completed: boolean;
+  completed_at: string | null;
 }
 
 export interface KBArticle {

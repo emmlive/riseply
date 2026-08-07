@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 from app.database import get_db
 from app import models, schemas
@@ -78,6 +79,7 @@ def add_current_job(
     org context."""
     organization_id = None
     department_id = None
+    manager_email = ""
     company = payload.company
     title = payload.title
     tenure = payload.tenure
@@ -97,11 +99,11 @@ def add_current_job(
             db.commit()
 
         # If the org admin pre-registered this person via CSV roster
-        # upload, use their real title/tenure instead of asking the
-        # employee to hand-type it again -- and mark the roster entry as
-        # matched, which is what makes it show up as "joined" in the
-        # admin's roster view. The roster entry's own department (if the
-        # admin set one) takes precedence over whatever code the
+        # upload, use their real title/tenure/manager instead of asking
+        # the employee to hand-type it again -- and mark the roster
+        # entry as matched, which is what makes it show up as "joined"
+        # in the admin's roster view. The roster entry's own department
+        # (if the admin set one) takes precedence over whatever code the
         # employee happened to use, since it reflects what the admin
         # actually knows about their real department assignment.
         roster_entry = db.query(models.OrgRosterEntry).filter_by(
@@ -113,6 +115,7 @@ def add_current_job(
             tenure = roster_entry.tenure
             if roster_entry.department_id is not None:
                 department_id = roster_entry.department_id
+            manager_email = roster_entry.manager_email
             roster_entry.matched_user_id = user.id
             db.commit()
 
@@ -130,7 +133,8 @@ def add_current_job(
         user_id=user.id, job_id=job.id,
         matched_profile="", match_score=0,
         match_reason="Added manually — an existing job, not matched through Riseply.",
-        status="accepted", tenure_hint=tenure, organization_id=organization_id, department_id=department_id,
+        status="accepted", tenure_hint=tenure, organization_id=organization_id,
+        department_id=department_id, manager_email=manager_email,
     )
     db.add(application)
     db.commit()
@@ -323,3 +327,113 @@ def request_handoff(
     db.add(handoff)
     db.commit()
     return {"sent": True, "contact_name": contact.name}
+
+
+# --- Onboarding checklist ---
+
+@router.get("/{application_id}/checklist", response_model=list[schemas.ChecklistProgressItem])
+def get_checklist(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Company-wide items plus (if applicable) the employee's own
+    department's items, each with this employee's own completion
+    status. Empty list if not org-linked -- no checklist without an
+    org, same as the human-contacts endpoint."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        return []
+
+    q = db.query(models.OrgChecklistItem).filter_by(organization_id=app_row.organization_id)
+    if app_row.department_id:
+        q = q.filter(
+            (models.OrgChecklistItem.department_id == None)  # noqa: E711
+            | (models.OrgChecklistItem.department_id == app_row.department_id)
+        )
+    else:
+        q = q.filter(models.OrgChecklistItem.department_id == None)  # noqa: E711
+    items = q.order_by(models.OrgChecklistItem.order).all()
+
+    completions = {
+        c.checklist_item_id: c.completed_at
+        for c in db.query(models.ChecklistCompletion).filter_by(application_id=application_id).all()
+    }
+
+    return [
+        schemas.ChecklistProgressItem(
+            id=i.id, title=i.title, description=i.description,
+            completed=i.id in completions, completed_at=completions.get(i.id),
+        )
+        for i in items
+    ]
+
+
+@router.post("/{application_id}/checklist/{item_id}/complete")
+def complete_checklist_item(
+    application_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Employee marks an item done themselves -- self-directed, same as
+    the rest of Job Buddy. If this completes every applicable item, a
+    factual notification email goes to the employee's manager (if one
+    is on file), for record-keeping -- never any conversation content,
+    just 'X completed their onboarding checklist.' Only fires once per
+    application (manager_notified_at guards against re-firing if, say,
+    an admin adds a new item after the employee already finished and
+    they complete that one too)."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        raise HTTPException(status_code=400, detail="This job isn't linked to an organization.")
+
+    item = db.query(models.OrgChecklistItem).filter_by(
+        id=item_id, organization_id=app_row.organization_id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+
+    existing = db.query(models.ChecklistCompletion).filter_by(
+        application_id=application_id, checklist_item_id=item_id
+    ).first()
+    if not existing:
+        db.add(models.ChecklistCompletion(application_id=application_id, checklist_item_id=item_id))
+        db.commit()
+
+    # Check for 100% completion across every applicable item.
+    q = db.query(models.OrgChecklistItem).filter_by(organization_id=app_row.organization_id)
+    if app_row.department_id:
+        q = q.filter(
+            (models.OrgChecklistItem.department_id == None)  # noqa: E711
+            | (models.OrgChecklistItem.department_id == app_row.department_id)
+        )
+    else:
+        q = q.filter(models.OrgChecklistItem.department_id == None)  # noqa: E711
+    applicable_ids = {i.id for i in q.all()}
+
+    completed_ids = {
+        c.checklist_item_id for c in
+        db.query(models.ChecklistCompletion).filter_by(application_id=application_id).all()
+    }
+
+    all_done = bool(applicable_ids) and applicable_ids.issubset(completed_ids)
+
+    if all_done and app_row.manager_email and not app_row.manager_notified_at:
+        job = app_row.job
+        try:
+            notifier.send_email(
+                app_row.manager_email,
+                f"[Riseply] {user.full_name or user.email} completed their onboarding checklist",
+                (
+                    f"{user.full_name or '(no name given)'} ({user.email}), {job.title} at "
+                    f"{job.company}, has completed every item on their onboarding checklist.\n\n"
+                    f"For your records."
+                ),
+            )
+            app_row.manager_notified_at = datetime.utcnow()
+            db.commit()
+        except Exception:
+            pass  # notification is best-effort -- the employee's real progress is already saved either way
+
+    return {"completed": True, "all_done": all_done}

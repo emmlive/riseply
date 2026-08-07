@@ -463,6 +463,26 @@ prompt sent to Claude for employees in three different situations
 (org-wide join, department join, cross-department isolation) rather
 than just checking API response shapes.
 
+**Onboarding checklist + manager notification**: admins (or department
+admins, for their own department) define checklist items — same
+company-wide/department-scoped pattern as content and contacts.
+Employees check items off themselves as they go (`POST
+/applications/{id}/checklist/{item_id}/complete`), self-directed like
+the rest of Job Buddy. The moment every applicable item is complete, a
+factual notification goes to the employee's manager if one is on file
+(added via the roster CSV's `manager_email` column) — purely
+record-keeping, e.g. "Jane completed her onboarding checklist," never
+any conversation content. Verified the precise trigger timing
+directly: confirmed the notification does NOT fire after a partial
+completion, fires exactly once at 100% to the correct manager (checked
+the actual email body contains no conversation content), and does NOT
+re-fire if an already-completed item gets hit again — a
+`manager_notified_at` guard prevents duplicate notifications (e.g. if
+an admin adds a new item after someone already finished and they
+complete that one too). Also verified the no-manager-on-file case
+degrades cleanly — checklist completion still works normally, no crash,
+no notification attempted.
+
 **Human handoff**: AI can't give someone an office tour or a
 face-to-face introduction — the traditional buddy program's real value
 is often precisely those in-person moments. An org admin maintains a

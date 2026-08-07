@@ -273,11 +273,14 @@ async def upload_roster(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Expects a CSV with headers: email, title, tenure, department (all
-    but email optional). department is matched by NAME against this
-    org's existing departments -- an unrecognized name is reported as an
-    error for that row rather than silently dropped, so a typo doesn't
-    quietly leave someone without their department's content."""
+    """Expects a CSV with headers: email, title, tenure, department,
+    manager_email (all but email optional). department is matched by
+    NAME against this org's existing departments -- an unrecognized
+    name is reported as an error for that row rather than silently
+    dropped, so a typo doesn't quietly leave someone without their
+    department's content. manager_email is used only to send a factual
+    completion notification when the employee's checklist hits 100% --
+    never any conversation content."""
     _require_admin(db, organization_id, user.id)
 
     contents = await file.read()
@@ -291,7 +294,7 @@ async def upload_roster(
 
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None or "email" not in [f.strip().lower() for f in reader.fieldnames]:
-        raise HTTPException(status_code=400, detail="CSV must have an 'email' column (title, tenure, department optional).")
+        raise HTTPException(status_code=400, detail="CSV must have an 'email' column (title, tenure, department, manager_email optional).")
 
     valid_tenures = {"just_started", "a_few_months", "well_established"}
     dept_by_name = {
@@ -319,6 +322,8 @@ async def upload_roster(
             if department_id is None:
                 errors.append(f"Row {i}: unrecognized department '{dept_name}', left as company-wide.")
 
+        manager_email = row.get("manager_email", "")
+
         existing = db.query(models.OrgRosterEntry).filter_by(
             organization_id=organization_id, email=email
         ).first()
@@ -326,11 +331,13 @@ async def upload_roster(
             existing.title = row.get("title", existing.title)
             existing.tenure = tenure
             existing.department_id = department_id if dept_name else existing.department_id
+            existing.manager_email = manager_email or existing.manager_email
             updated += 1
         else:
             db.add(models.OrgRosterEntry(
                 organization_id=organization_id, email=email,
                 title=row.get("title", ""), tenure=tenure, department_id=department_id,
+                manager_email=manager_email,
             ))
             added += 1
 
@@ -360,7 +367,8 @@ def list_roster(
     return [
         schemas.OrgRosterEntryOut(
             id=r.id, email=r.email, title=r.title, tenure=r.tenure,
-            department_id=r.department_id, joined=r.matched_user_id is not None,
+            department_id=r.department_id, manager_email=r.manager_email,
+            joined=r.matched_user_id is not None,
             created_at=r.created_at,
         )
         for r in rows
@@ -420,6 +428,66 @@ def delete_contact(
         raise HTTPException(status_code=404, detail="Contact not found.")
     _require_scope_admin(db, organization_id, user.id, contact.department_id)
     db.delete(contact)
+    db.commit()
+    return {"deleted": True}
+
+
+# --- Onboarding checklist (company-wide or department-specific templates) ---
+
+@router.post("/{organization_id}/checklist", response_model=schemas.ChecklistItemOut)
+def add_checklist_item(
+    organization_id: int,
+    payload: schemas.ChecklistItemCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
+    item = models.OrgChecklistItem(
+        organization_id=organization_id, department_id=payload.department_id,
+        title=payload.title, description=payload.description, order=payload.order,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.get("/{organization_id}/checklist", response_model=list[schemas.ChecklistItemOut])
+def list_checklist_items(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin/department_admin management view -- same scoping rule as
+    content and contacts: department admins see company-wide (context)
+    plus their own department's items."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user.id
+    ).first()
+    if not member or member.role not in ("admin", "department_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    q = db.query(models.OrgChecklistItem).filter_by(organization_id=organization_id)
+    if member.role == "department_admin":
+        q = q.filter(
+            (models.OrgChecklistItem.department_id == None)  # noqa: E711
+            | (models.OrgChecklistItem.department_id == member.department_id)
+        )
+    return q.order_by(models.OrgChecklistItem.order).all()
+
+
+@router.delete("/{organization_id}/checklist/{item_id}")
+def delete_checklist_item(
+    organization_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    item = db.query(models.OrgChecklistItem).filter_by(id=item_id, organization_id=organization_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+    _require_scope_admin(db, organization_id, user.id, item.department_id)
+    db.delete(item)
     db.commit()
     return {"deleted": True}
 

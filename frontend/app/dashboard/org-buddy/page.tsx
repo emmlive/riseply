@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department } from "@/lib/api";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -85,6 +85,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [addingDept, setAddingDept] = useState(false);
   const [deptError, setDeptError] = useState("");
   const [contentDept, setContentDept] = useState<string>("");
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [checklistTitle, setChecklistTitle] = useState("");
+  const [checklistDept, setChecklistDept] = useState<string>("");
+  const [addingChecklistItem, setAddingChecklistItem] = useState(false);
+  const [checklistError, setChecklistError] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [adding, setAdding] = useState(false);
@@ -100,6 +105,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling);
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
     api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
+    api<ChecklistItem[]>(`/orgs/${org.id}/checklist`).then(setChecklist);
   }
 
   useEffect(() => { load(); }, [org.id]);
@@ -136,6 +142,32 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     } finally {
       setAddingDept(false);
     }
+  }
+
+  async function addChecklistItem() {
+    setAddingChecklistItem(true);
+    setChecklistError("");
+    try {
+      await api(`/orgs/${org.id}/checklist`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: checklistTitle,
+          department_id: checklistDept ? Number(checklistDept) : null,
+          order: checklist.length,
+        }),
+      });
+      setChecklistTitle("");
+      load();
+    } catch (err: any) {
+      setChecklistError(err.message || "Couldn't add that item.");
+    } finally {
+      setAddingChecklistItem(false);
+    }
+  }
+
+  async function removeChecklistItem(itemId: number) {
+    await api(`/orgs/${org.id}/checklist/${itemId}`, { method: "DELETE" });
+    load();
   }
 
   async function removeContent(contentId: number) {
@@ -234,6 +266,43 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         {deptError && <p className="error-text">{deptError}</p>}
       </div>
 
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Onboarding checklist</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Employees check these off themselves as they go. Once every applicable
+          item is done, the employee's manager (if on file via the roster) gets
+          a factual completion notice — never any conversation content.
+        </p>
+        {checklist.map((c) => (
+          <div key={c.id} className="points-event-row">
+            <div style={{ fontWeight: 600 }}>
+              {c.title}
+              {c.department_id && (
+                <span className="hint" style={{ marginLeft: 8 }}>
+                  ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
+                </span>
+              )}
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => removeChecklistItem(c.id)}>Remove</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, marginTop: checklist.length > 0 ? 16 : 0 }}>
+          <input value={checklistTitle} onChange={(e) => setChecklistTitle(e.target.value)}
+                 placeholder="e.g. Set up your laptop" style={{ flex: 1 }} />
+          {departments.length > 0 && (
+            <select value={checklistDept} onChange={(e) => setChecklistDept(e.target.value)} style={{ width: 180 }}>
+              <option value="">Company-wide</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
+            </select>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={addChecklistItem}
+                  disabled={addingChecklistItem || !checklistTitle.trim()}>
+            {addingChecklistItem ? "Adding…" : "Add item"}
+          </button>
+        </div>
+        {checklistError && <p className="error-text">{checklistError}</p>}
+      </div>
+
       {stats && (
         <div className="rise-hero">
           <div className="rise-stat">
@@ -285,10 +354,13 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Employee roster</h3>
         <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
-          Upload a CSV (columns: email, title, tenure, department — all but
-          email optional) to pre-register expected hires — they won't need to
-          hand-type their title when they join. Export from Workday or any HRIS.
-          Department names must match a department you've already created above.
+          Upload a CSV (columns: email, title, tenure, department, manager_email
+          — all but email optional) to pre-register expected hires — they won't
+          need to hand-type their title when they join. Export from Workday or
+          any HRIS. Department names must match a department you've already
+          created above. manager_email, if provided, gets a factual notification
+          once that employee completes their onboarding checklist — never any
+          conversation content.
         </p>
         <input
           ref={fileInputRef}

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact } from "@/lib/api";
+import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem } from "@/lib/api";
 
 export default function JobBuddyPage() {
   return (
@@ -155,11 +155,13 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [handoffNote, setHandoffNote] = useState("");
   const [handoffSending, setHandoffSending] = useState(false);
   const [handoffSent, setHandoffSent] = useState("");
+  const [checklist, setChecklist] = useState<ChecklistProgressItem[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api<Application>(`/applications/${applicationId}`).then(setApp);
     api<OrgContact[]>(`/applications/${applicationId}/handoff-contacts`).then(setHandoffContacts).catch(() => {});
+    api<ChecklistProgressItem[]>(`/applications/${applicationId}/checklist`).then(setChecklist).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
       .then((p) => {
@@ -228,6 +230,16 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     }
   }
 
+  async function completeChecklistItem(itemId: number) {
+    setChecklist((items) => items.map((i) => (i.id === itemId ? { ...i, completed: true } : i)));
+    try {
+      await api(`/applications/${applicationId}/checklist/${itemId}/complete`, { method: "POST" });
+    } catch (err: any) {
+      setChecklist((items) => items.map((i) => (i.id === itemId ? { ...i, completed: false } : i)));
+      alert(err.message || "Couldn't save that — try again.");
+    }
+  }
+
   if (plan === null) return <p className="muted">Loading…</p>;
 
   return (
@@ -261,6 +273,30 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
             </div>
             {showPlan && <div className="brief">{plan.plan}</div>}
           </div>
+
+          {checklist.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Onboarding checklist</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                {checklist.filter((c) => c.completed).length} of {checklist.length} done
+              </p>
+              {checklist.map((c) => (
+                <label key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0" }}>
+                  <input
+                    type="checkbox"
+                    checked={c.completed}
+                    disabled={c.completed}
+                    onChange={() => completeChecklistItem(c.id)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit" }}>
+                    {c.title}
+                    {c.description && <div className="hint" style={{ textDecoration: "none" }}>{c.description}</div>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
 
           {handoffContacts.length > 0 && (
             <div className="card">
