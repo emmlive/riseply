@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, User } from "@/lib/api";
+import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -93,6 +94,33 @@ export default function ProfilePage() {
 
         {saved && <p style={{ color: "var(--accent)" }}>Saved.</p>}
         {error && <p className="error-text">{error}</p>}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Auto-fill bookmarklet</h3>
+        <p className="hint" style={{ marginTop: -4 }}>
+          A link you drag to your bookmarks bar. Click it while you're on a real job application
+          page and it fills in your name, email, phone, and links using the info above — built
+          from your own browser, on the actual page you have open, not something run on our
+          servers. You'll still need to attach your resume yourself and hit submit — browsers
+          don't allow a script to do either of those for you, on purpose.
+        </p>
+        <a
+          href={buildAutoFillBookmarklet({
+            full_name: form.full_name, email: user?.email || "", phone: form.phone,
+            location: form.location, linkedin_url: form.linkedin_url, portfolio_url: form.portfolio_url,
+          })}
+          className="btn btn-ghost btn-sm"
+          onClick={(e) => e.preventDefault()}
+          draggable
+        >
+          📋 Riseply Auto-fill
+        </a>
+        <p className="hint" style={{ marginTop: 8 }}>
+          Drag that button up to your bookmarks bar — clicking it here won't do anything, since
+          there's no application form on this page to fill. Save your profile above first if you've
+          just changed anything, since the bookmarklet is generated from whatever's currently saved.
+        </p>
       </div>
     </div>
   );
