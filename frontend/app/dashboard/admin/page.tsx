@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
   AdminOrganization, AdminSystemHealth, AdminFlaggedMessage,
@@ -478,7 +479,12 @@ function OrganizationsTab() {
                 {org.name}
                 <span className="pill pill-default" style={{ marginLeft: 8 }}>Sandbox</span>
               </div>
-              <div className="hint">{org.member_count} member{org.member_count === 1 ? "" : "s"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="hint">{org.member_count} member{org.member_count === 1 ? "" : "s"}</span>
+                <Link href={`/dashboard/org-buddy?org=${org.id}`} className="btn btn-ghost btn-sm">
+                  Manage →
+                </Link>
+              </div>
             </div>
           ))}
         </div>

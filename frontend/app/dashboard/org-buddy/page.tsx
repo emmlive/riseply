@@ -15,7 +15,15 @@ export default function OrgBuddyPage() {
   function load() {
     api<Organization[]>("/orgs/mine").then((orgList) => {
       setOrgs(orgList);
-      if (orgList.length > 0 && !selected) setSelected(orgList[0]);
+      if (orgList.length > 0 && !selected) {
+        // Supports deep-linking to a specific org, e.g. from the Admin
+        // panel's Sandbox orgs list (?org=<id>) -- falls back to the
+        // first org if there's no match or no param.
+        const params = new URLSearchParams(window.location.search);
+        const requestedId = params.get("org");
+        const requested = requestedId ? orgList.find((o) => o.id === Number(requestedId)) : null;
+        setSelected(requested || orgList[0]);
+      }
     });
   }
 
@@ -120,6 +128,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [deptName, setDeptName] = useState("");
   const [addingDept, setAddingDept] = useState(false);
   const [deptError, setDeptError] = useState("");
+  const [logoUrl, setLogoUrl] = useState(org.logo_url);
+  const [savingLogo, setSavingLogo] = useState(false);
+  const [logoError, setLogoError] = useState("");
   const [contentDept, setContentDept] = useState<string>("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [checklistTitle, setChecklistTitle] = useState("");
@@ -166,7 +177,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgQALog[]>(`/orgs/${org.id}/qa-logs?unmatched_only=${qaFilter === "unmatched"}`).then(setQaLogs).catch(() => setQaLogs(null));
   }
 
-  useEffect(() => { load(); }, [org.id, qaFilter]);
+  useEffect(() => { load(); setLogoUrl(org.logo_url); }, [org.id, qaFilter]);
 
   async function addContent() {
     setAdding(true);
@@ -259,6 +270,18 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     load();
   }
 
+  async function saveLogo() {
+    setSavingLogo(true);
+    setLogoError("");
+    try {
+      await api(`/orgs/${org.id}/settings`, { method: "PUT", body: JSON.stringify({ logo_url: logoUrl }) });
+    } catch (err: any) {
+      setLogoError(err.message || "Couldn't save that logo URL.");
+    } finally {
+      setSavingLogo(false);
+    }
+  }
+
   async function removeContent(contentId: number) {
     await api(`/orgs/${org.id}/content/${contentId}`, { method: "DELETE" });
     load();
@@ -328,17 +351,39 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       )}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>
-          {org.name}
-          {org.is_sandbox && <span className="pill pill-default" style={{ marginLeft: 8 }}>Sandbox</span>}
-        </h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {logoUrl && (
+            <img src={logoUrl} alt="" style={{ width: 40, height: 40, objectFit: "contain", borderRadius: 6 }}
+                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          )}
+          <h3 style={{ margin: 0 }}>
+            {org.name}
+            {org.is_sandbox && <span className="pill pill-default" style={{ marginLeft: 8 }}>Sandbox</span>}
+          </h3>
+        </div>
         {org.is_sandbox && (
-          <p className="hint" style={{ marginTop: -4, marginBottom: 8 }}>
+          <p className="hint" style={{ marginTop: 8, marginBottom: 8 }}>
             Personal pilot access — not a real customer, can't be billed, and excluded from Admin panel totals.
           </p>
         )}
-        <p className="muted" style={{ marginBottom: 4 }}>Join code — share this with new hires:</p>
+        <p className="muted" style={{ marginBottom: 4, marginTop: 12 }}>Join code — share this with new hires:</p>
         <span className="mono" style={{ fontSize: "1.3rem", fontWeight: 700, letterSpacing: 2 }}>{org.join_code}</span>
+
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <label style={{ display: "block", marginBottom: 4 }}>Logo URL (optional)</label>
+          <p className="hint" style={{ marginTop: -2, marginBottom: 8 }}>
+            Shown here and to your employees on their onboarding pages. Paste a link to an
+            already-hosted image — there's no upload yet, just a URL.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)}
+                   placeholder="https://yourcompany.com/logo.png" style={{ flex: 1 }} />
+            <button className="btn btn-ghost btn-sm" onClick={saveLogo} disabled={savingLogo}>
+              {savingLogo ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {logoError && <p className="error-text">{logoError}</p>}
+        </div>
       </div>
 
       <div className="card">

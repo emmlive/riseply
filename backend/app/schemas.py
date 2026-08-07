@@ -116,6 +116,7 @@ class ApplicationOut(BaseModel):
     job_location: str
     job_url: str
     organization_id: Optional[int] = None
+    organization_logo_url: str = ""
 
     class Config:
         from_attributes = True
@@ -193,6 +194,11 @@ class OrganizationOut(BaseModel):
     join_code: str
     created_at: datetime
     is_sandbox: bool = False
+    logo_url: str = ""
+
+
+class OrgSettingsUpdate(BaseModel):
+    logo_url: str = Field(default="", max_length=1000)
 
 
 class DepartmentCreate(BaseModel):

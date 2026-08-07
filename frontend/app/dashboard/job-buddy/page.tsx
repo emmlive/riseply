@@ -288,9 +288,15 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   return (
     <div>
       <div className="topbar">
-        <div>
-          <h1>Job Buddy</h1>
-          {app && <p className="muted" style={{ marginTop: -12 }}>{app.job_title} — {app.job_company}</p>}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {app?.organization_logo_url && (
+            <img src={app.organization_logo_url} alt="" style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 6 }}
+                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          )}
+          <div>
+            <h1>Job Buddy</h1>
+            {app && <p className="muted" style={{ marginTop: -12 }}>{app.job_title} — {app.job_company}</p>}
+          </div>
         </div>
         <Link href="/dashboard/job-buddy" className="btn btn-ghost btn-sm">← Job Buddy</Link>
       </div>
