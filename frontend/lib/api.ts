@@ -98,6 +98,7 @@ export interface Application {
   organization_id: number | null;
   organization_logo_url: string;
   tailoring_rationale: string;
+  has_tailored_resume_data: boolean;
 }
 
 export interface Usage {

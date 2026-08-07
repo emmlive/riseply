@@ -62,6 +62,7 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         organization_id=app.organization_id,
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
+        has_tailored_resume_data=bool(app.tailored_resume_data),
     )
 
 
@@ -121,6 +122,51 @@ def download_tailored_resume(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/applications/{application_id}/retailor", response_model=schemas.ApplicationOut)
+def retailor_resume(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Regenerates the tailored resume for an existing application --
+    mainly for applications whose original tailoring predates the
+    switch to storing the document in Postgres (see the commit fixing
+    the ephemeral-disk 404 bug) and so have a filename on record but no
+    actual data to serve. Also useful any time someone's updated their
+    base resume and wants this specific application's tailoring
+    refreshed against the new version. Metered the same as the
+    original tailoring -- this is a real Claude call, not free."""
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if not user.resume_text.strip():
+        raise HTTPException(status_code=400, detail="Add your resume before re-tailoring.")
+
+    usage.check_and_increment(db, user, "tailor_resume", 1)
+    try:
+        job_dict = {
+            "title": job.title, "company": job.company,
+            "location": job.location, "url": job.url, "description": job.description,
+        }
+        filename, docx_bytes, rationale = resume_customizer.customize_for_job(
+            user.id, user.resume_text, job_dict, app_row.id
+        )
+    except Exception:
+        usage.decrement(db, user.id, "tailor_resume", 1)
+        raise HTTPException(status_code=502, detail="Couldn't re-tailor this resume right now — try again shortly.")
+
+    app_row.tailored_resume_path = filename
+    app_row.tailored_resume_data = docx_bytes
+    app_row.tailoring_rationale = rationale
+    db.commit()
+    db.refresh(app_row)
+    return _to_out(app_row, job)
 
 
 @router.post("/applications/{application_id}/approve")
