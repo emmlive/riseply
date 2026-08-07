@@ -79,6 +79,18 @@ export default function ApplicationsPage() {
     }
   }
 
+  async function retailor(id: number) {
+    setBusyId(id);
+    try {
+      await api(`/applications/${id}/retailor`, { method: "POST" });
+      await load(filter);
+    } catch (err: any) {
+      alert(err.message || "Couldn't re-tailor this resume.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function generatePrep(id: number) {
     setPreps((p) => ({ ...p, [id]: "loading" }));
     try {
@@ -156,9 +168,9 @@ export default function ApplicationsPage() {
                     {stat.avg_days_to_respond !== null && ` · ~${stat.avg_days_to_respond} days`}
                   </p>
                 )}
-                <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem" }}>
+                <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem", alignItems: "center" }}>
                   <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
-                  {app.tailored_resume_path && (
+                  {app.has_tailored_resume_data && (
                     <a
                       href="#"
                       onClick={(e) => {
@@ -170,7 +182,20 @@ export default function ApplicationsPage() {
                       Download tailored resume
                     </a>
                   )}
+                  {!app.has_tailored_resume_data && app.tailored_resume_path && (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="hint">Resume file unavailable (generated before a recent fix)</span>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === app.id} onClick={() => retailor(app.id)}>
+                        {busyId === app.id ? "Re-tailoring…" : "Re-tailor"}
+                      </button>
+                    </span>
+                  )}
                 </div>
+                {app.tailoring_rationale && (
+                  <div className="brief" style={{ marginTop: 10 }}>
+                    <strong>What we changed:</strong> {app.tailoring_rationale}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>

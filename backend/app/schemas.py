@@ -117,6 +117,8 @@ class ApplicationOut(BaseModel):
     job_url: str
     organization_id: Optional[int] = None
     organization_logo_url: str = ""
+    tailoring_rationale: str = ""
+    has_tailored_resume_data: bool = False
 
     class Config:
         from_attributes = True

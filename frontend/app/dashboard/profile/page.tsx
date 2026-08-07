@@ -13,6 +13,24 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  async function copyBookmarklet() {
+    const link = buildAutoFillBookmarklet({
+      full_name: form.full_name, email: user?.email || "", phone: form.phone,
+      location: form.location, linkedin_url: form.linkedin_url, portfolio_url: form.portfolio_url,
+    });
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      // Clipboard API can be blocked (permissions, non-HTTPS context) --
+      // fall back to a manual copy so the person isn't left with a
+      // silently-failed button and no way to get the link at all.
+      prompt("Copy this link:", link);
+    }
+  }
 
   useEffect(() => {
     api<User>("/me").then((u) => {
@@ -99,12 +117,25 @@ export default function ProfilePage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Auto-fill bookmarklet</h3>
         <p className="hint" style={{ marginTop: -4 }}>
-          A link you drag to your bookmarks bar. Click it while you're on a real job application
-          page and it fills in your name, email, phone, and links using the info above — built
-          from your own browser, on the actual page you have open, not something run on our
-          servers. You'll still need to attach your resume yourself and hit submit — browsers
-          don't allow a script to do either of those for you, on purpose.
+          Runs entirely in your own browser, on the actual job application page you have open —
+          fills in your name, email, phone, and links using the info above. You'll still need to
+          attach your resume and hit submit yourself; browsers don't let a script do either of
+          those, on purpose.
         </p>
+
+        <p style={{ fontWeight: 600, marginBottom: 4 }}>Option 1: copy the link (most reliable)</p>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="btn btn-ghost btn-sm" onClick={copyBookmarklet}>
+            {copied ? "Copied ✓" : "Copy auto-fill link"}
+          </button>
+        </div>
+        <ol className="hint" style={{ marginTop: 8, paddingLeft: 18 }}>
+          <li>Click the button above to copy the link.</li>
+          <li>Right-click your browser's bookmarks bar and choose "Add page" (or click the ⭐ in your address bar, then edit it).</li>
+          <li>Paste the copied link into the URL field, give it any name (e.g. "Riseply Auto-fill"), and save.</li>
+        </ol>
+
+        <p style={{ fontWeight: 600, marginTop: 16, marginBottom: 4 }}>Option 2: drag the button</p>
         <a
           href={buildAutoFillBookmarklet({
             full_name: form.full_name, email: user?.email || "", phone: form.phone,
@@ -117,9 +148,16 @@ export default function ProfilePage() {
           📋 Riseply Auto-fill
         </a>
         <p className="hint" style={{ marginTop: 8 }}>
-          Drag that button up to your bookmarks bar — clicking it here won't do anything, since
-          there's no application form on this page to fill. Save your profile above first if you've
-          just changed anything, since the bookmarklet is generated from whatever's currently saved.
+          Press and hold, then drag this button up onto your bookmarks bar — this works in most
+          browsers, but if nothing shows up there afterward, use Option 1 instead. Clicking it here
+          (rather than dragging) won't do anything, since there's no application form on this page.
+        </p>
+
+        <p className="hint" style={{ marginTop: 12 }}>
+          Once it's saved as a bookmark, use it by going to a real job application page and
+          clicking the bookmark from your bookmarks bar — not from here. If you update your
+          profile later, repeat whichever option you used, since the link has today's info baked
+          into it.
         </p>
       </div>
     </div>
