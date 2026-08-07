@@ -105,6 +105,10 @@ export default function ProfilesPage() {
             <input value={editing.titles.join(", ")}
                    onChange={(e) => setEditing({ ...editing, titles: splitList(e.target.value) })}
                    placeholder="AI Security Engineer, ML Security Engineer" />
+            <p className="hint">
+              Doesn't need to be an exact title match — matching is done by an AI reading the
+              full job description against your resume, not string-matching these words.
+            </p>
           </div>
 
           <div className="field">
@@ -112,6 +116,11 @@ export default function ProfilesPage() {
             <input value={editing.locations.join(", ")}
                    onChange={(e) => setEditing({ ...editing, locations: splitList(e.target.value) })}
                    placeholder="Remote" />
+            <p className="hint">
+              This filters strictly — a job outside every location listed here won't match,
+              regardless of how good the title fit is. Add "Remote" too if you're open to it;
+              a lot of what gets discovered skews remote.
+            </p>
           </div>
 
           <div className="field">
@@ -125,6 +134,12 @@ export default function ProfilesPage() {
             <label>Minimum match score ({editing.min_match_score}%)</label>
             <input type="range" min={0} max={100} value={editing.min_match_score}
                    onChange={(e) => setEditing({ ...editing, min_match_score: Number(e.target.value) })} />
+            <p className="hint">
+              How good a fit a job needs to be before it becomes an application you review.
+              Higher = fewer, more targeted matches; lower = more matches, including looser
+              fits. 50-60% is a reasonable starting point — if you're getting nothing, this is
+              usually the first thing to lower, especially combined with a narrow location list.
+            </p>
           </div>
 
           <div className="field">

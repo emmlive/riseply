@@ -125,7 +125,15 @@ export default function ApplicationsPage() {
       </div>
 
       {apps.length === 0 && (
-        <div className="empty-state">Nothing here yet.</div>
+        <div className="empty-state">
+          {filter === "" && "No applications yet — head to Overview and click \"Find new matches\" to get started."}
+          {filter === "pending_approval" && "Nothing waiting on your review right now."}
+          {filter === "approved" && "Nothing approved yet — matches show up under \"Awaiting review\" first."}
+          {filter === "submitted" && "Nothing submitted yet."}
+          {filter === "interviewing" && "Nothing in an interview stage yet."}
+          {filter === "accepted" && "No accepted offers yet — once you get one, mark it accepted to unlock Job Buddy for it."}
+          {filter === "rejected" && "Nothing rejected — that's a good thing."}
+        </div>
       )}
 
       {apps.map((app) => {

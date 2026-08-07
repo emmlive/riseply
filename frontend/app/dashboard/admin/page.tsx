@@ -27,6 +27,13 @@ const ROLE_LABELS: Record<string, string> = {
   readonly: "Read-only admin",
 };
 
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  super: "Full access to everything, including granting/revoking other admins.",
+  support: "Users, support inbox, and content moderation. Can suspend/unsuspend, can't refund or see revenue.",
+  billing: "Revenue, organizations, and refunds. Can't suspend users or see moderation.",
+  readonly: "Can view every tab, can't perform any action (no suspend, refund, resolve, or reply).",
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -376,6 +383,7 @@ function AdminsTab({ currentAdminId }: { currentAdminId: number }) {
             Grant
           </button>
         </div>
+        <p className="hint" style={{ marginTop: 8 }}>{ROLE_DESCRIPTIONS[grantRole]}</p>
         {error && <p className="error-text" style={{ marginTop: 8 }}>{error}</p>}
       </div>
 

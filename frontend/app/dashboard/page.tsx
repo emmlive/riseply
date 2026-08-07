@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -12,20 +12,34 @@ export default function OverviewPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
+  const [hasResume, setHasResume] = useState<boolean | null>(null);
+  const [profileCount, setProfileCount] = useState<number | null>(null);
+  const [checklistDismissed, setChecklistDismissed] = useState(
+    typeof window !== "undefined" && localStorage.getItem("riseply_hide_getting_started") === "1"
+  );
 
   async function load() {
     try {
-      const [u, apps, r] = await Promise.all([
+      const [u, apps, r, me, profiles] = await Promise.all([
         api<Usage>("/usage"),
         api<Application[]>("/applications?status=pending_approval"),
         api<RiseIndexMe>("/rise-index/me"),
+        api<User>("/me"),
+        api<SearchProfile[]>("/profiles"),
       ]);
       setUsage(u);
       setPending(apps);
       setRise(r);
+      setHasResume(!!me.resume_text.trim());
+      setProfileCount(profiles.length);
     } catch {
       // handled globally by api() redirecting to /login on 401
     }
+  }
+
+  function dismissChecklist() {
+    setChecklistDismissed(true);
+    localStorage.setItem("riseply_hide_getting_started", "1");
   }
 
   useEffect(() => {
@@ -79,6 +93,25 @@ export default function OverviewPage() {
           )}
         </div>
       </div>
+
+      {!checklistDismissed && hasResume !== null && profileCount !== null && (hasResume === false || profileCount === 0 || (usage && usage.matches_used === 0)) && (
+        <div className="card" style={{ borderColor: "var(--accent)" }}>
+          <div className="card-row" style={{ alignItems: "flex-start" }}>
+            <h3 style={{ margin: 0 }}>Getting started</h3>
+            <button className="btn btn-ghost btn-sm" onClick={dismissChecklist}>Dismiss</button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <ChecklistStep done={hasResume} label="Add your resume" href="/dashboard/resume" />
+            <ChecklistStep done={profileCount > 0} label="Create a search profile" href="/dashboard/profiles" />
+            <ChecklistStep done={!!usage && usage.matches_used > 0} label='Click "Find new matches" above' />
+            <ChecklistStep done={pending.length === 0 && !!usage && usage.matches_used > 0} label="Review your matches as they come in" href="/dashboard/applications" />
+          </div>
+          <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+            Every match lands here for you to approve or reject — nothing gets submitted
+            anywhere without you saying so first.
+          </p>
+        </div>
+      )}
 
       {message && (
         <div className="card" style={{ borderColor: "var(--accent)" }}>
@@ -179,4 +212,27 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
       </div>
     </div>
   );
+}
+
+function ChecklistStep({ done, label, href }: { done: boolean; label: string; href?: string }) {
+  const content = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+      <span style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 18, height: 18, borderRadius: "50%", fontSize: "0.7rem", flexShrink: 0,
+        background: done ? "var(--accent)" : "transparent",
+        border: done ? "none" : "1px solid var(--border)",
+        color: done ? "#fff" : "transparent",
+      }}>
+        ✓
+      </span>
+      <span style={{ textDecoration: done ? "line-through" : "none", color: done ? "var(--ink-muted)" : "var(--ink)" }}>
+        {label}
+      </span>
+    </div>
+  );
+  if (href && !done) {
+    return <Link href={href} style={{ display: "block" }}>{content}</Link>;
+  }
+  return content;
 }
