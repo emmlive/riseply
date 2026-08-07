@@ -112,7 +112,15 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
         }
         try:
             best = matcher.best_profile_match(job, user.resume_text, profiles)
-        except Exception:
+        except Exception as e:
+            # This was previously silent -- caught, refunded, skipped,
+            # with zero trace of *why*. That made a real failure (bad
+            # API key, rate limit, model returning malformed JSON) look
+            # identical in the logs to "nothing matched," which is
+            # exactly the ambiguity that made this bug hard to diagnose
+            # from the outside. Printed so it shows up in Render's log
+            # stream without needing a new logging dependency.
+            print(f"[matcher] scoring failed for job {job_row.id} ({job_row.company} — {job_row.title}): {e}")
             usage.decrement(db, user.id, "match", 1)
             continue
 
@@ -167,7 +175,8 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
         except HTTPException:
             application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
             db.commit()
-        except Exception:
+        except Exception as e:
+            print(f"[resume_customizer] tailoring failed for application {application.id}: {e}")
             usage.decrement(db, user.id, "tailor_resume", 1)
             application.notes = "Resume tailoring failed this run — using base resume. You can retry from the dashboard later."
             db.commit()
