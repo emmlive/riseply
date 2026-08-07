@@ -190,6 +190,22 @@ processes every user" default. It runs discovery once, then matching for
 every user who has a resume and at least one active search profile,
 skipping everyone else without erroring.
 
+## Culture Bot lessons
+
+Org onboarding lessons (spaced-repetition micro-lessons an org admin
+authors, day-offset scheduled per employee) are delivered by the same
+kind of external trigger, hitting `POST /internal/culture-bot-run`. It
+reuses the exact same `CRON_SECRET` as scheduled matching above — if
+you've already set that up, there's nothing new to configure.
+
+`.github/workflows/daily-culture-bot.yml` is already in this repo and
+runs automatically at 13:05 UTC daily (five minutes after the matching
+job, so they don't collide on Render's free tier). Trigger it manually
+any time from the Actions tab, same as scheduled matching.
+
+Delivery is by email only today — there's no Slack/Teams integration in
+this codebase, so don't configure lessons expecting one.
+
 ## Signup abuse protection
 
 Two independent layers, both optional and both degrade gracefully when

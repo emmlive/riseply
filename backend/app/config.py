@@ -118,10 +118,9 @@ class Settings(BaseSettings):
     pro_tier_max_search_profiles: int = 10
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---
-    # Shared secret for the external scheduler that triggers the daily
-    # delivery run -- same pattern as admin_bootstrap_secret, since this
-    # endpoint has to be callable without an interactive user login.
-    culture_bot_cron_secret: str = ""
+    # Reuses cron_secret (above) -- both scheduled jobs are triggered the
+    # same way (GitHub Actions -> /internal/*), so one shared secret is
+    # simpler to set up than a second one.
 
     allowed_origins: str = "http://localhost:3000"
 

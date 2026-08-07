@@ -554,7 +554,3 @@ class LessonDeliveryOut(BaseModel):
 
 class LessonQuizResponseRequest(BaseModel):
     response: str = Field(min_length=1, max_length=500)
-
-
-class CultureBotRunRequest(BaseModel):
-    secret: str

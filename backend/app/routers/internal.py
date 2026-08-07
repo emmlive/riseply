@@ -56,3 +56,22 @@ def scheduled_run(
         "users_processed": len(per_user_results),
         "results": per_user_results,
     }
+
+
+@router.post("/culture-bot-run")
+def culture_bot_run(
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Meant to be called by an external scheduler once a day, same
+    pattern and same CRON_SECRET as /internal/scheduled-run above --
+    see README's 'Culture Bot lessons' section for setup. Sends any
+    org onboarding lessons due today by email, and any quiz reminders
+    due a week after a wrong answer."""
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Culture Bot isn't configured (CRON_SECRET unset).")
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+
+    from app.services import culture_bot
+    return culture_bot.run_deliveries(db)

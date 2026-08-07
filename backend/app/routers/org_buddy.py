@@ -704,14 +704,7 @@ def delete_lesson(
     return {"deleted": True}
 
 
-# --- Culture Bot: daily delivery run, triggered externally on a schedule ---
-# Same pattern as POST /pipeline/discover -- no admin login here since an
-# external scheduler calls this, not a logged-in person. Gated by a
-# shared secret instead (same idea as /admin/bootstrap).
-
-@router.post("/culture-bot/run")
-def run_culture_bot(payload: schemas.CultureBotRunRequest, db: Session = Depends(get_db)):
-    if not settings.culture_bot_cron_secret or payload.secret != settings.culture_bot_cron_secret:
-        raise HTTPException(status_code=403, detail="Invalid cron secret.")
-    from app.services import culture_bot
-    return culture_bot.run_deliveries(db)
+# --- Culture Bot: daily delivery run -- see /internal/culture-bot-run
+# in internal.py for the actual scheduled-trigger endpoint (same
+# CRON_SECRET + GitHub Actions pattern as scheduled matching, kept
+# together with that endpoint rather than duplicated here).
