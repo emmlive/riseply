@@ -252,6 +252,7 @@ class OrgBillingOut(BaseModel):
 class ChecklistItemCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     description: str = Field(default="", max_length=1000)
+    policy_content: str | None = Field(default=None, max_length=20000)
     department_id: int | None = None
     order: int = 0
 
@@ -260,6 +261,7 @@ class ChecklistItemOut(BaseModel):
     id: int
     title: str
     description: str
+    policy_content: str | None
     department_id: int | None
     order: int
     created_at: datetime
@@ -269,8 +271,16 @@ class ChecklistProgressItem(BaseModel):
     id: int
     title: str
     description: str
+    policy_content: str | None
     completed: bool
     completed_at: datetime | None
+
+
+class PolicyAcknowledgment(BaseModel):
+    application_id: int
+    employee_email: str
+    employee_name: str
+    completed_at: datetime
 
 
 class OrgContactCreate(BaseModel):

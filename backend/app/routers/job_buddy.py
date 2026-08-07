@@ -362,7 +362,7 @@ def get_checklist(
 
     return [
         schemas.ChecklistProgressItem(
-            id=i.id, title=i.title, description=i.description,
+            id=i.id, title=i.title, description=i.description, policy_content=i.policy_content,
             completed=i.id in completions, completed_at=completions.get(i.id),
         )
         for i in items
@@ -398,7 +398,14 @@ def complete_checklist_item(
         application_id=application_id, checklist_item_id=item_id
     ).first()
     if not existing:
-        db.add(models.ChecklistCompletion(application_id=application_id, checklist_item_id=item_id))
+        db.add(models.ChecklistCompletion(
+            application_id=application_id, checklist_item_id=item_id,
+            # Snapshot the policy text AS IT READ at the moment of
+            # acknowledgment -- if the org edits the policy later, this
+            # record still shows precisely what this employee agreed to,
+            # independent of the live item.
+            policy_content_snapshot=item.policy_content,
+        ))
         db.commit()
 
     # Check for 100% completion across every applicable item.

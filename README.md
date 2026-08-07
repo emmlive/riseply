@@ -483,6 +483,36 @@ complete that one too). Also verified the no-manager-on-file case
 degrades cleanly — checklist completion still works normally, no crash,
 no notification attempted.
 
+**Policy acknowledgment (Code of Ethics, anti-harassment, etc.)**: a
+checklist item can carry `policy_content` — when set, this becomes a
+distinct type of item. The employee has to actually open and read the
+full text (a "Read policy" expand action, not a bare checkbox) before
+an explicit "I have read and acknowledge this" action marks it
+complete — a real acknowledgment gesture, not an accidental click.
+
+The compliance-critical property, verified directly rather than just
+designed: the exact policy text is **snapshotted** into the completion
+record at the moment of acknowledgment (`ChecklistCompletion
+.policy_content_snapshot`), independent of the live item. Tested this
+precisely — had an employee acknowledge version 1 of a policy, then had
+the admin edit the live item to version 2, then re-checked the
+employee's historical record and confirmed it still read version 1
+word-for-word. This is the actual guarantee that matters: if a policy
+is later revised, existing employees' acknowledgment records continue
+to show precisely what they agreed to at the time, not whatever the
+policy currently says — relevant if an acknowledgment is ever
+challenged.
+
+Admins get a per-policy acknowledgment record (`GET
+/orgs/{id}/checklist/{item_id}/acknowledgments`) — who acknowledged it
+and when. Confirmed this is safe within the standing privacy model, not
+just asserted: the response schema is structurally limited to
+`application_id`, `employee_email`, `employee_name`, `completed_at` —
+there's no field it could leak conversation content through even by
+accident. This is the same administrative-data category as roster
+"joined" status, fundamentally different from Job Buddy chat content,
+which never becomes visible to an admin under any circumstance.
+
 **Human handoff**: AI can't give someone an office tour or a
 face-to-face introduction — the traditional buddy program's real value
 is often precisely those in-person moments. An org admin maintains a

@@ -348,7 +348,14 @@ class OrgChecklistItem(Base):
     their own department) has defined -- e.g. 'Set up your laptop',
     'Complete expense system training'. department_id NULL means
     company-wide (every employee gets it); set means only that
-    department's employees get it, same layering as content/contacts."""
+    department's employees get it, same layering as content/contacts.
+
+    policy_content, if set, turns this into a policy-acknowledgment item
+    rather than a plain task -- the employee must actually read this
+    text before an explicit acknowledgment (not a bare checkbox) marks
+    it complete. Used for things like a Code of Ethics or anti-
+    harassment policy where the organization needs a real record of
+    what was agreed to, not just that a box got checked."""
     __tablename__ = "org_checklist_items"
 
     id = Column(Integer, primary_key=True)
@@ -356,6 +363,7 @@ class OrgChecklistItem(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     title = Column(String, nullable=False)
     description = Column(String, default="")
+    policy_content = Column(Text, nullable=True)
     order = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
@@ -363,13 +371,20 @@ class OrgChecklistItem(Base):
 class ChecklistCompletion(Base):
     """Tracks one employee's completion of one checklist item.
     Enrollment/progress data, not conversation content -- same category
-    as roster 'joined' status, safe for admin visibility."""
+    as roster 'joined' status, safe for admin visibility.
+
+    policy_content_snapshot captures the EXACT text of the policy at the
+    moment of acknowledgment, independent of the live OrgChecklistItem --
+    this is what makes it a real compliance record: if the org edits the
+    policy later, this employee's acknowledgment still shows precisely
+    what they agreed to, not whatever the policy currently says."""
     __tablename__ = "checklist_completions"
     __table_args__ = (UniqueConstraint("application_id", "checklist_item_id", name="uq_app_checklist_item"),)
 
     id = Column(Integer, primary_key=True)
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
     checklist_item_id = Column(Integer, ForeignKey("org_checklist_items.id"), nullable=False)
+    policy_content_snapshot = Column(Text, nullable=True)
     completed_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

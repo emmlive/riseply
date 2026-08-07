@@ -88,6 +88,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [checklistDept, setChecklistDept] = useState<string>("");
+  const [checklistPolicy, setChecklistPolicy] = useState("");
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
   const [checklistError, setChecklistError] = useState("");
   const [title, setTitle] = useState("");
@@ -153,10 +154,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         body: JSON.stringify({
           title: checklistTitle,
           department_id: checklistDept ? Number(checklistDept) : null,
+          policy_content: checklistPolicy.trim() || null,
           order: checklist.length,
         }),
       });
-      setChecklistTitle("");
+      setChecklistTitle(""); setChecklistPolicy("");
       load();
     } catch (err: any) {
       setChecklistError(err.message || "Couldn't add that item.");
@@ -277,6 +279,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           <div key={c.id} className="points-event-row">
             <div style={{ fontWeight: 600 }}>
               {c.title}
+              {c.policy_content && <span className="pill pill-default" style={{ marginLeft: 8 }}>Policy acknowledgment</span>}
               {c.department_id && (
                 <span className="hint" style={{ marginLeft: 8 }}>
                   ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
@@ -286,17 +289,24 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <button className="btn btn-ghost btn-sm" onClick={() => removeChecklistItem(c.id)}>Remove</button>
           </div>
         ))}
-        <div style={{ display: "flex", gap: 8, marginTop: checklist.length > 0 ? 16 : 0 }}>
-          <input value={checklistTitle} onChange={(e) => setChecklistTitle(e.target.value)}
-                 placeholder="e.g. Set up your laptop" style={{ flex: 1 }} />
-          {departments.length > 0 && (
-            <select value={checklistDept} onChange={(e) => setChecklistDept(e.target.value)} style={{ width: 180 }}>
-              <option value="">Company-wide</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
-            </select>
-          )}
+        <div style={{ marginTop: checklist.length > 0 ? 16 : 0 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={checklistTitle} onChange={(e) => setChecklistTitle(e.target.value)}
+                   placeholder="e.g. Set up your laptop" style={{ flex: 1 }} />
+            {departments.length > 0 && (
+              <select value={checklistDept} onChange={(e) => setChecklistDept(e.target.value)} style={{ width: 180 }}>
+                <option value="">Company-wide</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
+              </select>
+            )}
+          </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>Policy text (optional)</label>
+            <textarea rows={3} value={checklistPolicy} onChange={(e) => setChecklistPolicy(e.target.value)}
+                      placeholder="If set, the employee must read this exact text before they can acknowledge it — used for things like a Code of Ethics or anti-harassment policy. Leave blank for a plain task item." />
+          </div>
           <button className="btn btn-primary btn-sm" onClick={addChecklistItem}
-                  disabled={addingChecklistItem || !checklistTitle.trim()}>
+                  disabled={addingChecklistItem || !checklistTitle.trim()} style={{ marginTop: 8 }}>
             {addingChecklistItem ? "Adding…" : "Add item"}
           </button>
         </div>

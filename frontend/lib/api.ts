@@ -186,6 +186,7 @@ export interface ChecklistItem {
   id: number;
   title: string;
   description: string;
+  policy_content: string | null;
   department_id: number | null;
   order: number;
   created_at: string;
@@ -195,6 +196,7 @@ export interface ChecklistProgressItem {
   id: number;
   title: string;
   description: string;
+  policy_content: string | null;
   completed: boolean;
   completed_at: string | null;
 }

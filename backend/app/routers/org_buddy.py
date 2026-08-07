@@ -444,7 +444,8 @@ def add_checklist_item(
     _require_scope_admin(db, organization_id, user.id, payload.department_id)
     item = models.OrgChecklistItem(
         organization_id=organization_id, department_id=payload.department_id,
-        title=payload.title, description=payload.description, order=payload.order,
+        title=payload.title, description=payload.description,
+        policy_content=payload.policy_content, order=payload.order,
     )
     db.add(item)
     db.commit()
@@ -490,6 +491,40 @@ def delete_checklist_item(
     db.delete(item)
     db.commit()
     return {"deleted": True}
+
+
+@router.get("/{organization_id}/checklist/{item_id}/acknowledgments", response_model=list[schemas.PolicyAcknowledgment])
+def list_acknowledgments(
+    organization_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Compliance record for a specific policy item -- who acknowledged
+    it and when. Deliberately returns only email/name/timestamp, never
+    the acknowledged text itself here (that's available per-completion
+    if ever needed, but this list view is for headcount/status, not a
+    document viewer) and never anything about Job Buddy conversations.
+    Same administrative-data category as roster 'joined' status."""
+    item = db.query(models.OrgChecklistItem).filter_by(id=item_id, organization_id=organization_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+    _require_scope_admin(db, organization_id, user.id, item.department_id)
+
+    rows = (
+        db.query(models.ChecklistCompletion, models.Application, models.User)
+        .join(models.Application, models.ChecklistCompletion.application_id == models.Application.id)
+        .join(models.User, models.Application.user_id == models.User.id)
+        .filter(models.ChecklistCompletion.checklist_item_id == item_id)
+        .all()
+    )
+    return [
+        schemas.PolicyAcknowledgment(
+            application_id=app_row.id, employee_email=user_row.email,
+            employee_name=user_row.full_name or "", completed_at=completion.completed_at,
+        )
+        for completion, app_row, user_row in rows
+    ]
 
 
 # --- Billing: hybrid (base plan subscription + seat overage) ---

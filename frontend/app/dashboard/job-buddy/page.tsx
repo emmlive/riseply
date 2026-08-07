@@ -156,6 +156,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [handoffSending, setHandoffSending] = useState(false);
   const [handoffSent, setHandoffSent] = useState("");
   const [checklist, setChecklist] = useState<ChecklistProgressItem[]>([]);
+  const [expandedPolicyId, setExpandedPolicyId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -281,19 +282,51 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                 {checklist.filter((c) => c.completed).length} of {checklist.length} done
               </p>
               {checklist.map((c) => (
-                <label key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0" }}>
-                  <input
-                    type="checkbox"
-                    checked={c.completed}
-                    disabled={c.completed}
-                    onChange={() => completeChecklistItem(c.id)}
-                    style={{ marginTop: 3 }}
-                  />
-                  <span style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit" }}>
-                    {c.title}
-                    {c.description && <div className="hint" style={{ textDecoration: "none" }}>{c.description}</div>}
-                  </span>
-                </label>
+                <div key={c.id} style={{ padding: "8px 0" }}>
+                  {c.policy_content ? (
+                    <div>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                        <span style={{ marginTop: 3 }}>{c.completed ? "✅" : "📄"}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit", fontWeight: 600 }}>
+                            {c.title}
+                          </div>
+                          {!c.completed && (
+                            <>
+                              <button className="btn btn-ghost btn-sm" style={{ marginTop: 6 }}
+                                      onClick={() => setExpandedPolicyId(expandedPolicyId === c.id ? null : c.id)}>
+                                {expandedPolicyId === c.id ? "Hide" : "Read policy"}
+                              </button>
+                              {expandedPolicyId === c.id && (
+                                <div>
+                                  <div className="brief" style={{ marginTop: 8 }}>{c.policy_content}</div>
+                                  <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }}
+                                          onClick={() => completeChecklistItem(c.id)}>
+                                    I have read and acknowledge this
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <input
+                        type="checkbox"
+                        checked={c.completed}
+                        disabled={c.completed}
+                        onChange={() => completeChecklistItem(c.id)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit" }}>
+                        {c.title}
+                        {c.description && <div className="hint" style={{ textDecoration: "none" }}>{c.description}</div>}
+                      </span>
+                    </label>
+                  )}
+                </div>
               ))}
             </div>
           )}
