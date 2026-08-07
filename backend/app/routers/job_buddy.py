@@ -6,7 +6,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
-from app.services import usage, rise_index, notifier
+from app.services import usage, rise_index, notifier, safety_flags
 from app.routers.org_buddy import resolve_join_code
 
 router = APIRouter(prefix="/applications", tags=["job-buddy"])
@@ -231,8 +231,10 @@ def send_job_buddy_message(
     ).order_by(models.JobBuddyMessage.created_at.asc()).all()
     history = [{"role": m.role, "content": m.content} for m in history_rows]
 
+    user_flag = safety_flags.scan(payload.message)
     user_msg = models.JobBuddyMessage(
         application_id=application_id, user_id=user.id, role="user", content=payload.message,
+        flagged=bool(user_flag), flag_reason=user_flag,
     )
     db.add(user_msg)
     db.commit()
@@ -255,8 +257,10 @@ def send_job_buddy_message(
             detail="Job Buddy couldn't respond right now — this attempt wasn't counted against your limit. Your message was saved; try sending again.",
         )
 
+    reply_flag = safety_flags.scan(reply_text)
     reply_msg = models.JobBuddyMessage(
         application_id=application_id, user_id=user.id, role="assistant", content=reply_text,
+        flagged=bool(reply_flag), flag_reason=reply_flag,
     )
     db.add(reply_msg)
     db.commit()

@@ -32,6 +32,7 @@ def _to_out(user: models.User) -> schemas.UserOut:
         subscription_tier=user.subscription_tier or "free",
         subscription_status=user.subscription_status or "",
         is_admin=bool(user.is_admin),
+        admin_role=user.admin_role or "",
     )
 
 

@@ -56,10 +56,74 @@ def get_current_user(
     # session when a user resets their password.
     if token_version is not None and token_version != user.token_version:
         raise credentials_error
+    if user.is_suspended:
+        # Cuts off an already-issued token immediately, not just future
+        # logins -- a suspension should take effect right away, not the
+        # next time the person happens to log back in.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
     return user
 
 
 def get_current_admin(user: models.User = Depends(get_current_user)) -> models.User:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
+# --- Role-based admin access ---
+#
+# admin_role scopes what an admin account can do. "super" (including the
+# legacy empty-string role backfilled to "super" by migrate.py) can do
+# everything, including managing other admins. Every other role is
+# limited to a fixed set of categories; "readonly" can view any category
+# but never perform a mutating action, regardless of which categories it
+# would otherwise match.
+ROLE_CATEGORIES: dict[str, set[str]] = {
+    "support": {"users", "support", "moderation"},
+    "billing": {"billing"},
+    "readonly": set(),  # handled specially: view-only, everything
+}
+
+
+def _effective_role(user: models.User) -> str:
+    return user.admin_role or "super"
+
+
+def require_admin_view(*categories: str):
+    """At least one of `categories` must be visible to this admin's role.
+    super and readonly can view any category."""
+    def dependency(user: models.User = Depends(get_current_admin)) -> models.User:
+        role = _effective_role(user)
+        if role in ("super", "readonly"):
+            return user
+        allowed = ROLE_CATEGORIES.get(role, set())
+        if allowed.intersection(categories):
+            return user
+        raise HTTPException(status_code=403, detail="Your admin role doesn't include this section.")
+    return dependency
+
+
+def require_admin_action(*categories: str):
+    """At least one of `categories` must be actionable by this admin's
+    role. super can do anything; readonly can never perform an action,
+    even in a category it can view."""
+    def dependency(user: models.User = Depends(get_current_admin)) -> models.User:
+        role = _effective_role(user)
+        if role == "super":
+            return user
+        if role == "readonly":
+            raise HTTPException(status_code=403, detail="Read-only admins can't perform actions.")
+        allowed = ROLE_CATEGORIES.get(role, set())
+        if allowed.intersection(categories):
+            return user
+        raise HTTPException(status_code=403, detail="Your admin role doesn't include this action.")
+    return dependency
+
+
+def get_current_super_admin(user: models.User = Depends(get_current_admin)) -> models.User:
+    if _effective_role(user) != "super":
+        raise HTTPException(status_code=403, detail="Only super admins can manage other admins.")
     return user

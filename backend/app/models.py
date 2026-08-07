@@ -16,6 +16,10 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     token_version = Column(Integer, default=0, server_default="0")  # bumped on password reset to invalidate old JWTs
     is_admin = Column(Boolean, default=False, server_default="false")
+    admin_role = Column(String, default="", server_default="")  # "" | super | support | billing | readonly
+    is_suspended = Column(Boolean, default=False, server_default="false")
+    suspended_at = Column(DateTime, nullable=True)
+    suspended_reason = Column(String, default="", server_default="")
     oauth_provider = Column(String, nullable=True)  # "google" | "microsoft" | None (password-based account)
     full_name = Column(String, default="")
     phone = Column(String, default="")
@@ -183,6 +187,15 @@ class JobBuddyMessage(Base):
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    # --- Trust & safety flagging ---
+    # Set by a lightweight keyword scan (see services/safety_flags.py) run
+    # against both the user's message and the assistant's reply. This is a
+    # coarse signal for a human admin to review, never an automated
+    # moderation action -- nothing is blocked or altered based on it.
+    flagged = Column(Boolean, default=False, server_default="false")
+    flag_reason = Column(String, default="", server_default="")
+    flag_resolved_at = Column(DateTime, nullable=True)
 
 
 class PointsEvent(Base):

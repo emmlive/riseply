@@ -65,6 +65,7 @@ export interface User {
   subscription_tier: string;
   subscription_status: string;
   is_admin: boolean;
+  admin_role: string;
 }
 
 export interface SearchProfile {
@@ -260,6 +261,9 @@ export interface AdminUser {
   subscription_tier: string;
   subscription_status: string;
   is_admin: boolean;
+  admin_role: string;
+  is_suspended: boolean;
+  suspended_reason: string;
   rise_points: number;
   current_streak: number;
   created_at: string;
@@ -304,5 +308,41 @@ export interface AdminSupportMessage {
   status: string;
   admin_reply: string | null;
   replied_at: string | null;
+  created_at: string;
+}
+
+export interface AdminOrganization {
+  id: number;
+  name: string;
+  plan: string;
+  subscription_status: string;
+  included_seats: number;
+  member_count: number;
+  overage_seats: number;
+  estimated_mrr_usd: number;
+  created_at: string;
+}
+
+export interface AdminJobSourceHealth {
+  source: string;
+  jobs_last_24h: number;
+  jobs_last_7d: number;
+  last_discovered_at: string | null;
+  status: "healthy" | "stale" | "silent";
+}
+
+export interface AdminSystemHealth {
+  job_sources: AdminJobSourceHealth[];
+  total_jobs_in_pool: number;
+}
+
+export interface AdminFlaggedMessage {
+  id: number;
+  application_id: number;
+  user_email: string;
+  role: string;
+  content: string;
+  flag_reason: string;
+  flag_resolved_at: string | null;
   created_at: string;
 }

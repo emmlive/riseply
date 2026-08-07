@@ -62,6 +62,11 @@ def login(request: Request, payload: schemas.LoginRequest, db: Session = Depends
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user or not security.verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
 
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
@@ -105,6 +110,11 @@ def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str
 def google_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
     info = oauth.exchange_google_code(payload.code)
     user = _find_or_create_oauth_user(db, info["email"], info["name"], "google")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 
@@ -114,6 +124,11 @@ def google_oauth_callback(request: Request, payload: schemas.OAuthCallbackReques
 def microsoft_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
     info = oauth.exchange_microsoft_code(payload.code)
     user = _find_or_create_oauth_user(db, info["email"], info["name"], "microsoft")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 
