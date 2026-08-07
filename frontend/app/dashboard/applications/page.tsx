@@ -171,6 +171,11 @@ export default function ApplicationsPage() {
                     </a>
                   )}
                 </div>
+                {app.tailoring_rationale && (
+                  <div className="brief" style={{ marginTop: 10 }}>
+                    <strong>What we changed:</strong> {app.tailoring_rationale}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>

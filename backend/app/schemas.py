@@ -117,6 +117,7 @@ class ApplicationOut(BaseModel):
     job_url: str
     organization_id: Optional[int] = None
     organization_logo_url: str = ""
+    tailoring_rationale: str = ""
 
     class Config:
         from_attributes = True

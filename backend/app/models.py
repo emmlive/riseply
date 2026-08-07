@@ -140,6 +140,13 @@ class Application(Base):
     # only so the download link can show a sensible filename.
     tailored_resume_path = Column(String, default="", server_default="")
     tailored_resume_data = Column(LargeBinary, nullable=True)
+    # Short, honest explanation of what changed in the tailored resume
+    # and why -- generated in the same Claude call as the tailoring
+    # itself, so this costs nothing extra. See resume_customizer.py's
+    # tailor_resume_text() for how it's produced. Empty string if the
+    # model's response didn't follow the expected format -- the
+    # tailoring itself still succeeds either way, this is additive.
+    tailoring_rationale = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())

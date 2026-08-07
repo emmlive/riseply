@@ -97,6 +97,7 @@ export interface Application {
   job_url: string;
   organization_id: number | null;
   organization_logo_url: string;
+  tailoring_rationale: string;
 }
 
 export interface Usage {
