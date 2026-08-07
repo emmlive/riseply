@@ -14,7 +14,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 
@@ -205,8 +205,9 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
 
         notify_addr = user.notify_email or user.email
         preference = user.notification_preference or "every_match"
+        channel = user.notification_channel or "email"
         clears_threshold = best["score"] >= (user.notification_min_score or 0)
-        # "off" -> never email. "daily_digest" -> never email HERE; the
+        # "off" -> never notify. "daily_digest" -> never notify HERE; the
         # digest job (send_daily_digests, run once a day) picks up every
         # Application created since the user's last digest, so this
         # match still gets surfaced, just batched instead of immediate.
@@ -214,15 +215,23 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         # a manual click or the scheduled job -- one preference, one
         # behavior, not a confusing split by trigger source.
         if preference == "every_match" and clears_threshold:
-            try:
-                notifier.notify_new_match(
-                    notify_addr,
-                    {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
-                     "match_reason": best["reason"]},
-                    application.id, resume_path, resume_bytes,
-                )
-            except Exception:
-                pass
+            job_notify = {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
+                          "match_reason": best["reason"]}
+            if channel in ("email", "both"):
+                try:
+                    notifier.notify_new_match(notify_addr, job_notify, application.id, resume_path, resume_bytes)
+                except Exception:
+                    pass
+            # sms_consent is enforced at the point channel gets set
+            # (routers/me.py) -- checked again here as defense in depth,
+            # not because it should ever be false while channel includes
+            # sms, but a stale/directly-edited row shouldn't be able to
+            # bypass consent just because this check was skipped.
+            if channel in ("sms", "both") and user.sms_consent:
+                try:
+                    sms.notify_new_match_sms(user.phone, job_notify)
+                except Exception:
+                    pass
         queued.append(application.id)
 
     # Near-misses are only worth surfacing when nothing real was found --
@@ -271,11 +280,19 @@ def send_daily_digests(db: Session) -> dict:
         ]
 
         if matches:
-            try:
-                notifier.notify_digest(user.notify_email or user.email, matches)
-                sent += 1
-            except Exception:
-                pass
+            channel = user.notification_channel or "email"
+            if channel in ("email", "both"):
+                try:
+                    notifier.notify_digest(user.notify_email or user.email, matches)
+                    sent += 1
+                except Exception:
+                    pass
+            if channel in ("sms", "both") and user.sms_consent:
+                try:
+                    sms.notify_digest_sms(user.phone, len(matches))
+                    sent += 1
+                except Exception:
+                    pass
 
         user.last_digest_sent_at = datetime.utcnow()
         db.commit()

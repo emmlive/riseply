@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 from app.database import get_db
 from app import models, schemas
@@ -30,6 +31,8 @@ def _to_out(user: models.User) -> schemas.UserOut:
         auto_submit=bool(user.auto_submit),
         notification_preference=user.notification_preference or "every_match",
         notification_min_score=user.notification_min_score or 0,
+        notification_channel=user.notification_channel or "email",
+        sms_consent=bool(user.sms_consent),
         resume_text=user.resume_text or "",
         subscription_tier=user.subscription_tier or "free",
         subscription_status=user.subscription_status or "",
@@ -52,6 +55,30 @@ def update_me(
     updates = payload.model_dump(exclude_unset=True)
     if "notification_preference" in updates and updates["notification_preference"] not in ("off", "every_match", "daily_digest"):
         raise HTTPException(status_code=400, detail="notification_preference must be off, every_match, or daily_digest.")
+    if "notification_channel" in updates and updates["notification_channel"] not in ("email", "sms", "both"):
+        raise HTTPException(status_code=400, detail="notification_channel must be email, sms, or both.")
+
+    # Resolve what the channel and consent WILL be after this update,
+    # not just what's in this specific payload -- e.g. someone already
+    # has sms_consent=True from before and is only changing the channel
+    # now, or vice versa.
+    resulting_channel = updates.get("notification_channel", user.notification_channel or "email")
+    resulting_consent = updates.get("sms_consent", user.sms_consent)
+    resulting_phone = updates.get("phone", user.phone)
+    if resulting_channel in ("sms", "both"):
+        if not resulting_consent:
+            raise HTTPException(status_code=400, detail="SMS notifications require checking the SMS consent box first.")
+        if not (resulting_phone or "").strip():
+            raise HTTPException(status_code=400, detail="Add a phone number before enabling SMS notifications.")
+
+    # Record WHEN consent was actually given -- true compliance value,
+    # not just a boolean with no paper trail. Only stamps it on the
+    # transition to true, never overwrites an existing consent record
+    # just because some other field changed in the same request.
+    if updates.get("sms_consent") is True and not user.sms_consent:
+        user.sms_consent_at = datetime.utcnow()
+    if updates.get("sms_consent") is False:
+        user.sms_consent_at = None
 
     for field, value in updates.items():
         setattr(user, field, value)

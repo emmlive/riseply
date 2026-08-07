@@ -17,3 +17,4 @@ slowapi>=0.1.9
 stripe>=11.1.0
 python-dotenv>=1.0.0
 psycopg2-binary>=2.9.9
+twilio>=9.3.0

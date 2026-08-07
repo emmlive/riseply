@@ -63,6 +63,8 @@ export interface User {
   auto_submit: boolean;
   notification_preference: string;
   notification_min_score: number;
+  notification_channel: string;
+  sms_consent: boolean;
   resume_text: string;
   subscription_tier: string;
   subscription_status: string;
