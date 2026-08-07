@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep, CompanyStats } from "@/lib/api";
+import { api, Application, InterviewPrep, CompanyStats, downloadFile } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -13,8 +13,6 @@ const STATUS_FILTERS = [
   { value: "accepted", label: "Accepted" },
   { value: "rejected", label: "Rejected" },
 ];
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
@@ -153,7 +151,14 @@ export default function ApplicationsPage() {
                 <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem" }}>
                   <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
                   {app.tailored_resume_path && (
-                    <a href={`${API_URL}/files/tailored_resumes/${app.tailored_resume_path.split("/").pop()}`}>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        downloadFile(`/applications/${app.id}/tailored-resume`, app.tailored_resume_path || "tailored_resume.docx")
+                          .catch((err) => alert(err.message));
+                      }}
+                    >
                       Download tailored resume
                     </a>
                   )}

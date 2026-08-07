@@ -182,14 +182,16 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         db.refresh(application)
 
         resume_path = ""
+        resume_bytes = None
         try:
             usage.check_and_increment(db, user, "tailor_resume", 1)
             job["matched_profile"] = best["profile_name"]
             job["match_score"] = best["score"]
-            resume_path = resume_customizer.customize_for_job(
+            resume_path, resume_bytes = resume_customizer.customize_for_job(
                 user.id, user.resume_text, job, application.id
             )
             application.tailored_resume_path = resume_path
+            application.tailored_resume_data = resume_bytes
             db.commit()
         except HTTPException:
             application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
@@ -206,7 +208,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 notify_addr,
                 {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
                  "match_reason": best["reason"]},
-                application.id, resume_path,
+                application.id, resume_path, resume_bytes,
             )
         except Exception:
             pass

@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -91,6 +92,34 @@ def get_application(
         raise HTTPException(status_code=404, detail="Application not found")
     app_row, job = row
     return _to_out(app_row, job)
+
+
+@router.get("/applications/{application_id}/tailored-resume")
+def download_tailored_resume(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Serves the tailored resume from the database, not the filesystem
+    -- Render's web service disk is ephemeral and doesn't survive a
+    redeploy, so this document has to live in Postgres to actually
+    persist. Replaces the old /files/tailored_resumes/... static mount,
+    which silently 404'd for anything generated before the most recent
+    deploy."""
+    from fastapi.responses import Response
+
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app_row.tailored_resume_data:
+        raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
+
+    filename = app_row.tailored_resume_path or "tailored_resume.docx"
+    return Response(
+        content=app_row.tailored_resume_data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/applications/{application_id}/approve")
@@ -204,9 +233,27 @@ def auto_submit_application(
         "portfolio_url": user.portfolio_url or "",
     }
 
-    result = submitter.submit_application(
-        job.url, app_row.tailored_resume_path, candidate, actually_submit=True,
-    )
+    # submit_application drives a real browser (Playwright) that needs an
+    # actual file on disk to upload -- writing a short-lived temp file
+    # from the DB-stored bytes is fine here (it only needs to exist for
+    # the few seconds this request takes), unlike the old approach of
+    # writing tailored resumes to persistent-looking disk paths that
+    # silently vanished on every Render redeploy.
+    resume_file_path = ""
+    if app_row.tailored_resume_data:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+        tmp.write(app_row.tailored_resume_data)
+        tmp.close()
+        resume_file_path = tmp.name
+
+    try:
+        result = submitter.submit_application(
+            job.url, resume_file_path, candidate, actually_submit=True,
+        )
+    finally:
+        if resume_file_path:
+            os.unlink(resume_file_path)
 
     if result["status"] == "submitted":
         now = datetime.utcnow()

@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import JSONResponse
-import os
 
 from app.database import Base, engine, SessionLocal
 from app.config import settings
@@ -64,9 +62,11 @@ app.include_router(internal.router)
 app.include_router(org_buddy.router)
 app.include_router(kb.router)
 
-# Serve tailored resume .docx files for download
-os.makedirs("data/tailored_resumes", exist_ok=True)
-app.mount("/files/tailored_resumes", StaticFiles(directory="data/tailored_resumes"), name="tailored_resumes")
+# Tailored resumes are now served from Postgres via
+# GET /applications/{id}/tailored-resume (see routers/pipeline.py) --
+# not from this local disk mount, which vanished on every redeploy
+# since Render's web service filesystem is ephemeral. Left unmounted
+# intentionally rather than kept as dead infrastructure.
 
 
 @app.get("/health")

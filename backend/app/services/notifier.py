@@ -4,7 +4,7 @@ from email.message import EmailMessage
 from app.config import settings
 
 
-def send_email(to_addr: str, subject: str, body: str, attachment_path: str | None = None):
+def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None, attachment_filename: str = "attachment.docx"):
     if not settings.smtp_user or not settings.smtp_pass:
         print(f"[notifier] SMTP not configured — skipping email to {to_addr}: {subject}\n{body}\n")
         return
@@ -15,18 +15,13 @@ def send_email(to_addr: str, subject: str, body: str, attachment_path: str | Non
     msg["To"] = to_addr
     msg.set_content(body)
 
-    if attachment_path:
-        try:
-            with open(attachment_path, "rb") as f:
-                data = f.read()
-            msg.add_attachment(
-                data,
-                maintype="application",
-                subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-                filename=attachment_path.split("/")[-1],
-            )
-        except FileNotFoundError:
-            pass
+    if attachment_data:
+        msg.add_attachment(
+            attachment_data,
+            maintype="application",
+            subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=attachment_filename,
+        )
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
         s.starttls()
@@ -34,7 +29,7 @@ def send_email(to_addr: str, subject: str, body: str, attachment_path: str | Non
         s.send_message(msg)
 
 
-def notify_new_match(to_addr: str, job: dict, application_id: int, resume_path: str):
+def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filename: str = "", resume_data: bytes | None = None):
     send_email(
         to_addr,
         f"New job match: {job['title']} @ {job['company']} ({job['match_score']}%)",
@@ -46,7 +41,8 @@ def notify_new_match(to_addr: str, job: dict, application_id: int, resume_path: 
             f"Link: {job['url']}\n\n"
             f"Review and approve/reject it in your dashboard."
         ),
-        resume_path,
+        resume_data,
+        resume_filename or "resume.docx",
     )
 
 
