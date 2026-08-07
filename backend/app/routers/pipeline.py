@@ -35,11 +35,12 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    result = pipeline_runner.run_matching_for_user(db, user)
+    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=settings.manual_match_run_job_cap)
     return {
         "queued_application_ids": result["queued_application_ids"],
         "usage_limit_reached": result["usage_limit_reached"],
         "near_misses": result["near_misses"],
+        "hit_job_cap": result["hit_job_cap"],
     }
 
 

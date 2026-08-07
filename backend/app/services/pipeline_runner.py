@@ -57,18 +57,32 @@ def run_discovery(db: Session) -> dict:
     return {"discovered": len(raw_jobs), "new": new_count}
 
 
-def run_matching_for_user(db: Session, user: models.User) -> dict:
+def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None = None) -> dict:
     """Returns {"queued_application_ids": [...], "usage_limit_reached": bool,
     "skipped_reason": str | None}. Never raises for expected "nothing to
     do" cases (no resume, no active profiles) -- those come back as a
     skipped_reason instead, since a batch job processing many users needs
-    to move on to the next one rather than crash the whole run."""
+    to move on to the next one rather than crash the whole run.
+
+    max_jobs bounds how many unseen jobs get scored in this single call.
+    Every job scores via a real Claude API call, sequentially -- with no
+    cap, one click of the "Find new matches" button could mean hundreds
+    of sequential API calls in a single blocking HTTP request (everything
+    up to the user's monthly limit, which for an admin account is
+    unbounded), taking minutes with no way for the UI to show real
+    progress in between. The interactive endpoint (POST /pipeline/match)
+    passes a small cap so a click returns in a reasonable time; the
+    scheduled batch job (POST /internal/scheduled-run) passes none, so it
+    still works through the full backlog overnight. hit_job_cap in the
+    return value tells the caller there's more left uncapped by usage --
+    worth surfacing differently from "genuinely out of jobs to score."
+    """
     if not user.resume_text.strip():
-        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume", "near_misses": []}
+        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume", "near_misses": [], "hit_job_cap": False}
 
     profiles_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()
     if not profiles_rows:
-        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles", "near_misses": []}
+        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles", "near_misses": [], "hit_job_cap": False}
 
     profiles = [{
         "name": p.name,
@@ -92,6 +106,11 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
         not_(models.Job.id.in_(already_applied_subq)),
         not_(models.Job.id.in_(already_scored_subq)),
     ).all()
+
+    hit_job_cap = False
+    if max_jobs is not None and len(unseen_jobs) > max_jobs:
+        hit_job_cap = True
+        unseen_jobs = unseen_jobs[:max_jobs]
 
     queued = []
     near_miss_candidates = []  # (score, {title, company, url, score, reason, matched_profile})
@@ -201,5 +220,5 @@ def run_matching_for_user(db: Session, user: models.User) -> dict:
     rise_index.award_points(db, user, "run_search", "Ran a job search")
     return {
         "queued_application_ids": queued, "usage_limit_reached": limit_hit,
-        "skipped_reason": None, "near_misses": near_misses,
+        "skipped_reason": None, "near_misses": near_misses, "hit_job_cap": hit_job_cap,
     }
