@@ -71,6 +71,19 @@ def run_migration():
 
     Base.metadata.create_all(bind=engine)
 
+    # Backfill: any admin created before role-based access existed had no
+    # admin_role value -- treat those as "super" rather than leaving them
+    # with an empty role that would fail every permission check below.
+    with engine.connect() as conn:
+        with conn.begin():
+            conn.execute(text(
+                "UPDATE users SET admin_role = 'super' "
+                "WHERE is_admin = true AND (admin_role IS NULL OR admin_role = '')"
+                if engine.dialect.name != "sqlite" else
+                "UPDATE users SET admin_role = 'super' "
+                "WHERE is_admin = 1 AND (admin_role IS NULL OR admin_role = '')"
+            ))
+
 
 if __name__ == "__main__":
     run_migration()

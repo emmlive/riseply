@@ -1,0 +1,37 @@
+name: Daily culture bot
+
+# Runs the Culture Bot's daily lesson delivery, for free, via GitHub's
+# own infrastructure -- same reasoning as daily-matching.yml: Render's
+# free tier spins down when idle, so nothing inside the web process can
+# reliably wake itself up on a schedule.
+#
+# Setup: this reuses the SAME CRON_SECRET and BACKEND_URL secrets as
+# daily-matching.yml -- if you've already set those up for scheduled
+# matching, there's nothing new to configure here. See README's
+# "Culture Bot lessons" section for details if you haven't.
+#
+# Runs at 13:05 UTC daily, five minutes after the matching job, so the
+# two don't hit the (free-tier, single-instance) backend at the exact
+# same moment. Adjust to whatever time works for you.
+
+on:
+  schedule:
+    - cron: "5 13 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger-culture-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the culture-bot-run endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.BACKEND_URL }}/internal/culture-bot-run" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if [ "$http_code" -ne 200 ]; then
+            echo "Culture bot run failed with HTTP $http_code"
+            exit 1
+          fi

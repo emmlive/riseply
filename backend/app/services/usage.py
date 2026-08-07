@@ -11,6 +11,7 @@ FREE_LIMITS = {
     "interview_prep": settings.free_tier_max_interview_preps_per_month,
     "onboarding_plan": settings.free_tier_max_onboarding_plans_per_month,
     "job_buddy_message": settings.free_tier_max_job_buddy_messages_per_month,
+    "org_ask": settings.free_tier_max_org_ask_per_month,
 }
 
 PRO_LIMITS = {
@@ -19,13 +20,22 @@ PRO_LIMITS = {
     "interview_prep": settings.pro_tier_max_interview_preps_per_month,
     "onboarding_plan": settings.pro_tier_max_onboarding_plans_per_month,
     "job_buddy_message": settings.pro_tier_max_job_buddy_messages_per_month,
+    "org_ask": settings.pro_tier_max_org_ask_per_month,
 }
 
 
 def is_pro(user: models.User) -> bool:
     """A user is on Pro only while Stripe confirms an active subscription --
     never just because the tier column says so, since that column can lag
-    a cancellation until the next webhook fires."""
+    a cancellation until the next webhook fires.
+
+    Admin accounts are always treated as Pro, regardless of billing state.
+    This is deliberate: admins need to exercise every Pro-gated feature
+    (higher limits, more search profiles, Org Buddy testing) without an
+    actual Stripe subscription, since these accounts exist for internal
+    testing, not paying customers."""
+    if user.is_admin:
+        return True
     return user.subscription_tier == "pro" and user.subscription_status == "active"
 
 

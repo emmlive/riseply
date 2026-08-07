@@ -10,6 +10,7 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8)
     full_name: str = ""
     agree_to_terms: bool = False
+    agree_to_subscription_terms: bool = False
     captcha_token: str = ""
 
 
@@ -52,6 +53,7 @@ class UserOut(BaseModel):
     subscription_tier: str
     subscription_status: str
     is_admin: bool
+    admin_role: str
 
     class Config:
         from_attributes = True
@@ -113,6 +115,7 @@ class ApplicationOut(BaseModel):
     job_company: str
     job_location: str
     job_url: str
+    organization_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -353,12 +356,24 @@ class AdminUserOut(BaseModel):
     subscription_tier: str
     subscription_status: str
     is_admin: bool
+    admin_role: str
+    is_suspended: bool
+    suspended_reason: str
     rise_points: int
     current_streak: int
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class AdminSetRoleRequest(BaseModel):
+    # "" removes admin access entirely. Otherwise one of super/support/billing/readonly.
+    role: str = Field(default="", max_length=20)
+
+
+class AdminSuspendRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
 
 
 class AdminRevenueOut(BaseModel):
@@ -407,6 +422,54 @@ class AdminSupportReplyRequest(BaseModel):
     reply: str = Field(min_length=1, max_length=5000)
 
 
+# --- Admin: organizations ---
+
+class AdminOrganizationOut(BaseModel):
+    id: int
+    name: str
+    plan: str
+    subscription_status: str
+    included_seats: int
+    member_count: int
+    overage_seats: int
+    estimated_mrr_usd: float
+    created_at: datetime
+
+
+# --- Admin: system health ---
+
+class AdminJobSourceHealthOut(BaseModel):
+    source: str
+    jobs_last_24h: int
+    jobs_last_7d: int
+    last_discovered_at: Optional[datetime] = None
+    status: str  # "healthy" | "stale" | "silent"
+
+
+class AdminSystemHealthOut(BaseModel):
+    job_sources: list[AdminJobSourceHealthOut]
+    total_jobs_in_pool: int
+
+
+# --- Admin: content moderation ---
+
+class AdminFlaggedMessageOut(BaseModel):
+    id: int
+    application_id: int
+    user_email: str
+    role: str
+    content: str
+    flag_reason: str
+    flag_resolved_at: Optional[datetime] = None
+    created_at: datetime
+
+
+# --- Admin: refunds ---
+
+class AdminRefundRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
 # --- Rise Index ---
 
 class CompanyStatsOut(BaseModel):
@@ -431,3 +494,63 @@ class RiseIndexMeOut(BaseModel):
     current_streak: int
     longest_streak: int
     recent_events: list[PointsEventOut]
+
+
+# --- Org Q&A ("Ghost Onboarder") ---
+
+class OrgAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class OrgAskResponse(BaseModel):
+    answer: str
+    sources: list[str]
+
+
+class OrgQALogOut(BaseModel):
+    id: int
+    application_id: int
+    user_email: str
+    question: str
+    answer: str
+    matched_content: bool
+    created_at: datetime
+
+
+# --- Culture Bot (spaced-repetition lessons) ---
+
+class OrgLessonCreate(BaseModel):
+    day_offset: int = Field(ge=0, le=365)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=5000)
+    quiz_question: str = Field(default="", max_length=500)
+    quiz_answer: str = Field(default="", max_length=200)
+    department_id: Optional[int] = None
+    order: int = 0
+
+
+class OrgLessonOut(BaseModel):
+    id: int
+    day_offset: int
+    title: str
+    content: str
+    quiz_question: str
+    quiz_answer: str
+    department_id: Optional[int]
+    order: int
+    created_at: datetime
+
+
+class LessonDeliveryOut(BaseModel):
+    id: int
+    lesson_id: int
+    title: str
+    content: str
+    quiz_question: str
+    delivered_at: datetime
+    quiz_response: Optional[str] = None
+    quiz_correct: Optional[bool] = None
+
+
+class LessonQuizResponseRequest(BaseModel):
+    response: str = Field(min_length=1, max_length=500)

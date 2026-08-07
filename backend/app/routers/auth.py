@@ -22,6 +22,12 @@ def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depen
             detail="You need to agree to the Terms of Service and Privacy Policy to create an account.",
         )
 
+    if not payload.agree_to_subscription_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="You need to agree to the Subscription Agreement to create an account.",
+        )
+
     if not captcha.verify_turnstile(payload.captcha_token, get_real_client_ip(request)):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed — please try again.")
 
@@ -35,6 +41,7 @@ def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depen
         full_name=payload.full_name,
         notify_email=payload.email,
         tos_accepted_at=datetime.utcnow(),
+        subscription_terms_accepted_at=datetime.utcnow(),
     )
     db.add(user)
     db.commit()
@@ -55,6 +62,11 @@ def login(request: Request, payload: schemas.LoginRequest, db: Session = Depends
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user or not security.verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
 
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
@@ -79,6 +91,7 @@ def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str
         full_name=name,
         notify_email=email,
         tos_accepted_at=datetime.utcnow(),
+        subscription_terms_accepted_at=datetime.utcnow(),
         oauth_provider=provider,
     )
     db.add(user)
@@ -97,6 +110,11 @@ def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str
 def google_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
     info = oauth.exchange_google_code(payload.code)
     user = _find_or_create_oauth_user(db, info["email"], info["name"], "google")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 
@@ -106,6 +124,11 @@ def google_oauth_callback(request: Request, payload: schemas.OAuthCallbackReques
 def microsoft_oauth_callback(request: Request, payload: schemas.OAuthCallbackRequest, db: Session = Depends(get_db)):
     info = oauth.exchange_microsoft_code(payload.code)
     user = _find_or_create_oauth_user(db, info["email"], info["name"], "microsoft")
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been suspended. Contact support if you believe this is a mistake.",
+        )
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
 

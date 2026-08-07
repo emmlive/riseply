@@ -6,7 +6,8 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
-from app.services import usage, rise_index, notifier
+from app.services import usage, rise_index, notifier, safety_flags
+from app.services import kb as kb_service
 from app.routers.org_buddy import resolve_join_code
 
 router = APIRouter(prefix="/applications", tags=["job-buddy"])
@@ -19,6 +20,28 @@ def _get_owned_application(db: Session, application_id: int, user_id: int) -> mo
     return app_row
 
 
+def _org_content_items(db: Session, app_row: models.Application) -> list[models.OrganizationBuddyContent]:
+    """Company-wide content plus (if this employee belongs to a
+    department) that department's own content layered on top. Empty
+    list if this application isn't linked to an org. Returns the raw
+    ORM rows (not concatenated text) so callers can do retrieval-scoped
+    selection over individual items -- see _org_content_for below for
+    the 'just give me everything as one blob' version used by the
+    onboarding-plan/chat prompts."""
+    if not app_row.organization_id:
+        return []
+
+    content_q = db.query(models.OrganizationBuddyContent).filter_by(organization_id=app_row.organization_id)
+    if app_row.department_id:
+        content_q = content_q.filter(
+            (models.OrganizationBuddyContent.department_id == None)  # noqa: E711
+            | (models.OrganizationBuddyContent.department_id == app_row.department_id)
+        )
+    else:
+        content_q = content_q.filter(models.OrganizationBuddyContent.department_id == None)  # noqa: E711
+    return content_q.all()
+
+
 def _org_content_for(db: Session, app_row: models.Application) -> str:
     """Concatenates an org's uploaded custom content AND human contacts
     for use in prompts -- company-wide material plus (if this employee
@@ -29,15 +52,7 @@ def _org_content_for(db: Session, app_row: models.Application) -> str:
     if not app_row.organization_id:
         return ""
 
-    content_q = db.query(models.OrganizationBuddyContent).filter_by(organization_id=app_row.organization_id)
-    if app_row.department_id:
-        content_q = content_q.filter(
-            (models.OrganizationBuddyContent.department_id == None)  # noqa: E711
-            | (models.OrganizationBuddyContent.department_id == app_row.department_id)
-        )
-    else:
-        content_q = content_q.filter(models.OrganizationBuddyContent.department_id == None)  # noqa: E711
-    parts = [f"[{r.title}]\n{r.content}" for r in content_q.all()]
+    parts = [f"[{r.title}]\n{r.content}" for r in _org_content_items(db, app_row)]
 
     contacts_q = db.query(models.OrgHumanContact).filter_by(organization_id=app_row.organization_id)
     if app_row.department_id:
@@ -231,8 +246,10 @@ def send_job_buddy_message(
     ).order_by(models.JobBuddyMessage.created_at.asc()).all()
     history = [{"role": m.role, "content": m.content} for m in history_rows]
 
+    user_flag = safety_flags.scan(payload.message)
     user_msg = models.JobBuddyMessage(
         application_id=application_id, user_id=user.id, role="user", content=payload.message,
+        flagged=bool(user_flag), flag_reason=user_flag,
     )
     db.add(user_msg)
     db.commit()
@@ -255,14 +272,115 @@ def send_job_buddy_message(
             detail="Job Buddy couldn't respond right now — this attempt wasn't counted against your limit. Your message was saved; try sending again.",
         )
 
+    reply_flag = safety_flags.scan(reply_text)
     reply_msg = models.JobBuddyMessage(
         application_id=application_id, user_id=user.id, role="assistant", content=reply_text,
+        flagged=bool(reply_flag), flag_reason=reply_flag,
     )
     db.add(reply_msg)
     db.commit()
     db.refresh(reply_msg)
     rise_index.award_points(db, user, "job_buddy_message", "Chatted with Job Buddy")
     return reply_msg
+
+
+# --- Instant company Q&A ("Ghost Onboarder") ---
+#
+# Distinct from the Job Buddy chat above: this doesn't need an
+# onboarding plan generated first, isn't a running conversation, and
+# only ever answers from the org's own uploaded content (retrieved for
+# this specific question, not the whole library) rather than reasoning
+# generally about the role. It's meant for quick factual lookups
+# ("where do I request PTO", "who do I ask about my laptop") rather
+# than the ongoing coaching Job Buddy does.
+
+@router.post("/{application_id}/org-ask", response_model=schemas.OrgAskResponse)
+def ask_org_question(
+    application_id: int,
+    payload: schemas.OrgAskRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This job isn't linked to a company account, so there's no company content to search yet.",
+        )
+
+    usage.check_and_increment(db, user, "org_ask", 1)
+
+    org = db.query(models.Organization).filter_by(id=app_row.organization_id).first()
+    items = _org_content_items(db, app_row)
+    relevant = kb_service.retrieve_relevant_org_content(payload.question, items)
+
+    try:
+        answer = kb_service.answer_org_question(payload.question, org.name, relevant)
+    except Exception:
+        usage.decrement(db, user.id, "org_ask", 1)
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't get an answer right now — this attempt wasn't counted against your limit. Try again shortly.",
+        )
+
+    db.add(models.OrgQALog(
+        organization_id=app_row.organization_id, application_id=application_id, user_id=user.id,
+        question=payload.question, answer=answer, matched_content=bool(relevant),
+    ))
+    db.commit()
+
+    return schemas.OrgAskResponse(answer=answer, sources=[i.title for i in relevant])
+
+
+# --- Culture Bot: this employee's delivered lessons ---
+
+@router.get("/{application_id}/lessons", response_model=list[schemas.LessonDeliveryOut])
+def list_my_lessons(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    rows = (
+        db.query(models.LessonDelivery, models.OrgLesson)
+        .join(models.OrgLesson, models.LessonDelivery.lesson_id == models.OrgLesson.id)
+        .filter(models.LessonDelivery.application_id == application_id)
+        .order_by(models.LessonDelivery.delivered_at.desc())
+        .all()
+    )
+    return [
+        schemas.LessonDeliveryOut(
+            id=delivery.id, lesson_id=lesson.id, title=lesson.title, content=lesson.content,
+            quiz_question=lesson.quiz_question, delivered_at=delivery.delivered_at,
+            quiz_response=delivery.quiz_response, quiz_correct=delivery.quiz_correct,
+        )
+        for delivery, lesson in rows
+    ]
+
+
+@router.post("/{application_id}/lessons/{delivery_id}/quiz-response")
+def submit_lesson_quiz_response(
+    application_id: int,
+    delivery_id: int,
+    payload: schemas.LessonQuizResponseRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    from app.services import culture_bot
+
+    _get_owned_application(db, application_id, user.id)
+    delivery = db.query(models.LessonDelivery).filter_by(id=delivery_id, application_id=application_id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Lesson delivery not found.")
+
+    lesson = db.query(models.OrgLesson).filter_by(id=delivery.lesson_id).first()
+    if not lesson or not lesson.quiz_question:
+        raise HTTPException(status_code=400, detail="This lesson doesn't have a quiz to answer.")
+
+    delivery.quiz_response = payload.response
+    delivery.quiz_correct = culture_bot.grade_quiz(lesson.quiz_answer, payload.response)
+    db.commit()
+    return {"correct": delivery.quiz_correct}
 
 
 # --- Handoff to a real human (things AI structurally can't do) ---

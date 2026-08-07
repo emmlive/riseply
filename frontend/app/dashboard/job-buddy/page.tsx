@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem } from "@/lib/api";
+import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse } from "@/lib/api";
 
 export default function JobBuddyPage() {
   return (
@@ -157,12 +157,20 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [handoffSent, setHandoffSent] = useState("");
   const [checklist, setChecklist] = useState<ChecklistProgressItem[]>([]);
   const [expandedPolicyId, setExpandedPolicyId] = useState<number | null>(null);
+  const [lessons, setLessons] = useState<LessonDelivery[]>([]);
+  const [quizDrafts, setQuizDrafts] = useState<Record<number, string>>({});
+  const [quizSubmittingId, setQuizSubmittingId] = useState<number | null>(null);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askAnswer, setAskAnswer] = useState<OrgAskResponse | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api<Application>(`/applications/${applicationId}`).then(setApp);
     api<OrgContact[]>(`/applications/${applicationId}/handoff-contacts`).then(setHandoffContacts).catch(() => {});
     api<ChecklistProgressItem[]>(`/applications/${applicationId}/checklist`).then(setChecklist).catch(() => {});
+    api<LessonDelivery[]>(`/applications/${applicationId}/lessons`).then(setLessons).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
       .then((p) => {
@@ -238,6 +246,40 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     } catch (err: any) {
       setChecklist((items) => items.map((i) => (i.id === itemId ? { ...i, completed: false } : i)));
       alert(err.message || "Couldn't save that — try again.");
+    }
+  }
+
+  async function submitQuizResponse(deliveryId: number) {
+    const response = quizDrafts[deliveryId];
+    if (!response?.trim()) return;
+    setQuizSubmittingId(deliveryId);
+    try {
+      const result = await api<{ correct: boolean }>(
+        `/applications/${applicationId}/lessons/${deliveryId}/quiz-response`,
+        { method: "POST", body: JSON.stringify({ response }) }
+      );
+      setLessons((ls) => ls.map((l) => (l.id === deliveryId ? { ...l, quiz_response: response, quiz_correct: result.correct } : l)));
+    } catch (err: any) {
+      alert(err.message || "Couldn't save that answer — try again.");
+    } finally {
+      setQuizSubmittingId(null);
+    }
+  }
+
+  async function askOrgQuestion() {
+    if (!askQuestion.trim() || asking) return;
+    setAsking(true);
+    setAskError("");
+    setAskAnswer(null);
+    try {
+      const result = await api<OrgAskResponse>(`/applications/${applicationId}/org-ask`, {
+        method: "POST", body: JSON.stringify({ question: askQuestion }),
+      });
+      setAskAnswer(result);
+    } catch (err: any) {
+      setAskError(err.message || "Couldn't get an answer — try again.");
+    } finally {
+      setAsking(false);
     }
   }
 
@@ -328,6 +370,84 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {lessons.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Lessons</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Short check-ins from {app?.job_company || "your company"}, delivered a few at a time
+                instead of all at once.
+              </p>
+              {lessons.map((l) => (
+                <div key={l.id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+                  <div style={{ fontWeight: 600 }}>{l.title}</div>
+                  <div className="hint" style={{ margin: "4px 0" }}>{l.content}</div>
+                  {l.quiz_question && (
+                    <div style={{ marginTop: 8 }}>
+                      {l.quiz_correct === true && (
+                        <p style={{ color: "var(--accent)", margin: 0 }}>✅ {l.quiz_question} — got it.</p>
+                      )}
+                      {l.quiz_correct === false && (
+                        <p style={{ color: "var(--danger)", margin: 0 }}>
+                          {l.quiz_question} — not quite: "{l.quiz_response}". You'll get a reminder in a week.
+                        </p>
+                      )}
+                      {l.quiz_correct == null && (
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <input
+                            value={quizDrafts[l.id] || ""}
+                            onChange={(e) => setQuizDrafts({ ...quizDrafts, [l.id]: e.target.value })}
+                            placeholder={l.quiz_question}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={quizSubmittingId === l.id || !(quizDrafts[l.id] || "").trim()}
+                            onClick={() => submitQuizResponse(l.id)}
+                          >
+                            {quizSubmittingId === l.id ? "Checking…" : "Answer"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {app?.organization_id && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Ask about {app.job_company || "your company"}</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Quick factual lookups — where to request PTO, who to ask about something —
+                answered instantly from your company's own materials, not a chat conversation.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={askQuestion}
+                  onChange={(e) => setAskQuestion(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && askOrgQuestion()}
+                  placeholder="e.g. How do I request time off?"
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={askOrgQuestion} disabled={asking || !askQuestion.trim()}>
+                  {asking ? "Asking…" : "Ask"}
+                </button>
+              </div>
+              {askError && <p className="error-text">{askError}</p>}
+              {askAnswer && (
+                <div className="brief" style={{ marginTop: 12 }}>
+                  {askAnswer.answer}
+                  {askAnswer.sources.length > 0 && (
+                    <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+                      From: {askAnswer.sources.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

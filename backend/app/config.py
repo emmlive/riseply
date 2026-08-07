@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     free_tier_max_interview_preps_per_month: int = 10
     free_tier_max_onboarding_plans_per_month: int = 5
     free_tier_max_job_buddy_messages_per_month: int = 60
+    free_tier_max_org_ask_per_month: int = 100
     free_tier_max_search_profiles: int = 1
 
     # --- Pro tier limits ---
@@ -113,7 +114,13 @@ class Settings(BaseSettings):
     pro_tier_max_interview_preps_per_month: int = 50
     pro_tier_max_onboarding_plans_per_month: int = 30
     pro_tier_max_job_buddy_messages_per_month: int = 500
+    pro_tier_max_org_ask_per_month: int = 500
     pro_tier_max_search_profiles: int = 10
+
+    # --- Culture Bot (spaced-repetition onboarding lessons) ---
+    # Reuses cron_secret (above) -- both scheduled jobs are triggered the
+    # same way (GitHub Actions -> /internal/*), so one shared secret is
+    # simpler to set up than a second one.
 
     allowed_origins: str = "http://localhost:3000"
 

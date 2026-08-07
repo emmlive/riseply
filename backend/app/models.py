@@ -16,6 +16,10 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     token_version = Column(Integer, default=0, server_default="0")  # bumped on password reset to invalidate old JWTs
     is_admin = Column(Boolean, default=False, server_default="false")
+    admin_role = Column(String, default="", server_default="")  # "" | super | support | billing | readonly
+    is_suspended = Column(Boolean, default=False, server_default="false")
+    suspended_at = Column(DateTime, nullable=True)
+    suspended_reason = Column(String, default="", server_default="")
     oauth_provider = Column(String, nullable=True)  # "google" | "microsoft" | None (password-based account)
     full_name = Column(String, default="")
     phone = Column(String, default="")
@@ -29,6 +33,7 @@ class User(Base):
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
 
     tos_accepted_at = Column(DateTime, nullable=True)
+    subscription_terms_accepted_at = Column(DateTime, nullable=True)
 
     # Billing
     subscription_tier = Column(String, default="free", server_default="free")  # free | pro
@@ -182,6 +187,15 @@ class JobBuddyMessage(Base):
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    # --- Trust & safety flagging ---
+    # Set by a lightweight keyword scan (see services/safety_flags.py) run
+    # against both the user's message and the assistant's reply. This is a
+    # coarse signal for a human admin to review, never an automated
+    # moderation action -- nothing is blocked or altered based on it.
+    flagged = Column(Boolean, default=False, server_default="false")
+    flag_reason = Column(String, default="", server_default="")
+    flag_resolved_at = Column(DateTime, nullable=True)
 
 
 class PointsEvent(Base):
@@ -421,6 +435,70 @@ class KnowledgeBaseArticle(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+
+
+class OrgQALog(Base):
+    """One instant Q&A exchange between an employee and the org's
+    content-scoped assistant ('Ghost Onboarder'). Kept as a log, not
+    ephemeral, so an org admin can see what new hires are actually
+    asking -- the same signal a human HR team builds from watching
+    their inbox, and a direct pointer to gaps worth filling in their
+    uploaded content. Answer text only, never the employee's private
+    Job Buddy conversation -- this is a separate, narrower feature."""
+    __tablename__ = "org_qa_logs"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    question = Column(Text, default="")
+    answer = Column(Text, default="")
+    # False means nothing in the org's uploaded content matched -- the
+    # answer told the employee that plainly rather than guessing. A
+    # cluster of these is a strong signal for what to add to the KB.
+    matched_content = Column(Boolean, default=False, server_default="false")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OrgLesson(Base):
+    """An admin-authored micro-lesson template for the spaced-repetition
+    'Culture Bot' -- delivered day_offset days after an employee's
+    application record was created (their join date, for org-linked
+    applications). department_id NULL means company-wide, same layering
+    as checklist items and content. quiz_question/quiz_answer are
+    optional and deliberately simple: a short free-text prompt graded
+    by case-insensitive substring match, not an LLM -- no ambiguity
+    about why an answer was marked right or wrong."""
+    __tablename__ = "org_lessons"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    day_offset = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    quiz_question = Column(String, default="", server_default="")
+    quiz_answer = Column(String, default="", server_default="")
+    order = Column(Integer, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class LessonDelivery(Base):
+    """One lesson actually sent to one employee. The unique constraint is
+    what makes delivery idempotent -- the daily delivery run can be
+    triggered more than once on the same day (retry, manual re-run)
+    without double-sending, since it always checks for an existing row
+    first."""
+    __tablename__ = "lesson_deliveries"
+    __table_args__ = (UniqueConstraint("application_id", "lesson_id", name="uq_app_lesson"),)
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("org_lessons.id"), nullable=False)
+    delivered_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    quiz_response = Column(String, nullable=True)
+    quiz_correct = Column(Boolean, nullable=True)
+    reminder_sent_at = Column(DateTime, nullable=True)
 
 
 class FailureLog(Base):

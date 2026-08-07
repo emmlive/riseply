@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem } from "@/lib/api";
+import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog } from "@/lib/api";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -91,6 +91,17 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [checklistPolicy, setChecklistPolicy] = useState("");
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
   const [checklistError, setChecklistError] = useState("");
+  const [lessons, setLessons] = useState<OrgLesson[]>([]);
+  const [lessonDay, setLessonDay] = useState("0");
+  const [lessonTitle, setLessonTitle] = useState("");
+  const [lessonContent, setLessonContent] = useState("");
+  const [lessonQuizQ, setLessonQuizQ] = useState("");
+  const [lessonQuizA, setLessonQuizA] = useState("");
+  const [lessonDept, setLessonDept] = useState<string>("");
+  const [addingLesson, setAddingLesson] = useState(false);
+  const [lessonError, setLessonError] = useState("");
+  const [qaLogs, setQaLogs] = useState<OrgQALog[] | null>(null);
+  const [qaFilter, setQaFilter] = useState<"all" | "unmatched">("unmatched");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [adding, setAdding] = useState(false);
@@ -113,9 +124,13 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
     api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
     api<ChecklistItem[]>(`/orgs/${org.id}/checklist`).then(setChecklist);
+    api<OrgLesson[]>(`/orgs/${org.id}/lessons`).then(setLessons);
+    // Org-wide-admin-only, same as usage/billing above -- fails silently
+    // for a department admin rather than surfacing an error toast.
+    api<OrgQALog[]>(`/orgs/${org.id}/qa-logs?unmatched_only=${qaFilter === "unmatched"}`).then(setQaLogs).catch(() => setQaLogs(null));
   }
 
-  useEffect(() => { load(); }, [org.id]);
+  useEffect(() => { load(); }, [org.id, qaFilter]);
 
   async function addContent() {
     setAdding(true);
@@ -175,6 +190,36 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
 
   async function removeChecklistItem(itemId: number) {
     await api(`/orgs/${org.id}/checklist/${itemId}`, { method: "DELETE" });
+    load();
+  }
+
+  async function addLesson() {
+    setAddingLesson(true);
+    setLessonError("");
+    try {
+      await api(`/orgs/${org.id}/lessons`, {
+        method: "POST",
+        body: JSON.stringify({
+          day_offset: Number(lessonDay) || 0,
+          title: lessonTitle,
+          content: lessonContent,
+          quiz_question: lessonQuizQ.trim(),
+          quiz_answer: lessonQuizA.trim(),
+          department_id: lessonDept ? Number(lessonDept) : null,
+          order: lessons.length,
+        }),
+      });
+      setLessonDay("0"); setLessonTitle(""); setLessonContent(""); setLessonQuizQ(""); setLessonQuizA("");
+      load();
+    } catch (err: any) {
+      setLessonError(err.message || "Couldn't add that lesson.");
+    } finally {
+      setAddingLesson(false);
+    }
+  }
+
+  async function removeLesson(lessonId: number) {
+    await api(`/orgs/${org.id}/lessons/${lessonId}`, { method: "DELETE" });
     load();
   }
 
@@ -318,6 +363,96 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         </div>
         {checklistError && <p className="error-text">{checklistError}</p>}
       </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Culture Bot lessons</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Short lessons delivered by email on a schedule relative to each employee's join date —
+          spaced-repetition instead of an 8-hour Day 1 orientation. Add an optional quiz question;
+          a wrong answer gets a follow-up reminder a week later.
+        </p>
+        {lessons.map((l) => (
+          <div key={l.id} className="points-event-row">
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                Day {l.day_offset}: {l.title}
+                {l.quiz_question && <span className="pill pill-default" style={{ marginLeft: 8 }}>Has quiz</span>}
+                {l.department_id && (
+                  <span className="hint" style={{ marginLeft: 8 }}>
+                    ({departments.find((d) => d.id === l.department_id)?.name || "Department"})
+                  </span>
+                )}
+              </div>
+              <div className="hint">{l.content}</div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => removeLesson(l.id)}>Remove</button>
+          </div>
+        ))}
+        <div style={{ marginTop: lessons.length > 0 ? 16 : 0 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="number" min={0} value={lessonDay} onChange={(e) => setLessonDay(e.target.value)}
+                   placeholder="Day" style={{ width: 80 }} />
+            <input value={lessonTitle} onChange={(e) => setLessonTitle(e.target.value)}
+                   placeholder="e.g. Expense policy" style={{ flex: 1 }} />
+            {departments.length > 0 && (
+              <select value={lessonDept} onChange={(e) => setLessonDept(e.target.value)} style={{ width: 180 }}>
+                <option value="">Company-wide</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name} only</option>)}
+              </select>
+            )}
+          </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>Lesson content</label>
+            <textarea rows={3} value={lessonContent} onChange={(e) => setLessonContent(e.target.value)}
+                      placeholder="Submit expenses via the Expensify app within 30 days of purchase." />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input value={lessonQuizQ} onChange={(e) => setLessonQuizQ(e.target.value)}
+                   placeholder="Quiz question (optional)" style={{ flex: 1 }} />
+            <input value={lessonQuizA} onChange={(e) => setLessonQuizA(e.target.value)}
+                   placeholder="Expected answer" style={{ flex: 1 }} />
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={addLesson}
+                  disabled={addingLesson || !lessonTitle.trim() || !lessonContent.trim()} style={{ marginTop: 8 }}>
+            {addingLesson ? "Adding…" : "Add lesson"}
+          </button>
+        </div>
+        {lessonError && <p className="error-text">{lessonError}</p>}
+      </div>
+
+      {qaLogs !== null && (
+        <div className="card">
+          <div className="card-row">
+            <h3 style={{ margin: 0 }}>What employees are asking (Ghost Onboarder)</h3>
+          </div>
+          <p className="hint" style={{ marginTop: 4, marginBottom: 12 }}>
+            Instant Q&A answered from your uploaded content above. Questions marked
+            "not covered" are the clearest signal for what to add next.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {(["unmatched", "all"] as const).map((f) => (
+              <button
+                key={f}
+                className="btn btn-ghost btn-sm"
+                style={qaFilter === f ? { background: "var(--accent-soft)", color: "var(--accent-hover)", borderColor: "var(--accent)" } : {}}
+                onClick={() => setQaFilter(f)}
+              >
+                {f === "unmatched" ? "Not covered yet" : "All questions"}
+              </button>
+            ))}
+          </div>
+          {qaLogs.map((log) => (
+            <div key={log.id} className="points-event-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+              <div style={{ fontWeight: 600 }}>{log.question}</div>
+              <div className="hint">
+                {log.user_email} · {new Date(log.created_at).toLocaleString()}
+                {!log.matched_content && <span className="pill pill-pending" style={{ marginLeft: 8 }}>not covered</span>}
+              </div>
+            </div>
+          ))}
+          {qaLogs.length === 0 && <p className="muted">No questions yet.</p>}
+        </div>
+      )}
 
       {stats && (
         <div className="rise-hero">

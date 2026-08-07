@@ -610,3 +610,101 @@ def org_billing(
         overage_seats=overage_seats,
         overage_cost_usd=overage_cost,
     )
+
+
+# --- Ghost Onboarder: what employees have been asking ---
+
+@router.get("/{organization_id}/qa-logs", response_model=list[schemas.OrgQALogOut])
+def list_qa_logs(
+    organization_id: int,
+    unmatched_only: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin-visible log of instant Q&A exchanges -- the direct signal
+    for what to add to uploaded content. unmatched_only surfaces
+    questions nothing in the org's content covered yet, which is the
+    highest-value view: it's literally a list of content gaps."""
+    _require_admin(db, organization_id, user.id)
+    q = db.query(models.OrgQALog, models.User.email).join(
+        models.User, models.OrgQALog.user_id == models.User.id
+    ).filter(models.OrgQALog.organization_id == organization_id)
+    if unmatched_only:
+        q = q.filter(models.OrgQALog.matched_content.is_(False))
+    q = q.order_by(models.OrgQALog.created_at.desc()).limit(200)
+
+    return [
+        schemas.OrgQALogOut(
+            id=log.id, application_id=log.application_id, user_email=email,
+            question=log.question, answer=log.answer, matched_content=log.matched_content,
+            created_at=log.created_at,
+        )
+        for log, email in q.all()
+    ]
+
+
+# --- Culture Bot: admin-authored lesson templates ---
+
+@router.post("/{organization_id}/lessons", response_model=schemas.OrgLessonOut)
+def add_lesson(
+    organization_id: int,
+    payload: schemas.OrgLessonCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
+    lesson = models.OrgLesson(
+        organization_id=organization_id, department_id=payload.department_id,
+        day_offset=payload.day_offset, title=payload.title, content=payload.content,
+        quiz_question=payload.quiz_question, quiz_answer=payload.quiz_answer, order=payload.order,
+    )
+    db.add(lesson)
+    db.commit()
+    db.refresh(lesson)
+    return lesson
+
+
+@router.get("/{organization_id}/lessons", response_model=list[schemas.OrgLessonOut])
+def list_lessons(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin/department_admin management view -- same scoping as the
+    checklist management view: department admins see company-wide
+    (context) plus their own department's lessons."""
+    member = db.query(models.OrganizationMember).filter_by(
+        organization_id=organization_id, user_id=user.id
+    ).first()
+    if not member or member.role not in ("admin", "department_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    q = db.query(models.OrgLesson).filter_by(organization_id=organization_id)
+    if member.role == "department_admin":
+        q = q.filter(
+            (models.OrgLesson.department_id == None)  # noqa: E711
+            | (models.OrgLesson.department_id == member.department_id)
+        )
+    return q.order_by(models.OrgLesson.day_offset, models.OrgLesson.order).all()
+
+
+@router.delete("/{organization_id}/lessons/{lesson_id}")
+def delete_lesson(
+    organization_id: int,
+    lesson_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    lesson = db.query(models.OrgLesson).filter_by(id=lesson_id, organization_id=organization_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found.")
+    _require_scope_admin(db, organization_id, user.id, lesson.department_id)
+    db.delete(lesson)
+    db.commit()
+    return {"deleted": True}
+
+
+# --- Culture Bot: daily delivery run -- see /internal/culture-bot-run
+# in internal.py for the actual scheduled-trigger endpoint (same
+# CRON_SECRET + GitHub Actions pattern as scheduled matching, kept
+# together with that endpoint rather than duplicated here).
