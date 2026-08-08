@@ -613,17 +613,25 @@ function ModerationTab() {
 function SupportTab({ role }: { role: string }) {
   const [messages, setMessages] = useState<AdminSupportMessage[]>([]);
   const [filter, setFilter] = useState<"" | "open" | "resolved">("open");
+  const [search, setSearch] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
   const [sendingId, setSendingId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const canReply = role === "super" || role === "support";
 
-  async function load(status: string) {
-    const qs = status ? `?status=${status}` : "";
+  async function load(status: string, searchTerm: string) {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (searchTerm.trim()) params.set("search", searchTerm.trim());
+    const qs = params.toString() ? `?${params.toString()}` : "";
     setMessages(await api<AdminSupportMessage[]>(`/admin/support-messages${qs}`));
   }
 
-  useEffect(() => { load(filter); }, [filter]);
+  useEffect(() => {
+    const timeout = setTimeout(() => load(filter, search), search ? 300 : 0);
+    return () => clearTimeout(timeout);
+  }, [filter, search]);
 
   async function sendReply(id: number) {
     const reply = replyDrafts[id];
@@ -632,7 +640,7 @@ function SupportTab({ role }: { role: string }) {
     setError("");
     try {
       await api(`/admin/support-messages/${id}/reply`, { method: "POST", body: JSON.stringify({ reply }) });
-      await load(filter);
+      await load(filter, search);
     } catch (err: any) {
       setError(err.message || "Couldn't send the reply.");
     } finally {
@@ -640,9 +648,36 @@ function SupportTab({ role }: { role: string }) {
     }
   }
 
+  async function resolveWithoutReply(id: number) {
+    setBusyId(id);
+    setError("");
+    try {
+      await api(`/admin/support-messages/${id}/resolve`, { method: "POST" });
+      await load(filter, search);
+    } catch (err: any) {
+      setError(err.message || "Couldn't mark that resolved.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteMessage(id: number) {
+    if (!confirm("Delete this message permanently? This can't be undone.")) return;
+    setBusyId(id);
+    setError("");
+    try {
+      await api(`/admin/support-messages/${id}`, { method: "DELETE" });
+      await load(filter, search);
+    } catch (err: any) {
+      setError(err.message || "Couldn't delete that message.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {(["open", "resolved", ""] as const).map((f) => (
           <button
             key={f || "all"}
@@ -653,6 +688,13 @@ function SupportTab({ role }: { role: string }) {
             {f === "" ? "All" : f === "open" ? "Open" : "Resolved"}
           </button>
         ))}
+        <input
+          type="text"
+          placeholder="Search subject, message, or email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: 200 }}
+        />
       </div>
 
       {error && <p className="error-text">{error}</p>}
@@ -668,7 +710,21 @@ function SupportTab({ role }: { role: string }) {
                 {m.user_email} · {new Date(m.created_at).toLocaleString()}
               </p>
             </div>
-            <span className={`pill ${m.status === "open" ? "pill-pending" : "pill-approved"}`}>{m.status}</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span className={`pill ${m.status === "open" ? "pill-pending" : "pill-approved"}`}>{m.status}</span>
+              {canReply && (
+                <>
+                  {m.status === "open" && (
+                    <button className="btn btn-ghost btn-sm" disabled={busyId === m.id} onClick={() => resolveWithoutReply(m.id)}>
+                      {busyId === m.id ? "…" : "Mark resolved"}
+                    </button>
+                  )}
+                  <button className="btn btn-danger-ghost btn-sm" disabled={busyId === m.id} onClick={() => deleteMessage(m.id)}>
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <p style={{ margin: "10px 0" }}>{m.message}</p>
 
