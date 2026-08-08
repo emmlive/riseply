@@ -32,12 +32,20 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_pass: str = ""
-    smtp_from_name: str = "Riseply"
-    support_email: str = ""  # where "Contact support" messages get sent -- defaults to smtp_user if blank
+    # --- Email (Resend) ---
+    # Empty by default -- same kill-switch pattern as every other
+    # optional integration (Stripe, Twilio, CRON_SECRET). Until
+    # RESEND_API_KEY is set, send_email() prints and skips instead of
+    # sending. Switched from raw SMTP because Render's free tier blocks
+    # outbound SMTP ports (25/465/587) entirely at the network level --
+    # no SMTP_HOST/PORT/USER/PASS combination can work around that, so
+    # this uses Resend's HTTPS API instead (port 443, never blocked).
+    resend_api_key: str = ""
+    # Must be on a domain verified in the Resend dashboard (riseply.com)
+    # -- Resend rejects sends from unverified domains.
+    resend_from_email: str = "support@riseply.com"
+    resend_from_name: str = "Riseply"
+    support_email: str = ""  # where "Contact support" messages get sent -- defaults to resend_from_email if blank
 
     # --- SMS (Twilio) ---
     # Empty by default, same kill-switch pattern as SMTP above -- until

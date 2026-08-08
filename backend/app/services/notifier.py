@@ -1,40 +1,34 @@
-import smtplib
-from email.message import EmailMessage
-
 from app.config import settings
 
 
 def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None, attachment_filename: str = "attachment.docx"):
-    if not settings.smtp_user or not settings.smtp_pass:
-        print(f"[notifier] SMTP not configured — skipping email to {to_addr}: {subject}\n{body}\n")
+    if not settings.resend_api_key:
+        print(f"[notifier] Resend not configured — skipping email to {to_addr}: {subject}\n{body}\n")
         return
 
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_user}>"
-    msg["To"] = to_addr
-    msg.set_content(body)
+    import resend
+    resend.api_key = settings.resend_api_key
 
+    params: dict = {
+        "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+        "to": [to_addr],
+        "subject": subject,
+        "text": body,
+    }
     if attachment_data:
-        msg.add_attachment(
-            attachment_data,
-            maintype="application",
-            subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=attachment_filename,
-        )
+        # Python SDK specifically wants content as a list of ints (raw
+        # bytes), NOT a base64 string -- that's the JS SDK's format.
+        # Getting this backwards fails silently-ish (a confusing API
+        # error), so it's worth this comment existing.
+        params["attachments"] = [{"content": list(attachment_data), "filename": attachment_filename}]
 
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
-            s.starttls()
-            s.login(settings.smtp_user, settings.smtp_pass)
-            s.send_message(msg)
+        resend.Emails.send(params)
     except Exception as e:
-        # Re-raised with host:port context so every caller's error log
-        # (there are several, one per notification type) shows WHERE it
-        # failed to connect, not just the bare exception -- "timed out"
-        # alone means going back and forth to ask what SMTP_HOST/
-        # SMTP_PORT even are; this way it's right there in the log line.
-        raise Exception(f"[{settings.smtp_host}:{settings.smtp_port}] {e}") from e
+        # Prefixed with [Resend] for the same reason the old SMTP path
+        # prefixed [host:port] -- every caller's error log should show
+        # WHERE this failed without needing to go dig through code.
+        raise Exception(f"[Resend] {e}") from e
 
 
 def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filename: str = "", resume_data: bytes | None = None):

@@ -18,14 +18,14 @@ def contact_support(
 ):
     # Always persist the message first -- this is now the source of truth
     # (visible to admins in-app), so a message is never lost even if
-    # SMTP isn't configured or a send fails.
+    # Resend isn't configured or a send fails.
     msg = models.SupportMessage(
         user_id=user.id, subject=payload.subject, message=payload.message,
     )
     db.add(msg)
     db.commit()
 
-    support_inbox = settings.support_email or settings.smtp_user
+    support_inbox = settings.support_email or settings.resend_from_email
     if support_inbox:
         try:
             notifier.send_email(
