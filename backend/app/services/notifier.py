@@ -23,10 +23,18 @@ def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | N
             filename=attachment_filename,
         )
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
-        s.starttls()
-        s.login(settings.smtp_user, settings.smtp_pass)
-        s.send_message(msg)
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
+            s.starttls()
+            s.login(settings.smtp_user, settings.smtp_pass)
+            s.send_message(msg)
+    except Exception as e:
+        # Re-raised with host:port context so every caller's error log
+        # (there are several, one per notification type) shows WHERE it
+        # failed to connect, not just the bare exception -- "timed out"
+        # alone means going back and forth to ask what SMTP_HOST/
+        # SMTP_PORT even are; this way it's right there in the log line.
+        raise Exception(f"[{settings.smtp_host}:{settings.smtp_port}] {e}") from e
 
 
 def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filename: str = "", resume_data: bytes | None = None):
