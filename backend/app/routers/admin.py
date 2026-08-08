@@ -122,8 +122,8 @@ def suspend_user(
             "Your Riseply account has been suspended",
             payload.reason or "Your account has been suspended. Contact support if you believe this is a mistake.",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[admin] Suspension email failed for user {user.id}: {e}")
     return user
 
 

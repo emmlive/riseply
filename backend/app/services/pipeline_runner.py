@@ -220,8 +220,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             if channel in ("email", "both"):
                 try:
                     notifier.notify_new_match(notify_addr, job_notify, application.id, resume_path, resume_bytes)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[pipeline] New match email failed for user {user.id}, application {application.id}: {e}")
             # sms_consent is enforced at the point channel gets set
             # (routers/me.py) -- checked again here as defense in depth,
             # not because it should ever be false while channel includes
@@ -230,8 +230,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             if channel in ("sms", "both") and user.sms_consent:
                 try:
                     sms.notify_new_match_sms(user.phone, job_notify)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[pipeline] New match SMS failed for user {user.id}, application {application.id}: {e}")
         queued.append(application.id)
 
     # Near-misses are only worth surfacing when nothing real was found --
@@ -285,14 +285,14 @@ def send_daily_digests(db: Session) -> dict:
                 try:
                     notifier.notify_digest(user.notify_email or user.email, matches)
                     sent += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[pipeline] Digest email failed for user {user.id}: {e}")
             if channel in ("sms", "both") and user.sms_consent:
                 try:
                     sms.notify_digest_sms(user.phone, len(matches))
                     sent += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[pipeline] Digest SMS failed for user {user.id}: {e}")
 
         user.last_digest_sent_at = datetime.utcnow()
         db.commit()
