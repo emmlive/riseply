@@ -9,7 +9,7 @@ from app.config import settings
 from app.migrate import run_migration
 from app.kb_seed import seed_kb_if_empty
 from app.rate_limit import limiter
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension
 
 # Adds any columns/tables that are new in the code but missing from the
 # live database, so every deploy self-heals instead of needing a manual
@@ -61,6 +61,7 @@ app.include_router(admin.router)
 app.include_router(internal.router)
 app.include_router(org_buddy.router)
 app.include_router(kb.router)
+app.include_router(extension.router)
 
 # Tailored resumes are now served from Postgres via
 # GET /applications/{id}/tailored-resume (see routers/pipeline.py) --
