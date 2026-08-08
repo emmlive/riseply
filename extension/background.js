@@ -27,7 +27,9 @@ async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const detail = body?.detail || `Request failed (${res.status})`;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    error.status = res.status;
+    throw error;
   }
   return body;
 }
@@ -96,11 +98,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "GET_USAGE": {
+          const usage = await apiFetch("/usage");
+          sendResponse({
+            success: true,
+            tier: usage.tier,
+            matchesUsed: usage.matches_used,
+            matchesLimit: usage.matches_limit,
+          });
+          break;
+        }
+
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
     } catch (err) {
-      sendResponse({ success: false, error: err.message || String(err) });
+      sendResponse({ success: false, error: err.message || String(err), status: err.status });
     }
   })();
 

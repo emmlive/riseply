@@ -52,13 +52,22 @@ async function renderLoggedIn() {
     return;
   }
 
+  const usage = await sendMessage({ type: "GET_USAGE" });
+  const usageHtml = usage.success
+    ? `<p class="hint" style="margin-top:0;">
+         ${usage.matchesUsed}/${usage.matchesLimit} matches used this month (${usage.tier === "pro" ? "Pro" : "Free"})
+         ${usage.tier !== "pro" ? ' · <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:inherit;">Upgrade</a>' : ""}
+       </p>`
+    : "";
+
   app.innerHTML = `
     <div class="status">
       <div class="name">${escapeHtml(auth.user.full_name || auth.user.email)}</div>
       <div class="email">${escapeHtml(auth.user.email)}</div>
+      ${usageHtml}
       <button class="ghost" id="logout-btn">Log out</button>
     </div>
-    <p class="hint">Open a job posting page (Greenhouse, Lever, or most company careers pages) to see the Riseply sidebar.</p>
+    <p class="hint">Open a job posting page (Greenhouse, Lever, or most company careers pages) to see the Riseply sidebar. This shared match count also covers "Find new matches" on riseply.com -- scoring a job here uses the same monthly quota.</p>
   `;
 
   document.getElementById("logout-btn").addEventListener("click", async () => {

@@ -233,12 +233,15 @@
     bodyEl.innerHTML = `
       <p class="job-title">${escapeHtml(job.title)}</p>
       <p class="job-company">${escapeHtml(job.company)}</p>
+      <div id="riseply-usage-slot"></div>
       <div id="riseply-score-slot"></div>
       <button class="action primary" id="riseply-score-btn">Score my resume</button>
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
       <p class="hint">Autofill can't attach your resume or submit for you -- browsers block scripts from doing either, on purpose. Fill in fields, then finish it yourself.</p>
       <div id="riseply-filled-slot"></div>
     `;
+
+    renderUsage(root);
 
     root.getElementById("riseply-score-btn").addEventListener("click", async () => {
       const btn = root.getElementById("riseply-score-btn");
@@ -248,8 +251,24 @@
       btn.disabled = false;
       btn.textContent = "Score my resume";
       const slot = root.getElementById("riseply-score-slot");
+
       if (!result.success) {
-        slot.innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(result.error || "Couldn't score this job.")}</p>`;
+        // Scoring shares the same monthly "match" quota as the regular
+        // "Find new matches" button in the app -- a 429 here means
+        // that shared limit is hit, not something specific to the
+        // extension, so the message and upgrade path should match what
+        // the web app would show in the same situation.
+        if (result.status === 429) {
+          slot.innerHTML = `
+            <div class="score-box" style="background:#FBEEE0;">
+              <div class="score-reason" style="color:#C97A2B;">
+                Monthly match limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a> for a higher limit.
+              </div>
+            </div>
+          `;
+        } else {
+          slot.innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(result.error || "Couldn't score this job.")}</p>`;
+        }
         return;
       }
       slot.innerHTML = `
@@ -258,6 +277,7 @@
           <div class="score-reason">${escapeHtml(result.reason || "")}</div>
         </div>
       `;
+      renderUsage(root); // refresh the count after a successful, quota-consuming score
     });
 
     root.getElementById("riseply-fill-btn").addEventListener("click", async () => {
@@ -283,6 +303,21 @@
     const div = document.createElement("div");
     div.textContent = str == null ? "" : String(str);
     return div.innerHTML;
+  }
+
+  async function renderUsage(root) {
+    const slot = root.getElementById("riseply-usage-slot");
+    if (!slot) return;
+    const usage = await sendMessage({ type: "GET_USAGE" });
+    if (!usage.success) return; // non-critical -- just skip showing it rather than surfacing an error for this
+
+    const nearLimit = usage.matchesUsed >= usage.matchesLimit * 0.9;
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:0;margin-bottom:8px;${nearLimit ? "color:#C97A2B;" : ""}">
+        ${usage.matchesUsed}/${usage.matchesLimit} matches used this month (${usage.tier === "pro" ? "Pro" : "Free"})
+        ${usage.tier !== "pro" ? ' · <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:inherit;">Upgrade</a>' : ""}
+      </p>
+    `;
   }
 
   function init() {
