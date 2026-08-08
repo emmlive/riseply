@@ -37,7 +37,7 @@ def contact_support(
                     f"{payload.message}"
                 ),
             )
-        except Exception:
-            pass  # message is already saved -- the admin dashboard is the fallback
+        except Exception as e:
+            print(f"[support] Failed to email support inbox for message {msg.id}: {e}")
 
     return {"sent": True}

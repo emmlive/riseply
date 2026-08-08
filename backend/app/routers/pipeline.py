@@ -329,8 +329,8 @@ def auto_submit_application(
             notifier.notify_submitted(user.notify_email or user.email, {
                 "title": job.title, "company": job.company, "url": job.url,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[pipeline] Submission confirmation email failed for user {user.id}, application {application_id}: {e}")
         return {"status": "submitted"}
 
     # needs_manual_review or failed -- leave status as 'approved', record

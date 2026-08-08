@@ -49,8 +49,8 @@ def signup(request: Request, payload: schemas.SignupRequest, db: Session = Depen
 
     try:
         notifier.notify_welcome(user.email, user.full_name)
-    except Exception:
-        pass  # welcome email is a nice-to-have -- never block signup on it
+    except Exception as e:
+        print(f"[auth] Welcome email failed for user {user.id}: {e}")  # never block signup on it
 
     token = security.create_access_token(user)
     return schemas.TokenResponse(access_token=token)
@@ -100,8 +100,8 @@ def _find_or_create_oauth_user(db: Session, email: str, name: str, provider: str
 
     try:
         notifier.notify_welcome(user.email, user.full_name)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[auth] Welcome email failed for user {user.id} (oauth): {e}")
     return user
 
 
@@ -166,8 +166,8 @@ def forgot_password(request: Request, payload: schemas.ForgotPasswordRequest, db
     reset_url = f"{settings.frontend_url}/reset-password?token={raw_token}"
     try:
         notifier.notify_password_reset(user.email, reset_url, settings.password_reset_expire_minutes)
-    except Exception:
-        pass  # don't leak send failures to the client -- same generic response either way
+    except Exception as e:
+        print(f"[auth] Password reset email failed for user {user.id}: {e}")  # generic response either way -- never leaks to the client
 
     return generic_response
 
