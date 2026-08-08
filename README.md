@@ -41,7 +41,7 @@ matching, tailoring, and application status are all per-user.
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in ANTHROPIC_API_KEY, JWT_SECRET, SMTP creds
+cp .env.example .env   # fill in ANTHROPIC_API_KEY, JWT_SECRET, RESEND_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -88,7 +88,7 @@ own database offering — free tier, scales to zero when idle.
   0.0.0.0 --port $PORT`.
 - Set env vars: `DATABASE_URL` (the Neon string above), `JWT_SECRET`
   (generate with `python -c "import secrets; print(secrets.token_hex(32))"`),
-  `ANTHROPIC_API_KEY`, and SMTP vars if you want email notifications live.
+  `ANTHROPIC_API_KEY`, and `RESEND_API_KEY` if you want email notifications live.
   Leave `ALLOWED_ORIGINS` for step 3.
 - Once deployed, copy the backend's URL (looks like
   `https://riseply.onrender.com`).
@@ -200,6 +200,45 @@ day a match actually landed — a manual "Find new matches" click at 2pm
 still gets swept into that day's digest, not lost or double-counted the
 next day.
 
+## Email (Resend)
+
+All outbound email — welcome, match alerts, digests, password resets,
+support form notifications, admin replies — goes through
+`services/notifier.py`'s `send_email()`, which uses
+[Resend](https://resend.com)'s HTTPS API.
+
+**Why not plain SMTP:** Render's free tier blocks outbound traffic to
+SMTP ports 25, 465, and 587 entirely at the network level (Render's own
+[changelog](https://render.com) confirms this). No SMTP_HOST/PORT/USER/
+PASS combination can work around a platform-level firewall block —
+every direct-SMTP attempt just times out. Resend's API runs over
+HTTPS (port 443), which isn't blocked, so this is the actual fix, not
+a workaround.
+
+**Disabled until configured** — same kill-switch pattern as every
+other optional integration here. Until `RESEND_API_KEY` is set,
+`send_email()` prints and skips instead of sending.
+
+**Setup:**
+1. Create a free [Resend](https://resend.com) account (3,000
+   emails/month, 100/day, no credit card required).
+2. Add and verify your sending domain (`riseply.com`) in the Resend
+   dashboard — this means adding Resend's own SPF/DKIM records to your
+   DNS. If you're also using Namecheap Private Email for a real mailbox
+   on the same domain, Resend's SPF entry needs to be **merged into
+   your existing SPF TXT record** as an additional `include:`, not
+   added as a second separate SPF record (multiple SPF records break
+   validation entirely).
+3. Generate an API key in the Resend dashboard.
+4. Set three environment variables on Render: `RESEND_API_KEY`,
+   `RESEND_FROM_EMAIL` (must be on the verified domain, e.g.
+   `support@riseply.com`), `RESEND_FROM_NAME` (defaults to "Riseply"
+   if unset).
+5. That's it — no code changes needed, no new GitHub Actions secrets.
+   Inbound mail (Namecheap Private Email receiving `support@riseply.com`)
+   is completely unaffected by any of this; this only changes how the
+   app *sends*.
+
 ## SMS notifications (optional, off by default)
 
 Same notification system as above, with a second delivery channel.
@@ -210,7 +249,7 @@ number on file.
 
 **This is disabled until you configure it.** Until all three settings
 below are set, `services/sms.py` prints and skips instead of sending —
-same kill-switch pattern as SMTP.
+same kill-switch pattern as email (see below).
 
 **Setup:**
 1. Create a [Twilio](https://www.twilio.com) account and a phone number
