@@ -249,6 +249,7 @@ def error_stats(
 @router.get("/support-messages", response_model=list[schemas.AdminSupportMessageOut])
 def list_support_messages(
     status: str | None = None,
+    search: str | None = None,
     db: Session = Depends(get_db),
     _admin: models.User = Depends(require_admin_view("support")),
 ):
@@ -257,6 +258,16 @@ def list_support_messages(
     )
     if status:
         q = q.filter(models.SupportMessage.status == status)
+    if search:
+        # Matches subject, message body, or the sender's email -- covers
+        # the realistic ways an admin would actually search ("find that
+        # billing thing from Jane") without needing separate fields.
+        like = f"%{search}%"
+        q = q.filter(
+            (models.SupportMessage.subject.ilike(like))
+            | (models.SupportMessage.message.ilike(like))
+            | (models.User.email.ilike(like))
+        )
     q = q.order_by(models.SupportMessage.created_at.desc())
 
     return [
@@ -290,7 +301,8 @@ def reply_to_support_message(
             f"Re: {msg.subject}",
             payload.reply,
         )
-    except Exception:
+    except Exception as e:
+        print(f"[admin] Support reply email failed for message {message_id}: {e}")
         raise HTTPException(
             status_code=502,
             detail="Couldn't send the reply email -- the message was NOT marked resolved, try again.",
@@ -301,6 +313,38 @@ def reply_to_support_message(
     msg.status = "resolved"
     db.commit()
     return {"replied": True}
+
+
+@router.post("/support-messages/{message_id}/resolve")
+def resolve_support_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("support")),
+):
+    """Marks resolved without sending a reply -- for messages that don't
+    need or warrant one ('good life', accidental submissions, spam-ish
+    test messages), so clearing clutter doesn't force writing something
+    to send just to make the Open queue shorter."""
+    msg = db.query(models.SupportMessage).filter_by(id=message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    msg.status = "resolved"
+    db.commit()
+    return {"resolved": True}
+
+
+@router.delete("/support-messages/{message_id}")
+def delete_support_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("support")),
+):
+    msg = db.query(models.SupportMessage).filter_by(id=message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    db.delete(msg)
+    db.commit()
+    return {"deleted": True}
 
 
 # --- Organizations (Org Buddy as a Service / "Enterprise") ---
