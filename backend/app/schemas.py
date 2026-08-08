@@ -572,3 +572,20 @@ class LessonDeliveryOut(BaseModel):
 
 class LessonQuizResponseRequest(BaseModel):
     response: str = Field(min_length=1, max_length=500)
+
+
+# --- Browser extension: ad-hoc job scoring ---
+# For a job the person is looking at directly on some external site,
+# which may not exist anywhere in Riseply's own discovered job pool.
+
+class ExtensionScoreRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    company: str = Field(min_length=1, max_length=200)
+    location: str = Field(default="", max_length=200)
+    description: str = Field(min_length=1, max_length=20000)
+
+
+class ExtensionScoreResponse(BaseModel):
+    score: int
+    reason: str
+    matched_profile: Optional[str] = None
