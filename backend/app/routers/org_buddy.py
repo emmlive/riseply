@@ -1,6 +1,7 @@
 import csv
 import io
 import secrets
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -11,6 +12,26 @@ from app.security import get_current_user
 from app import models, schemas
 
 router = APIRouter(prefix="/orgs", tags=["org-buddy"])
+
+
+def _validate_media_url(url: str) -> str:
+    """Enforced server-side on every write, never trusting client-side
+    validation alone -- rejects everything except http/https schemes,
+    which blocks javascript:/data:/vbscript:/file: URI-based XSS
+    attempts outright. Never fetches the URL itself (no SSRF surface);
+    this only validates the string that will later be handed to the
+    browser to load directly."""
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if len(url) > 2000:
+        raise HTTPException(status_code=400, detail="That link is too long.")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Media link must start with http:// or https://")
+    if not parsed.netloc:
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid link.")
+    return url
 
 
 def _generate_join_code() -> str:
@@ -242,6 +263,7 @@ def add_org_content(
     content = models.OrganizationBuddyContent(
         organization_id=organization_id, department_id=payload.department_id,
         title=payload.title, content=payload.content,
+        media_url=_validate_media_url(payload.media_url),
     )
     db.add(content)
     db.commit()
@@ -518,6 +540,7 @@ def add_checklist_item(
         organization_id=organization_id, department_id=payload.department_id,
         title=payload.title, description=payload.description,
         policy_content=payload.policy_content, order=payload.order,
+        media_url=_validate_media_url(payload.media_url),
     )
     db.add(item)
     db.commit()
@@ -723,6 +746,7 @@ def add_lesson(
         organization_id=organization_id, department_id=payload.department_id,
         day_offset=payload.day_offset, title=payload.title, content=payload.content,
         quiz_question=payload.quiz_question, quiz_answer=payload.quiz_answer, order=payload.order,
+        media_url=_validate_media_url(payload.media_url),
     )
     db.add(lesson)
     db.commit()

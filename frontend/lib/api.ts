@@ -147,6 +147,7 @@ export interface OrgContent {
   title: string;
   content: string;
   department_id: number | null;
+  media_url: string;
   created_at: string;
 }
 
@@ -200,6 +201,7 @@ export interface ChecklistItem {
   policy_content: string | null;
   department_id: number | null;
   order: number;
+  media_url: string;
   created_at: string;
 }
 
@@ -208,6 +210,7 @@ export interface ChecklistProgressItem {
   title: string;
   description: string;
   policy_content: string | null;
+  media_url: string;
   completed: boolean;
   completed_at: string | null;
 }
@@ -367,6 +370,7 @@ export interface OrgLesson {
   quiz_answer: string;
   department_id: number | null;
   order: number;
+  media_url: string;
   created_at: string;
 }
 
@@ -376,6 +380,7 @@ export interface LessonDelivery {
   title: string;
   content: string;
   quiz_question: string;
+  media_url: string;
   delivered_at: string;
   quiz_response: string | null;
   quiz_correct: boolean | null;

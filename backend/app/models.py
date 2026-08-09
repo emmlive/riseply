@@ -371,6 +371,11 @@ class OrganizationBuddyContent(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     title = Column(String, default="")
     content = Column(Text, default="")
+    # Optional link to an already-hosted image/video/document -- see
+    # security note on this field's twin in OrgLesson below; validated
+    # identically (http/https only, enforced server-side in
+    # routers/org_buddy.py, never trust client-side validation alone).
+    media_url = Column(String, default="", server_default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
@@ -437,6 +442,7 @@ class OrgChecklistItem(Base):
     title = Column(String, nullable=False)
     description = Column(String, default="")
     policy_content = Column(Text, nullable=True)
+    media_url = Column(String, default="", server_default="")
     order = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
@@ -538,6 +544,20 @@ class OrgLesson(Base):
     content = Column(Text, nullable=False)
     quiz_question = Column(String, default="", server_default="")
     quiz_answer = Column(String, default="", server_default="")
+    # Optional link to an already-hosted image/video/document (a
+    # welcome video, a handbook PDF on Drive, etc.) -- URL only, never
+    # a real upload: there's no object storage set up anywhere in this
+    # codebase, and storing images/video as Postgres BLOBs (the
+    # pattern used for tailored resumes, which are small Word docs)
+    # would be genuinely bad practice at video-file sizes. Rendering is
+    # deliberately conservative: only a small allowlist of known video
+    # providers (YouTube/Vimeo/Loom) get an actual iframe embed, built
+    # from a backend-extracted video ID rather than trusting a raw
+    # user-supplied embed URL; everything else renders as a plain,
+    # noopener-safe link. The backend never fetches this URL itself
+    # (no SSRF surface) -- the browser loads it directly, and only
+    # http/https schemes are accepted, validated server-side.
+    media_url = Column(String, default="", server_default="")
     order = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
