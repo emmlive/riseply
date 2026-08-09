@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import RedirectIfLoggedIn from "@/components/RedirectIfLoggedIn";
 
 export const metadata: Metadata = {
   title: "Riseply — AI job search, resume tailoring, and employee onboarding",
@@ -38,6 +39,7 @@ const ORG_JSON_LD = {
 export default function HomePage() {
   return (
     <div className="auth-shell">
+      <RedirectIfLoggedIn />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
-import { api, setToken } from "@/lib/api";
+import { api, setToken, getToken } from "@/lib/api";
 import OAuthButtons from "@/lib/OAuthButtons";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
@@ -25,6 +25,12 @@ export default function SignupPage() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Same fix as /login and the homepage -- an already-logged-in person
+  // shouldn't be shown a blank signup form.
+  useEffect(() => {
+    if (getToken()) router.replace("/dashboard");
+  }, [router]);
 
   useEffect(() => {
     window.onTurnstileSuccess = (token: string) => setCaptchaToken(token);
