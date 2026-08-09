@@ -326,6 +326,26 @@
     if (!root) return;
     const job = scrapeJobInfo();
     render(root, job);
+    watchForRemoval(job);
+  }
+
+  // Heavy single-page-app frameworks (this page is a React app, and its
+  // own console shows real hydration errors -- #418/#425/#423) can wipe
+  // out DOM nodes they don't recognize during a re-render or error-
+  // recovery pass, even ones attached outside their own root (this
+  // sidebar is appended to <html> directly, deliberately outside
+  // React's render tree, specifically to avoid that -- but "flashed
+  // and disappeared" is exactly what losing that race looks like).
+  // Rather than trying to out-guess every framework's internal timing,
+  // just watch for the host element vanishing and put it back.
+  function watchForRemoval(job) {
+    const observer = new MutationObserver(() => {
+      if (!document.getElementById("riseply-sidebar-host")) {
+        const root = injectSidebar();
+        if (root) render(root, job);
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
   }
 
   if (document.readyState === "complete" || document.readyState === "interactive") {
