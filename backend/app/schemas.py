@@ -226,6 +226,7 @@ class OrgContentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=20000)
     department_id: int | None = None
+    media_url: str = Field(default="", max_length=2000)
 
 
 class OrgContentOut(BaseModel):
@@ -233,6 +234,7 @@ class OrgContentOut(BaseModel):
     title: str
     content: str
     department_id: int | None
+    media_url: str = ""
     created_at: datetime
 
 
@@ -275,6 +277,7 @@ class ChecklistItemCreate(BaseModel):
     policy_content: str | None = Field(default=None, max_length=20000)
     department_id: int | None = None
     order: int = 0
+    media_url: str = Field(default="", max_length=2000)
 
 
 class ChecklistItemOut(BaseModel):
@@ -284,6 +287,7 @@ class ChecklistItemOut(BaseModel):
     policy_content: str | None
     department_id: int | None
     order: int
+    media_url: str = ""
     created_at: datetime
 
 
@@ -292,6 +296,7 @@ class ChecklistProgressItem(BaseModel):
     title: str
     description: str
     policy_content: str | None
+    media_url: str = ""
     completed: bool
     completed_at: datetime | None
 
@@ -545,6 +550,7 @@ class OrgLessonCreate(BaseModel):
     quiz_answer: str = Field(default="", max_length=200)
     department_id: Optional[int] = None
     order: int = 0
+    media_url: str = Field(default="", max_length=2000)
 
 
 class OrgLessonOut(BaseModel):
@@ -556,6 +562,7 @@ class OrgLessonOut(BaseModel):
     quiz_answer: str
     department_id: Optional[int]
     order: int
+    media_url: str = ""
     created_at: datetime
 
 
@@ -565,6 +572,7 @@ class LessonDeliveryOut(BaseModel):
     title: str
     content: str
     quiz_question: str
+    media_url: str = ""
     delivered_at: datetime
     quiz_response: Optional[str] = None
     quiz_correct: Optional[bool] = None

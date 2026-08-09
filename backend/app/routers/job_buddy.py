@@ -351,7 +351,8 @@ def list_my_lessons(
     return [
         schemas.LessonDeliveryOut(
             id=delivery.id, lesson_id=lesson.id, title=lesson.title, content=lesson.content,
-            quiz_question=lesson.quiz_question, delivered_at=delivery.delivered_at,
+            quiz_question=lesson.quiz_question, media_url=lesson.media_url or "",
+            delivered_at=delivery.delivered_at,
             quiz_response=delivery.quiz_response, quiz_correct=delivery.quiz_correct,
         )
         for delivery, lesson in rows
@@ -481,7 +482,7 @@ def get_checklist(
     return [
         schemas.ChecklistProgressItem(
             id=i.id, title=i.title, description=i.description, policy_content=i.policy_content,
-            completed=i.id in completions, completed_at=completions.get(i.id),
+            media_url=i.media_url or "", completed=i.id in completions, completed_at=completions.get(i.id),
         )
         for i in items
     ]

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
@@ -132,10 +133,12 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [savingLogo, setSavingLogo] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [contentDept, setContentDept] = useState<string>("");
+  const [contentMediaUrl, setContentMediaUrl] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [checklistDept, setChecklistDept] = useState<string>("");
   const [checklistPolicy, setChecklistPolicy] = useState("");
+  const [checklistMediaUrl, setChecklistMediaUrl] = useState("");
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
   const [checklistError, setChecklistError] = useState("");
   const [lessons, setLessons] = useState<OrgLesson[]>([]);
@@ -145,6 +148,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [lessonQuizQ, setLessonQuizQ] = useState("");
   const [lessonQuizA, setLessonQuizA] = useState("");
   const [lessonDept, setLessonDept] = useState<string>("");
+  const [lessonMediaUrl, setLessonMediaUrl] = useState("");
   const [addingLesson, setAddingLesson] = useState(false);
   const [lessonError, setLessonError] = useState("");
   const [qaLogs, setQaLogs] = useState<OrgQALog[] | null>(null);
@@ -188,9 +192,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         body: JSON.stringify({
           title, content: body,
           department_id: contentDept ? Number(contentDept) : null,
+          media_url: contentMediaUrl.trim(),
         }),
       });
-      setTitle(""); setBody("");
+      setTitle(""); setBody(""); setContentMediaUrl("");
       load();
     } catch (err: any) {
       setError(err.message || "Couldn't add that content.");
@@ -223,10 +228,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           title: checklistTitle,
           department_id: checklistDept ? Number(checklistDept) : null,
           policy_content: checklistPolicy.trim() || null,
+          media_url: checklistMediaUrl.trim(),
           order: checklist.length,
         }),
       });
-      setChecklistTitle(""); setChecklistPolicy("");
+      setChecklistTitle(""); setChecklistPolicy(""); setChecklistMediaUrl("");
       load();
     } catch (err: any) {
       setChecklistError(err.message || "Couldn't add that item.");
@@ -253,10 +259,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           quiz_question: lessonQuizQ.trim(),
           quiz_answer: lessonQuizA.trim(),
           department_id: lessonDept ? Number(lessonDept) : null,
+          media_url: lessonMediaUrl.trim(),
           order: lessons.length,
         }),
       });
-      setLessonDay("0"); setLessonTitle(""); setLessonContent(""); setLessonQuizQ(""); setLessonQuizA("");
+      setLessonDay("0"); setLessonTitle(""); setLessonContent(""); setLessonQuizQ(""); setLessonQuizA(""); setLessonMediaUrl("");
       load();
     } catch (err: any) {
       setLessonError(err.message || "Couldn't add that lesson.");
@@ -416,17 +423,20 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           a factual completion notice — never any conversation content.
         </p>
         {checklist.map((c) => (
-          <div key={c.id} className="points-event-row">
-            <div style={{ fontWeight: 600 }}>
-              {c.title}
-              {c.policy_content && <span className="pill pill-default" style={{ marginLeft: 8 }}>Policy acknowledgment</span>}
-              {c.department_id && (
-                <span className="hint" style={{ marginLeft: 8 }}>
-                  ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
-                </span>
-              )}
+          <div key={c.id} className="points-event-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+              <div style={{ fontWeight: 600 }}>
+                {c.title}
+                {c.policy_content && <span className="pill pill-default" style={{ marginLeft: 8 }}>Policy acknowledgment</span>}
+                {c.department_id && (
+                  <span className="hint" style={{ marginLeft: 8 }}>
+                    ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
+                  </span>
+                )}
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeChecklistItem(c.id)}>Remove</button>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => removeChecklistItem(c.id)}>Remove</button>
+            {c.media_url && <MediaEmbed url={c.media_url} />}
           </div>
         ))}
         <div style={{ marginTop: checklist.length > 0 ? 16 : 0 }}>
@@ -445,6 +455,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <textarea rows={3} value={checklistPolicy} onChange={(e) => setChecklistPolicy(e.target.value)}
                       placeholder="If set, the employee must read this exact text before they can acknowledge it — used for things like a Code of Ethics or anti-harassment policy. Leave blank for a plain task item." />
           </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>Media link (optional)</label>
+            <input value={checklistMediaUrl} onChange={(e) => setChecklistMediaUrl(e.target.value)}
+                   placeholder="https://youtube.com/watch?v=... or a link to a hosted image/document" />
+          </div>
           <button className="btn btn-primary btn-sm" onClick={addChecklistItem}
                   disabled={addingChecklistItem || !checklistTitle.trim()} style={{ marginTop: 8 }}>
             {addingChecklistItem ? "Adding…" : "Add item"}
@@ -461,20 +476,23 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           a wrong answer gets a follow-up reminder a week later.
         </p>
         {lessons.map((l) => (
-          <div key={l.id} className="points-event-row">
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                Day {l.day_offset}: {l.title}
-                {l.quiz_question && <span className="pill pill-default" style={{ marginLeft: 8 }}>Has quiz</span>}
-                {l.department_id && (
-                  <span className="hint" style={{ marginLeft: 8 }}>
-                    ({departments.find((d) => d.id === l.department_id)?.name || "Department"})
-                  </span>
-                )}
+          <div key={l.id} className="points-event-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>
+                  Day {l.day_offset}: {l.title}
+                  {l.quiz_question && <span className="pill pill-default" style={{ marginLeft: 8 }}>Has quiz</span>}
+                  {l.department_id && (
+                    <span className="hint" style={{ marginLeft: 8 }}>
+                      ({departments.find((d) => d.id === l.department_id)?.name || "Department"})
+                    </span>
+                  )}
+                </div>
+                <div className="hint">{l.content}</div>
               </div>
-              <div className="hint">{l.content}</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeLesson(l.id)}>Remove</button>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => removeLesson(l.id)}>Remove</button>
+            {l.media_url && <MediaEmbed url={l.media_url} />}
           </div>
         ))}
         <div style={{ marginTop: lessons.length > 0 ? 16 : 0 }}>
@@ -500,6 +518,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                    placeholder="Quiz question (optional)" style={{ flex: 1 }} />
             <input value={lessonQuizA} onChange={(e) => setLessonQuizA(e.target.value)}
                    placeholder="Expected answer" style={{ flex: 1 }} />
+          </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>Media link (optional)</label>
+            <input value={lessonMediaUrl} onChange={(e) => setLessonMediaUrl(e.target.value)}
+                   placeholder="https://youtube.com/watch?v=... or a link to a hosted image/document" />
           </div>
           <button className="btn btn-primary btn-sm" onClick={addLesson}
                   disabled={addingLesson || !lessonTitle.trim() || !lessonContent.trim()} style={{ marginTop: 8 }}>
@@ -697,19 +720,22 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         </p>
 
         {content.map((c) => (
-          <div key={c.id} className="points-event-row">
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {c.title}
-                {c.department_id && (
-                  <span className="hint" style={{ marginLeft: 8 }}>
-                    ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
-                  </span>
-                )}
+          <div key={c.id} className="points-event-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>
+                  {c.title}
+                  {c.department_id && (
+                    <span className="hint" style={{ marginLeft: 8 }}>
+                      ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
+                    </span>
+                  )}
+                </div>
+                <div className="hint">{c.content.slice(0, 100)}{c.content.length > 100 ? "…" : ""}</div>
               </div>
-              <div className="hint">{c.content.slice(0, 100)}{c.content.length > 100 ? "…" : ""}</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeContent(c.id)}>Remove</button>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => removeContent(c.id)}>Remove</button>
+            {c.media_url && <MediaEmbed url={c.media_url} />}
           </div>
         ))}
 
@@ -722,6 +748,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <label>Content</label>
             <textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)}
                       placeholder="Paste the relevant material here…" />
+          </div>
+          <div className="field">
+            <label>Media link (optional)</label>
+            <input value={contentMediaUrl} onChange={(e) => setContentMediaUrl(e.target.value)}
+                   placeholder="https://youtube.com/watch?v=... or a link to a hosted image/document" />
+            <p className="hint">
+              YouTube, Vimeo, and Loom links embed as a video automatically. Image links (.jpg/.png/.gif/.webp)
+              show inline. Anything else — a Drive doc, a PDF — shows as a link employees can open.
+            </p>
           </div>
           {departments.length > 0 && (
             <div className="field">

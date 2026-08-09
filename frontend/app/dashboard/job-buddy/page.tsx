@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse } from "@/lib/api";
+import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
   return (
@@ -348,6 +349,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                               {expandedPolicyId === c.id && (
                                 <div>
                                   <div className="brief" style={{ marginTop: 8 }}>{c.policy_content}</div>
+                                  {c.media_url && <MediaEmbed url={c.media_url} />}
                                   <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }}
                                           onClick={() => completeChecklistItem(c.id)}>
                                     I have read and acknowledge this
@@ -368,9 +370,10 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                         onChange={() => completeChecklistItem(c.id)}
                         style={{ marginTop: 3 }}
                       />
-                      <span style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit" }}>
+                      <span style={{ textDecoration: c.completed ? "line-through" : "none", color: c.completed ? "var(--muted)" : "inherit", flex: 1 }}>
                         {c.title}
                         {c.description && <div className="hint" style={{ textDecoration: "none" }}>{c.description}</div>}
+                        {c.media_url && <div style={{ textDecoration: "none" }}><MediaEmbed url={c.media_url} /></div>}
                       </span>
                     </label>
                   )}
@@ -390,6 +393,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                 <div key={l.id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <div style={{ fontWeight: 600 }}>{l.title}</div>
                   <div className="hint" style={{ margin: "4px 0" }}>{l.content}</div>
+                  {l.media_url && <MediaEmbed url={l.media_url} />}
                   {l.quiz_question && (
                     <div style={{ marginTop: 8 }}>
                       {l.quiz_correct === true && (
