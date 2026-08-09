@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, setToken } from "@/lib/api";
+import { api, setToken, getToken } from "@/lib/api";
 import OAuthButtons from "@/lib/OAuthButtons";
 
 export default function LoginPage() {
@@ -12,6 +12,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Same fix as the homepage: an already-logged-in person landing here
+  // (e.g. via "Back home" from a standalone page like Security & Trust)
+  // was being shown a blank login form and forced to re-enter
+  // credentials, even though their token was never actually cleared.
+  useEffect(() => {
+    if (getToken()) router.replace("/dashboard");
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
