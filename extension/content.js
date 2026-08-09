@@ -11,12 +11,27 @@
 (function () {
   "use strict";
 
+  // Consistent, greppable prefix -- filter the console for "[Riseply]"
+  // to see exactly how far execution actually got, instead of
+  // inferring it from visual behavior alone.
+  function log(...args) {
+    console.log("[Riseply]", ...args);
+  }
+
+  log("content script loaded on", location.href);
+
+  window.addEventListener("beforeunload", () => log("page is unloading/navigating away"));
+  window.addEventListener("pagehide", () => log("pagehide fired"));
+
   // Never show this on Riseply's own site -- most obviously wrong on
   // the Applications page, which isn't a job application FORM, it's a
   // list of your own applications, and clicking "autofill" there was
   // exactly the confusing dead-end the standalone bookmarklet hit
   // before this extension existed.
-  if (/(^|\.)riseply\.(com|onrender\.com)$/.test(location.hostname)) return;
+  if (/(^|\.)riseply\.(com|onrender\.com)$/.test(location.hostname)) {
+    log("skipped: on Riseply's own domain");
+    return;
+  }
 
   const ATS_HOSTS = [
     "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com",
@@ -216,10 +231,13 @@
   }
 
   async function render(root, job) {
+    log("render() starting, checking auth state...");
     const bodyEl = root.getElementById("riseply-body");
     const auth = await sendMessage({ type: "GET_AUTH_STATE" });
+    log("GET_AUTH_STATE resolved:", auth);
 
     if (!auth.loggedIn) {
+      log("not logged in -- showing login prompt");
       bodyEl.innerHTML = `
         <p class="job-title">${escapeHtml(job.title)}</p>
         <p class="job-company">${escapeHtml(job.company)}</p>
@@ -230,6 +248,7 @@
       return;
     }
 
+    log("logged in -- rendering full sidebar for", auth.user?.email);
     bodyEl.innerHTML = `
       <p class="job-title">${escapeHtml(job.title)}</p>
       <p class="job-company">${escapeHtml(job.company)}</p>
@@ -321,10 +340,15 @@
   }
 
   function init() {
-    if (!looksLikeJobPage()) return;
+    log("init() running, readyState:", document.readyState);
+    const isJob = looksLikeJobPage();
+    log("looksLikeJobPage():", isJob);
+    if (!isJob) return;
     const root = injectSidebar();
+    log("injectSidebar() returned:", root ? "a shadow root" : "null (already existed?)");
     if (!root) return;
     const job = scrapeJobInfo();
+    log("scraped job info:", job.title, "@", job.company);
     render(root, job);
     watchForRemoval(job);
   }
@@ -341,11 +365,13 @@
   function watchForRemoval(job) {
     const observer = new MutationObserver(() => {
       if (!document.getElementById("riseply-sidebar-host")) {
+        log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();
         if (root) render(root, job);
       }
     });
     observer.observe(document.documentElement, { childList: true });
+    log("watching for removal");
   }
 
   if (document.readyState === "complete" || document.readyState === "interactive") {
