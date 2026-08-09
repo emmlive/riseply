@@ -11,6 +11,10 @@
 
 const API_BASE = "https://riseply.onrender.com";
 
+function log(...args) {
+  console.log("[Riseply:bg]", ...args);
+}
+
 async function getToken() {
   const { riseply_token } = await chrome.storage.local.get("riseply_token");
   return riseply_token || null;
@@ -21,7 +25,11 @@ async function apiFetch(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
+  log("fetching", path, "...");
+  const start = Date.now();
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  log(path, "responded with status", res.status, "after", Date.now() - start, "ms");
+
   const isJson = (res.headers.get("content-type") || "").includes("application/json");
   const body = isJson ? await res.json() : null;
 
@@ -35,6 +43,7 @@ async function apiFetch(path, options = {}) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  log("received message:", message.type);
   (async () => {
     try {
       switch (message.type) {
@@ -56,6 +65,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         case "GET_AUTH_STATE": {
           const token = await getToken();
+          log("stored token present:", !!token);
           if (!token) {
             sendResponse({ loggedIn: false });
             break;
@@ -63,10 +73,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           try {
             const me = await apiFetch("/me");
             sendResponse({ loggedIn: true, user: me });
-          } catch {
+          } catch (e) {
             // Token expired/invalid -- clear it so the popup shows the
             // login form again instead of a silently-failing "logged in"
             // state that can never actually complete a request.
+            log("GET_AUTH_STATE's /me call failed:", e.message || e);
             await chrome.storage.local.remove("riseply_token");
             sendResponse({ loggedIn: false });
           }
@@ -113,6 +124,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ success: false, error: "Unknown message type" });
       }
     } catch (err) {
+      log("handler threw for", message.type, ":", err.message || err);
       sendResponse({ success: false, error: err.message || String(err), status: err.status });
     }
   })();

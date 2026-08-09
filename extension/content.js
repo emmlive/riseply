@@ -81,8 +81,23 @@
     return { title, company, location: "", description };
   }
 
-  function sendMessage(message) {
-    return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
+  function sendMessage(message, timeoutMs = 15000) {
+    // Without this timeout, a lost response (e.g. the background
+    // service worker getting terminated mid-request, which Chrome can
+    // do if a request runs long -- Render's free-tier cold start after
+    // idle can take 50+ seconds) hangs this Promise forever with zero
+    // error, which is exactly what a stuck-on-"Loading..." sidebar with
+    // no console error looks like. Racing against a timeout turns a
+    // silent hang into a visible, actionable failure state instead.
+    return Promise.race([
+      new Promise((resolve) => chrome.runtime.sendMessage(message, resolve)),
+      new Promise((resolve) =>
+        setTimeout(() => {
+          log("sendMessage timed out after", timeoutMs, "ms for", message.type);
+          resolve({ success: false, error: "Riseply took too long to respond. The server may be waking up from idle -- try again in a moment." });
+        }, timeoutMs)
+      ),
+    ]);
   }
 
   // --- Autofill (mirrors the bookmarklet's field-detection logic --
@@ -237,12 +252,13 @@
     log("GET_AUTH_STATE resolved:", auth);
 
     if (!auth.loggedIn) {
-      log("not logged in -- showing login prompt");
+      const timedOut = auth.success === false;
+      log(timedOut ? "auth check timed out" : "not logged in", "-- showing prompt");
       bodyEl.innerHTML = `
         <p class="job-title">${escapeHtml(job.title)}</p>
         <p class="job-company">${escapeHtml(job.company)}</p>
         <div class="login-prompt">
-          <p>Log in to Riseply from the toolbar icon to see your match score and autofill this page.</p>
+          <p>${timedOut ? escapeHtml(auth.error) : "Log in to Riseply from the toolbar icon to see your match score and autofill this page."}</p>
         </div>
       `;
       return;
