@@ -20,6 +20,23 @@ async function getToken() {
   return riseply_token || null;
 }
 
+function formatErrorDetail(detail) {
+  // FastAPI/Pydantic validation errors return detail as an ARRAY of
+  // {loc, msg, type, ...} objects, not a string -- seen live: a raw
+  // JSON dump of that array was showing up directly in the sidebar
+  // ("[{type:string_too_short,...}]"), which is exactly the kind of
+  // internal-implementation-detail leak a person should never see.
+  // Extracts just the human-readable msg from each entry instead.
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => (d && typeof d === "object" && typeof d.msg === "string") ? d.msg : null)
+      .filter(Boolean);
+    return messages.length ? messages.join("; ") : "Something about this request wasn't valid.";
+  }
+  return "Something went wrong.";
+}
+
 async function apiFetch(path, options = {}) {
   const token = await getToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -35,7 +52,7 @@ async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const detail = body?.detail || `Request failed (${res.status})`;
-    const error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const error = new Error(formatErrorDetail(detail));
     error.status = res.status;
     throw error;
   }
