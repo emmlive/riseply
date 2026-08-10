@@ -113,13 +113,42 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  function setSelectValue(select, desiredText) {
+    // Selects don't take free text -- find the option whose visible
+    // text (or value, as a fallback) actually contains what we're
+    // looking for, case-insensitive substring match, same spirit as
+    // the label matching above. Returns true only on an actual match;
+    // never picks an arbitrary option just to fill something in.
+    const target = desiredText.toLowerCase();
+    for (const opt of select.options) {
+      const hay = (opt.text || opt.value || "").toLowerCase();
+      if (hay.includes(target)) {
+        select.value = opt.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function fillElement(el, value) {
+    // Single entry point runAutofill() calls regardless of whether the
+    // matched field turned out to be a text input or a dropdown --
+    // keeps the matching logic below from needing to know or care
+    // which one it found.
+    if (el.tagName === "SELECT") return setSelectValue(el, value);
+    setNativeValue(el, value);
+    return true;
+  }
+
   function findByLabelText(text) {
     const labels = document.querySelectorAll("label");
     for (const l of labels) {
       if ((l.textContent || "").toLowerCase().includes(text)) {
         const forId = l.getAttribute("for");
         if (forId) { const el = document.getElementById(forId); if (el) return el; }
-        const inner = l.querySelector("input, textarea");
+        const inner = l.querySelector("input, textarea, select");
         if (inner) return inner;
       }
     }
@@ -127,7 +156,7 @@
   }
 
   function findByAttr(text) {
-    const els = document.querySelectorAll("input, textarea");
+    const els = document.querySelectorAll("input, textarea, select");
     for (const el of els) {
       const hay = (
         (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("placeholder") || "") +
@@ -150,11 +179,11 @@
 
     const firstEl = first ? findField("first name") : null;
     const lastEl = last ? findField("last name") : null;
-    if (firstEl && first) { setNativeValue(firstEl, first); filled.push("first name"); }
-    if (lastEl && last) { setNativeValue(lastEl, last); filled.push("last name"); }
+    if (firstEl && first && fillElement(firstEl, first)) filled.push("first name");
+    if (lastEl && last && fillElement(lastEl, last)) filled.push("last name");
     if (!firstEl && !lastEl && candidate.full_name) {
       const fullEl = findField("full name") || findField("name");
-      if (fullEl) { setNativeValue(fullEl, candidate.full_name); filled.push("name"); }
+      if (fullEl && fillElement(fullEl, candidate.full_name)) filled.push("name");
     }
 
     const pairs = [
@@ -165,7 +194,17 @@
     for (const [label, value] of pairs) {
       if (!value) continue;
       const el = findField(label);
-      if (el) { setNativeValue(el, value); filled.push(label); }
+      if (el && fillElement(el, value)) filled.push(label);
+    }
+
+    // Fields with no corresponding profile data at all (Riseply doesn't
+    // ask "what type of phone do you have"), but where a safe,
+    // universal default genuinely applies -- deliberately narrow, and
+    // called out explicitly in the result so it's never mistaken for
+    // real personal data being filled.
+    const phoneTypeEl = findField("phone type") || findField("device type");
+    if (phoneTypeEl && phoneTypeEl.tagName === "SELECT" && setSelectValue(phoneTypeEl, "mobile")) {
+      filled.push("phone type (defaulted to Mobile)");
     }
 
     return filled;
