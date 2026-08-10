@@ -401,12 +401,23 @@
 
     root.getElementById("riseply-score-btn").addEventListener("click", async () => {
       const btn = root.getElementById("riseply-score-btn");
+      const slot = root.getElementById("riseply-score-slot");
+      // Re-scrape fresh at click time rather than reusing the job
+      // object captured once when the page first loaded -- SPA-heavy
+      // sites (Workday/Salesforce-style pages, seen live) can still be
+      // rendering their real title/description well after the page
+      // technically "loaded", and by the time someone actually clicks
+      // a button, meaningfully more time has passed.
+      const freshJob = scrapeJobInfo();
+      if (!freshJob.title.trim() || !freshJob.description.trim()) {
+        slot.innerHTML = `<p class="hint" style="color:#B23B3B;">Couldn't read this page's job details yet -- try again in a moment, or refresh the page.</p>`;
+        return;
+      }
       btn.disabled = true;
       btn.textContent = "Scoring…";
-      const result = await sendMessage({ type: "SCORE_JOB", ...job });
+      const result = await sendMessage({ type: "SCORE_JOB", ...freshJob });
       btn.disabled = false;
       btn.textContent = "Score my resume";
-      const slot = root.getElementById("riseply-score-slot");
 
       if (!result.success) {
         // Scoring shares the same monthly "match" quota as the regular
@@ -453,7 +464,7 @@
         ? `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`
         : `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
 
-      renderUnansweredQuestions(root, job);
+      renderUnansweredQuestions(root, scrapeJobInfo()); // fresh scrape -- see the Score button's handler for why
     });
   }
 
