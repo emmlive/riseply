@@ -84,6 +84,30 @@ class User(Base):
     applications = relationship("Application", back_populates="owner", cascade="all, delete-orphan")
 
 
+class Resume(Base):
+    """Multiple resumes per user, one marked default. User.resume_text
+    is deliberately KEPT as-is and always kept in sync with whichever
+    Resume row is_default -- every existing consumer across the app
+    (matching, tailoring, interview prep, the extension's scoring and
+    autofill) reads user.resume_text directly and continues to work
+    completely unchanged. All the actual multi-resume logic (set
+    default, add, rename, delete) lives in routers/resumes.py and is
+    the ONLY code responsible for keeping that mirror in sync -- see
+    _sync_default_to_user() there rather than duplicating this logic
+    anywhere else."""
+    __tablename__ = "resumes"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    label = Column(String, default="")
+    resume_text = Column(Text, default="")
+    is_default = Column(Boolean, default=False, server_default="false")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    owner = relationship("User", backref="resumes")
+
+
 class SearchProfile(Base):
     """One target-role profile per row. A user can have several running
     simultaneously — this is the multi-profile support from the CLI

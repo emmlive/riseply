@@ -352,7 +352,13 @@
 
     const host = document.createElement("div");
     host.id = "riseply-sidebar-host";
-    host.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;";
+    // Offset from the very top-right corner deliberately -- top:16/
+    // right:16 is the same generic slot most extensions default to
+    // (confirmed directly: it was stacking right on top of Simplify's
+    // own card). No way to know at runtime exactly where other
+    // installed extensions position theirs, but landing further down
+    // meaningfully cuts down on exact collisions in practice.
+    host.style.cssText = "position:fixed;top:90px;right:16px;z-index:2147483647;";
     document.documentElement.appendChild(host);
     const root = host.attachShadow({ mode: "open" });
     expandPanel(root, null); // job isn't known yet -- init() calls expandPanel() again once it's scraped
