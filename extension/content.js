@@ -18,6 +18,14 @@
     console.log("[Riseply]", ...args);
   }
 
+  // Set when the person deliberately closes the sidebar via the X
+  // button -- watchForRemoval() below checks this before re-injecting,
+  // so it can still tell "the page hostilely wiped this out" (put it
+  // back) apart from "the person chose to close it" (leave it closed).
+  // Without this, an intentional close and a hostile removal looked
+  // identical to the watcher, and it silently un-did every close.
+  let dismissedByUser = false;
+
   log("content script loaded on", location.href);
 
   window.addEventListener("beforeunload", () => log("page is unloading/navigating away"));
@@ -327,7 +335,10 @@
       </div>
     `;
 
-    root.getElementById("riseply-close").addEventListener("click", () => host.remove());
+    root.getElementById("riseply-close").addEventListener("click", () => {
+      dismissedByUser = true;
+      host.remove();
+    });
     return root;
   }
 
@@ -521,6 +532,7 @@
   // just watch for the host element vanishing and put it back.
   function watchForRemoval(job) {
     const observer = new MutationObserver(() => {
+      if (dismissedByUser) return; // respect an intentional close -- see the flag's definition above
       if (!document.getElementById("riseply-sidebar-host")) {
         log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();
