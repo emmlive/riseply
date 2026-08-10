@@ -171,6 +171,53 @@
     return findByLabelText(text) || findByAttr(text);
   }
 
+  function getLabelForElement(el) {
+    // Reverse of findByLabelText -- given a field, find ITS label text,
+    // rather than given text, find a matching field. Needed to identify
+    // custom application questions (open-ended textareas the basic
+    // profile-field autofill has nothing to match against) so they can
+    // be surfaced for AI drafting instead of silently left blank with
+    // no indication anything was missed.
+    if (el.id) {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (label) return (label.textContent || "").trim();
+    }
+    const wrappingLabel = el.closest("label");
+    if (wrappingLabel) return (wrappingLabel.textContent || "").trim();
+    // Fall back to the nearest preceding text-bearing element -- a very
+    // common pattern (a <div>/<p> holding the question directly above
+    // a plain <textarea> with no real <label> at all). Skips other
+    // form controls explicitly -- an unrelated filled-in field's VALUE
+    // is not a label, and walking into one would misread real answer
+    // text as if it were the question itself.
+    let sibling = el.previousElementSibling;
+    let hops = 0;
+    while (sibling && hops < 3) {
+      const isFormControl = ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "LABEL"].includes(sibling.tagName);
+      const text = (sibling.textContent || "").trim();
+      if (!isFormControl && text.length > 10) return text;
+      sibling = sibling.previousElementSibling;
+      hops++;
+    }
+    return el.getAttribute("aria-label") || el.getAttribute("placeholder") || "";
+  }
+
+  function detectUnansweredQuestions() {
+    // Deliberately narrow to empty <textarea> elements -- the clear,
+    // common case for open-ended application questions ("Why do you
+    // want to work here?", work-authorization essay questions, etc).
+    // Doesn't touch radio groups or custom multi-choice widgets; those
+    // vary too much across sites to handle safely in a first version.
+    const questions = [];
+    const textareas = document.querySelectorAll("textarea");
+    for (const ta of textareas) {
+      if ((ta.value || "").trim()) continue; // already has content -- don't touch it
+      const label = getLabelForElement(ta);
+      if (label.length > 10) questions.push({ el: ta, question: label });
+    }
+    return questions;
+  }
+
   function runAutofill(candidate) {
     const nameParts = (candidate.full_name || "").trim().split(" ");
     const first = nameParts[0] || "";
@@ -313,6 +360,7 @@
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
       <p class="hint">Autofill can't attach your resume or submit for you -- browsers block scripts from doing either, on purpose. Fill in fields, then finish it yourself.</p>
       <div id="riseply-filled-slot"></div>
+      <div id="riseply-questions-slot"></div>
     `;
 
     renderUsage(root);
@@ -370,6 +418,60 @@
       slot.innerHTML = filled.length
         ? `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`
         : `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
+
+      renderUnansweredQuestions(root, job);
+    });
+  }
+
+  function renderUnansweredQuestions(root, job) {
+    const slot = root.getElementById("riseply-questions-slot");
+    const questions = detectUnansweredQuestions();
+    if (questions.length === 0) {
+      slot.innerHTML = "";
+      return;
+    }
+
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:12px;font-weight:600;color:#16233D;">
+        ${questions.length} application question${questions.length !== 1 ? "s" : ""} still need${questions.length === 1 ? "s" : ""} an answer
+      </p>
+      ${questions.map((q, i) => `
+        <div style="margin-top:6px;padding:8px 10px;background:#F5F6F8;border-radius:8px;">
+          <p class="hint" style="margin:0 0 6px;color:#16233D;">${escapeHtml(q.question.slice(0, 140))}${q.question.length > 140 ? "…" : ""}</p>
+          <button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>
+        </div>
+      `).join("")}
+    `;
+
+    questions.forEach((q, i) => {
+      const btn = root.getElementById(`riseply-answer-btn-${i}`);
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Drafting…";
+        const result = await sendMessage({ type: "ANSWER_QUESTION", question: q.question, ...job });
+        if (!result.success) {
+          btn.disabled = false;
+          btn.textContent = "Draft with AI";
+          if (result.status === 429) {
+            btn.parentElement.insertAdjacentHTML("beforeend",
+              `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`);
+          } else {
+            btn.parentElement.insertAdjacentHTML("beforeend",
+              `<p class="hint" style="color:#B23B3B;margin-top:6px;">${escapeHtml(result.error || "Couldn't draft an answer.")}</p>`);
+          }
+          return;
+        }
+        // Filled directly, but unmistakably marked as a draft that needs
+        // review -- per the explicit design decision this shouldn't
+        // look like a finished, ready-to-submit answer.
+        setNativeValue(q.el, `[AI-drafted — review before submitting]\n\n${result.answer}`);
+        btn.textContent = "Drafted ✓";
+        btn.disabled = true;
+        // Deliberately NOT calling renderUsage() here -- it only shows
+        // the shared match quota, but drafting an answer consumes the
+        // separate interview_prep quota instead. Calling it here would
+        // misleadingly imply match quota was spent when it wasn't.
+      });
     });
   }
 

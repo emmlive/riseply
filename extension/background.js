@@ -96,6 +96,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "ANSWER_QUESTION": {
+          const result = await apiFetch("/extension/answer-question", {
+            method: "POST",
+            body: JSON.stringify({
+              question: message.question, title: message.title,
+              company: message.company, description: message.description,
+            }),
+          });
+          sendResponse({ success: true, ...result });
+          break;
+        }
+
         case "GET_CANDIDATE": {
           const me = await apiFetch("/me");
           sendResponse({

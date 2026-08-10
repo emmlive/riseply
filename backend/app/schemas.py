@@ -597,3 +597,14 @@ class ExtensionScoreResponse(BaseModel):
     score: int
     reason: str
     matched_profile: Optional[str] = None
+
+
+class ExtensionAnswerQuestionRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    title: str = Field(min_length=1, max_length=300)
+    company: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+
+
+class ExtensionAnswerQuestionResponse(BaseModel):
+    answer: str
