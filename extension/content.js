@@ -113,13 +113,42 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  function setSelectValue(select, desiredText) {
+    // Selects don't take free text -- find the option whose visible
+    // text (or value, as a fallback) actually contains what we're
+    // looking for, case-insensitive substring match, same spirit as
+    // the label matching above. Returns true only on an actual match;
+    // never picks an arbitrary option just to fill something in.
+    const target = desiredText.toLowerCase();
+    for (const opt of select.options) {
+      const hay = (opt.text || opt.value || "").toLowerCase();
+      if (hay.includes(target)) {
+        select.value = opt.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function fillElement(el, value) {
+    // Single entry point runAutofill() calls regardless of whether the
+    // matched field turned out to be a text input or a dropdown --
+    // keeps the matching logic below from needing to know or care
+    // which one it found.
+    if (el.tagName === "SELECT") return setSelectValue(el, value);
+    setNativeValue(el, value);
+    return true;
+  }
+
   function findByLabelText(text) {
     const labels = document.querySelectorAll("label");
     for (const l of labels) {
       if ((l.textContent || "").toLowerCase().includes(text)) {
         const forId = l.getAttribute("for");
         if (forId) { const el = document.getElementById(forId); if (el) return el; }
-        const inner = l.querySelector("input, textarea");
+        const inner = l.querySelector("input, textarea, select");
         if (inner) return inner;
       }
     }
@@ -127,7 +156,7 @@
   }
 
   function findByAttr(text) {
-    const els = document.querySelectorAll("input, textarea");
+    const els = document.querySelectorAll("input, textarea, select");
     for (const el of els) {
       const hay = (
         (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("placeholder") || "") +
@@ -142,6 +171,53 @@
     return findByLabelText(text) || findByAttr(text);
   }
 
+  function getLabelForElement(el) {
+    // Reverse of findByLabelText -- given a field, find ITS label text,
+    // rather than given text, find a matching field. Needed to identify
+    // custom application questions (open-ended textareas the basic
+    // profile-field autofill has nothing to match against) so they can
+    // be surfaced for AI drafting instead of silently left blank with
+    // no indication anything was missed.
+    if (el.id) {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (label) return (label.textContent || "").trim();
+    }
+    const wrappingLabel = el.closest("label");
+    if (wrappingLabel) return (wrappingLabel.textContent || "").trim();
+    // Fall back to the nearest preceding text-bearing element -- a very
+    // common pattern (a <div>/<p> holding the question directly above
+    // a plain <textarea> with no real <label> at all). Skips other
+    // form controls explicitly -- an unrelated filled-in field's VALUE
+    // is not a label, and walking into one would misread real answer
+    // text as if it were the question itself.
+    let sibling = el.previousElementSibling;
+    let hops = 0;
+    while (sibling && hops < 3) {
+      const isFormControl = ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "LABEL"].includes(sibling.tagName);
+      const text = (sibling.textContent || "").trim();
+      if (!isFormControl && text.length > 10) return text;
+      sibling = sibling.previousElementSibling;
+      hops++;
+    }
+    return el.getAttribute("aria-label") || el.getAttribute("placeholder") || "";
+  }
+
+  function detectUnansweredQuestions() {
+    // Deliberately narrow to empty <textarea> elements -- the clear,
+    // common case for open-ended application questions ("Why do you
+    // want to work here?", work-authorization essay questions, etc).
+    // Doesn't touch radio groups or custom multi-choice widgets; those
+    // vary too much across sites to handle safely in a first version.
+    const questions = [];
+    const textareas = document.querySelectorAll("textarea");
+    for (const ta of textareas) {
+      if ((ta.value || "").trim()) continue; // already has content -- don't touch it
+      const label = getLabelForElement(ta);
+      if (label.length > 10) questions.push({ el: ta, question: label });
+    }
+    return questions;
+  }
+
   function runAutofill(candidate) {
     const nameParts = (candidate.full_name || "").trim().split(" ");
     const first = nameParts[0] || "";
@@ -150,11 +226,11 @@
 
     const firstEl = first ? findField("first name") : null;
     const lastEl = last ? findField("last name") : null;
-    if (firstEl && first) { setNativeValue(firstEl, first); filled.push("first name"); }
-    if (lastEl && last) { setNativeValue(lastEl, last); filled.push("last name"); }
+    if (firstEl && first && fillElement(firstEl, first)) filled.push("first name");
+    if (lastEl && last && fillElement(lastEl, last)) filled.push("last name");
     if (!firstEl && !lastEl && candidate.full_name) {
       const fullEl = findField("full name") || findField("name");
-      if (fullEl) { setNativeValue(fullEl, candidate.full_name); filled.push("name"); }
+      if (fullEl && fillElement(fullEl, candidate.full_name)) filled.push("name");
     }
 
     const pairs = [
@@ -165,13 +241,111 @@
     for (const [label, value] of pairs) {
       if (!value) continue;
       const el = findField(label);
-      if (el) { setNativeValue(el, value); filled.push(label); }
+      if (el && fillElement(el, value)) filled.push(label);
+    }
+
+    // Fields with no corresponding profile data at all (Riseply doesn't
+    // ask "what type of phone do you have"), but where a safe,
+    // universal default genuinely applies -- deliberately narrow, and
+    // called out explicitly in the result so it's never mistaken for
+    // real personal data being filled.
+    const phoneTypeEl = findField("phone type") || findField("device type");
+    if (phoneTypeEl && phoneTypeEl.tagName === "SELECT" && setSelectValue(phoneTypeEl, "mobile")) {
+      filled.push("phone type (defaulted to Mobile)");
     }
 
     return filled;
   }
 
   // --- Sidebar UI (Shadow DOM) ---
+
+  const PANEL_STYLES = `
+    :host { all: initial; }
+    .panel {
+      all: initial;
+      font-family: -apple-system, 'Inter', sans-serif;
+      width: 300px;
+      background: #FFFFFF;
+      border: 1px solid #E2E5EA;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(22, 35, 61, 0.15);
+      color: #16233D;
+      display: block;
+      overflow: hidden;
+    }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; background: #1F7A6C; color: white;
+    }
+    .header .brand { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .header button {
+      all: initial; cursor: pointer; color: white; font-size: 16px; line-height: 1;
+      padding: 2px 6px; opacity: 0.85;
+    }
+    .header button:hover { opacity: 1; }
+    .body { padding: 14px; font-size: 13px; }
+    .job-title { font-weight: 600; margin: 0 0 2px 0; font-size: 13px; }
+    .job-company { color: #5B6478; margin: 0 0 12px 0; font-size: 12px; }
+    button.action {
+      all: initial; box-sizing: border-box; display: block; width: 100%;
+      text-align: center; padding: 9px 10px; border-radius: 8px; font-weight: 600;
+      font-size: 13px; cursor: pointer; margin-bottom: 8px;
+    }
+    button.primary { background: #1F7A6C; color: white; }
+    button.primary:hover { background: #17604F; }
+    button.secondary { background: #E4F0EC; color: #17604F; }
+    button.secondary:hover { background: #d5e8e1; }
+    button.action:disabled { opacity: 0.6; cursor: default; }
+    .score-box {
+      background: #F5F6F8; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+    }
+    .score-pct { font-size: 20px; font-weight: 700; color: #1F7A6C; }
+    .score-reason { font-size: 12px; color: #5B6478; margin-top: 4px; line-height: 1.4; }
+    .hint { font-size: 11px; color: #5B6478; line-height: 1.4; margin-top: 8px; }
+    .login-prompt { text-align: center; padding: 6px 0; }
+    .login-prompt p { font-size: 12px; color: #5B6478; margin: 0 0 8px 0; }
+    .filled-list { font-size: 11px; color: #5B6478; margin-top: 6px; }
+    .minimized-btn {
+      all: initial; box-sizing: border-box; display: flex; align-items: center;
+      justify-content: center; width: 44px; height: 44px; border-radius: 12px;
+      background: #1F7A6C; color: white; font-weight: 700; font-size: 15px;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(22, 35, 61, 0.2);
+      font-family: -apple-system, 'Inter', sans-serif;
+    }
+    .minimized-btn:hover { background: #17604F; }
+  `;
+
+  function expandPanel(root, job) {
+    // Rebuilds the full header+body panel and re-wires the close
+    // button to minimize (not remove) -- called both on first inject
+    // and any time the person clicks the minimized icon to reopen.
+    root.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="header">
+          <span class="brand">Riseply</span>
+          <button id="riseply-close" title="Minimize">&times;</button>
+        </div>
+        <div class="body" id="riseply-body">
+          <p class="hint">Loading…</p>
+        </div>
+      </div>
+    `;
+    root.getElementById("riseply-close").addEventListener("click", () => minimizePanel(root, job));
+    if (job) render(root, job);
+  }
+
+  function minimizePanel(root, job) {
+    // Collapses to a small persistent icon rather than removing the
+    // sidebar entirely -- matches how other job-search extensions
+    // (Simplify, Jobright) stay reachable via a small docked icon
+    // instead of vanishing without a way back short of a page reload.
+    root.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <button class="minimized-btn" id="riseply-reopen" title="Open Riseply">R</button>
+    `;
+    root.getElementById("riseply-reopen").addEventListener("click", () => expandPanel(root, job));
+  }
 
   function injectSidebar() {
     if (document.getElementById("riseply-sidebar-host")) return null;
@@ -181,67 +355,7 @@
     host.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;";
     document.documentElement.appendChild(host);
     const root = host.attachShadow({ mode: "open" });
-
-    root.innerHTML = `
-      <style>
-        :host { all: initial; }
-        .panel {
-          all: initial;
-          font-family: -apple-system, 'Inter', sans-serif;
-          width: 300px;
-          background: #FFFFFF;
-          border: 1px solid #E2E5EA;
-          border-radius: 12px;
-          box-shadow: 0 8px 30px rgba(22, 35, 61, 0.15);
-          color: #16233D;
-          display: block;
-          overflow: hidden;
-        }
-        .header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 14px; background: #1F7A6C; color: white;
-        }
-        .header .brand { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
-        .header button {
-          all: initial; cursor: pointer; color: white; font-size: 16px; line-height: 1;
-          padding: 2px 6px; opacity: 0.85;
-        }
-        .header button:hover { opacity: 1; }
-        .body { padding: 14px; font-size: 13px; }
-        .job-title { font-weight: 600; margin: 0 0 2px 0; font-size: 13px; }
-        .job-company { color: #5B6478; margin: 0 0 12px 0; font-size: 12px; }
-        button.action {
-          all: initial; box-sizing: border-box; display: block; width: 100%;
-          text-align: center; padding: 9px 10px; border-radius: 8px; font-weight: 600;
-          font-size: 13px; cursor: pointer; margin-bottom: 8px;
-        }
-        button.primary { background: #1F7A6C; color: white; }
-        button.primary:hover { background: #17604F; }
-        button.secondary { background: #E4F0EC; color: #17604F; }
-        button.secondary:hover { background: #d5e8e1; }
-        button.action:disabled { opacity: 0.6; cursor: default; }
-        .score-box {
-          background: #F5F6F8; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-        }
-        .score-pct { font-size: 20px; font-weight: 700; color: #1F7A6C; }
-        .score-reason { font-size: 12px; color: #5B6478; margin-top: 4px; line-height: 1.4; }
-        .hint { font-size: 11px; color: #5B6478; line-height: 1.4; margin-top: 8px; }
-        .login-prompt { text-align: center; padding: 6px 0; }
-        .login-prompt p { font-size: 12px; color: #5B6478; margin: 0 0 8px 0; }
-        .filled-list { font-size: 11px; color: #5B6478; margin-top: 6px; }
-      </style>
-      <div class="panel">
-        <div class="header">
-          <span class="brand">Riseply</span>
-          <button id="riseply-close" title="Hide">&times;</button>
-        </div>
-        <div class="body" id="riseply-body">
-          <p class="hint">Loading…</p>
-        </div>
-      </div>
-    `;
-
-    root.getElementById("riseply-close").addEventListener("click", () => host.remove());
+    expandPanel(root, null); // job isn't known yet -- init() calls expandPanel() again once it's scraped
     return root;
   }
 
@@ -274,6 +388,7 @@
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
       <p class="hint">Autofill can't attach your resume or submit for you -- browsers block scripts from doing either, on purpose. Fill in fields, then finish it yourself.</p>
       <div id="riseply-filled-slot"></div>
+      <div id="riseply-questions-slot"></div>
     `;
 
     renderUsage(root);
@@ -331,6 +446,60 @@
       slot.innerHTML = filled.length
         ? `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`
         : `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
+
+      renderUnansweredQuestions(root, job);
+    });
+  }
+
+  function renderUnansweredQuestions(root, job) {
+    const slot = root.getElementById("riseply-questions-slot");
+    const questions = detectUnansweredQuestions();
+    if (questions.length === 0) {
+      slot.innerHTML = "";
+      return;
+    }
+
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:12px;font-weight:600;color:#16233D;">
+        ${questions.length} application question${questions.length !== 1 ? "s" : ""} still need${questions.length === 1 ? "s" : ""} an answer
+      </p>
+      ${questions.map((q, i) => `
+        <div style="margin-top:6px;padding:8px 10px;background:#F5F6F8;border-radius:8px;">
+          <p class="hint" style="margin:0 0 6px;color:#16233D;">${escapeHtml(q.question.slice(0, 140))}${q.question.length > 140 ? "…" : ""}</p>
+          <button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>
+        </div>
+      `).join("")}
+    `;
+
+    questions.forEach((q, i) => {
+      const btn = root.getElementById(`riseply-answer-btn-${i}`);
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Drafting…";
+        const result = await sendMessage({ type: "ANSWER_QUESTION", question: q.question, ...job });
+        if (!result.success) {
+          btn.disabled = false;
+          btn.textContent = "Draft with AI";
+          if (result.status === 429) {
+            btn.parentElement.insertAdjacentHTML("beforeend",
+              `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`);
+          } else {
+            btn.parentElement.insertAdjacentHTML("beforeend",
+              `<p class="hint" style="color:#B23B3B;margin-top:6px;">${escapeHtml(result.error || "Couldn't draft an answer.")}</p>`);
+          }
+          return;
+        }
+        // Filled directly, but unmistakably marked as a draft that needs
+        // review -- per the explicit design decision this shouldn't
+        // look like a finished, ready-to-submit answer.
+        setNativeValue(q.el, `[AI-drafted — review before submitting]\n\n${result.answer}`);
+        btn.textContent = "Drafted ✓";
+        btn.disabled = true;
+        // Deliberately NOT calling renderUsage() here -- it only shows
+        // the shared match quota, but drafting an answer consumes the
+        // separate interview_prep quota instead. Calling it here would
+        // misleadingly imply match quota was spent when it wasn't.
+      });
     });
   }
 
@@ -365,7 +534,12 @@
     if (!root) return;
     const job = scrapeJobInfo();
     log("scraped job info:", job.title, "@", job.company);
-    render(root, job);
+    // expandPanel (not render directly) -- re-wires the close button's
+    // closure with the real job (injectSidebar() itself only knew
+    // null when it first built the panel), so a later minimize->reopen
+    // cycle doesn't get stuck on "Loading..." from render() never
+    // being called with a null job.
+    expandPanel(root, job);
     watchForRemoval(job);
   }
 
@@ -383,7 +557,14 @@
       if (!document.getElementById("riseply-sidebar-host")) {
         log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();
-        if (root) render(root, job);
+        // expandPanel (not render directly) -- injectSidebar() itself
+        // calls expandPanel(root, null) since it doesn't know the job
+        // yet, which wires the close button's closure to a null job.
+        // Re-calling expandPanel here with the REAL job re-wires that
+        // closure correctly, so a later minimize->reopen cycle on this
+        // restored panel doesn't get stuck on "Loading..." forever
+        // from render() never being called with a null job.
+        if (root) expandPanel(root, job);
       }
     });
     observer.observe(document.documentElement, { childList: true });
