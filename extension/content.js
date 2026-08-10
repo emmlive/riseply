@@ -18,14 +18,6 @@
     console.log("[Riseply]", ...args);
   }
 
-  // Set when the person deliberately closes the sidebar via the X
-  // button -- watchForRemoval() below checks this before re-injecting,
-  // so it can still tell "the page hostilely wiped this out" (put it
-  // back) apart from "the person chose to close it" (leave it closed).
-  // Without this, an intentional close and a hostile removal looked
-  // identical to the watcher, and it silently un-did every close.
-  let dismissedByUser = false;
-
   log("content script loaded on", location.href);
 
   window.addEventListener("beforeunload", () => log("page is unloading/navigating away"));
@@ -267,6 +259,94 @@
 
   // --- Sidebar UI (Shadow DOM) ---
 
+  const PANEL_STYLES = `
+    :host { all: initial; }
+    .panel {
+      all: initial;
+      font-family: -apple-system, 'Inter', sans-serif;
+      width: 300px;
+      background: #FFFFFF;
+      border: 1px solid #E2E5EA;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(22, 35, 61, 0.15);
+      color: #16233D;
+      display: block;
+      overflow: hidden;
+    }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; background: #1F7A6C; color: white;
+    }
+    .header .brand { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .header button {
+      all: initial; cursor: pointer; color: white; font-size: 16px; line-height: 1;
+      padding: 2px 6px; opacity: 0.85;
+    }
+    .header button:hover { opacity: 1; }
+    .body { padding: 14px; font-size: 13px; }
+    .job-title { font-weight: 600; margin: 0 0 2px 0; font-size: 13px; }
+    .job-company { color: #5B6478; margin: 0 0 12px 0; font-size: 12px; }
+    button.action {
+      all: initial; box-sizing: border-box; display: block; width: 100%;
+      text-align: center; padding: 9px 10px; border-radius: 8px; font-weight: 600;
+      font-size: 13px; cursor: pointer; margin-bottom: 8px;
+    }
+    button.primary { background: #1F7A6C; color: white; }
+    button.primary:hover { background: #17604F; }
+    button.secondary { background: #E4F0EC; color: #17604F; }
+    button.secondary:hover { background: #d5e8e1; }
+    button.action:disabled { opacity: 0.6; cursor: default; }
+    .score-box {
+      background: #F5F6F8; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+    }
+    .score-pct { font-size: 20px; font-weight: 700; color: #1F7A6C; }
+    .score-reason { font-size: 12px; color: #5B6478; margin-top: 4px; line-height: 1.4; }
+    .hint { font-size: 11px; color: #5B6478; line-height: 1.4; margin-top: 8px; }
+    .login-prompt { text-align: center; padding: 6px 0; }
+    .login-prompt p { font-size: 12px; color: #5B6478; margin: 0 0 8px 0; }
+    .filled-list { font-size: 11px; color: #5B6478; margin-top: 6px; }
+    .minimized-btn {
+      all: initial; box-sizing: border-box; display: flex; align-items: center;
+      justify-content: center; width: 44px; height: 44px; border-radius: 12px;
+      background: #1F7A6C; color: white; font-weight: 700; font-size: 15px;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(22, 35, 61, 0.2);
+      font-family: -apple-system, 'Inter', sans-serif;
+    }
+    .minimized-btn:hover { background: #17604F; }
+  `;
+
+  function expandPanel(root, job) {
+    // Rebuilds the full header+body panel and re-wires the close
+    // button to minimize (not remove) -- called both on first inject
+    // and any time the person clicks the minimized icon to reopen.
+    root.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="header">
+          <span class="brand">Riseply</span>
+          <button id="riseply-close" title="Minimize">&times;</button>
+        </div>
+        <div class="body" id="riseply-body">
+          <p class="hint">Loading…</p>
+        </div>
+      </div>
+    `;
+    root.getElementById("riseply-close").addEventListener("click", () => minimizePanel(root, job));
+    if (job) render(root, job);
+  }
+
+  function minimizePanel(root, job) {
+    // Collapses to a small persistent icon rather than removing the
+    // sidebar entirely -- matches how other job-search extensions
+    // (Simplify, Jobright) stay reachable via a small docked icon
+    // instead of vanishing without a way back short of a page reload.
+    root.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <button class="minimized-btn" id="riseply-reopen" title="Open Riseply">R</button>
+    `;
+    root.getElementById("riseply-reopen").addEventListener("click", () => expandPanel(root, job));
+  }
+
   function injectSidebar() {
     if (document.getElementById("riseply-sidebar-host")) return null;
 
@@ -275,70 +355,7 @@
     host.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;";
     document.documentElement.appendChild(host);
     const root = host.attachShadow({ mode: "open" });
-
-    root.innerHTML = `
-      <style>
-        :host { all: initial; }
-        .panel {
-          all: initial;
-          font-family: -apple-system, 'Inter', sans-serif;
-          width: 300px;
-          background: #FFFFFF;
-          border: 1px solid #E2E5EA;
-          border-radius: 12px;
-          box-shadow: 0 8px 30px rgba(22, 35, 61, 0.15);
-          color: #16233D;
-          display: block;
-          overflow: hidden;
-        }
-        .header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 14px; background: #1F7A6C; color: white;
-        }
-        .header .brand { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
-        .header button {
-          all: initial; cursor: pointer; color: white; font-size: 16px; line-height: 1;
-          padding: 2px 6px; opacity: 0.85;
-        }
-        .header button:hover { opacity: 1; }
-        .body { padding: 14px; font-size: 13px; }
-        .job-title { font-weight: 600; margin: 0 0 2px 0; font-size: 13px; }
-        .job-company { color: #5B6478; margin: 0 0 12px 0; font-size: 12px; }
-        button.action {
-          all: initial; box-sizing: border-box; display: block; width: 100%;
-          text-align: center; padding: 9px 10px; border-radius: 8px; font-weight: 600;
-          font-size: 13px; cursor: pointer; margin-bottom: 8px;
-        }
-        button.primary { background: #1F7A6C; color: white; }
-        button.primary:hover { background: #17604F; }
-        button.secondary { background: #E4F0EC; color: #17604F; }
-        button.secondary:hover { background: #d5e8e1; }
-        button.action:disabled { opacity: 0.6; cursor: default; }
-        .score-box {
-          background: #F5F6F8; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-        }
-        .score-pct { font-size: 20px; font-weight: 700; color: #1F7A6C; }
-        .score-reason { font-size: 12px; color: #5B6478; margin-top: 4px; line-height: 1.4; }
-        .hint { font-size: 11px; color: #5B6478; line-height: 1.4; margin-top: 8px; }
-        .login-prompt { text-align: center; padding: 6px 0; }
-        .login-prompt p { font-size: 12px; color: #5B6478; margin: 0 0 8px 0; }
-        .filled-list { font-size: 11px; color: #5B6478; margin-top: 6px; }
-      </style>
-      <div class="panel">
-        <div class="header">
-          <span class="brand">Riseply</span>
-          <button id="riseply-close" title="Hide">&times;</button>
-        </div>
-        <div class="body" id="riseply-body">
-          <p class="hint">Loading…</p>
-        </div>
-      </div>
-    `;
-
-    root.getElementById("riseply-close").addEventListener("click", () => {
-      dismissedByUser = true;
-      host.remove();
-    });
+    expandPanel(root, null); // job isn't known yet -- init() calls expandPanel() again once it's scraped
     return root;
   }
 
@@ -517,7 +534,12 @@
     if (!root) return;
     const job = scrapeJobInfo();
     log("scraped job info:", job.title, "@", job.company);
-    render(root, job);
+    // expandPanel (not render directly) -- re-wires the close button's
+    // closure with the real job (injectSidebar() itself only knew
+    // null when it first built the panel), so a later minimize->reopen
+    // cycle doesn't get stuck on "Loading..." from render() never
+    // being called with a null job.
+    expandPanel(root, job);
     watchForRemoval(job);
   }
 
@@ -532,11 +554,17 @@
   // just watch for the host element vanishing and put it back.
   function watchForRemoval(job) {
     const observer = new MutationObserver(() => {
-      if (dismissedByUser) return; // respect an intentional close -- see the flag's definition above
       if (!document.getElementById("riseply-sidebar-host")) {
         log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();
-        if (root) render(root, job);
+        // expandPanel (not render directly) -- injectSidebar() itself
+        // calls expandPanel(root, null) since it doesn't know the job
+        // yet, which wires the close button's closure to a null job.
+        // Re-calling expandPanel here with the REAL job re-wires that
+        // closure correctly, so a later minimize->reopen cycle on this
+        // restored panel doesn't get stuck on "Loading..." forever
+        // from render() never being called with a null job.
+        if (root) expandPanel(root, job);
       }
     });
     observer.observe(document.documentElement, { childList: true });
