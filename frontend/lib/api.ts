@@ -72,6 +72,14 @@ export interface User {
   admin_role: string;
 }
 
+export interface SavedResume {
+  id: number;
+  label: string;
+  resume_text: string;
+  is_default: boolean;
+  created_at: string;
+}
+
 export interface SearchProfile {
   id: number;
   name: string;

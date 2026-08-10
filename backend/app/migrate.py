@@ -23,7 +23,7 @@ schema needs anything more complex than "add a column."
 from sqlalchemy import inspect, text
 from sqlalchemy.schema import CreateColumn
 
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
 from app import models  # noqa: F401 -- import registers every model on Base.metadata
 
 
@@ -83,6 +83,33 @@ def run_migration():
                 "UPDATE users SET admin_role = 'super' "
                 "WHERE is_admin = 1 AND (admin_role IS NULL OR admin_role = '')"
             ))
+
+    # Backfill: every user with a resume already saved under the old
+    # single-resume_text-column model gets exactly one Resume row
+    # created for them, marked default -- so the new multi-resume
+    # feature has something to show/manage immediately instead of an
+    # empty list for every existing account. Idempotent and safe to
+    # run on every startup: only acts on users who have resume_text set
+    # AND don't already have any Resume rows (a fresh backfill target
+    # only exists once, right after this feature ships).
+    db = SessionLocal()
+    try:
+        users_needing_backfill = (
+            db.query(models.User)
+            .filter(models.User.resume_text.isnot(None), models.User.resume_text != "")
+            .filter(~db.query(models.Resume.id).filter(models.Resume.user_id == models.User.id).exists())
+            .all()
+        )
+        for user in users_needing_backfill:
+            db.add(models.Resume(
+                user_id=user.id, label="My Resume",
+                resume_text=user.resume_text, is_default=True,
+            ))
+            print(f"[migrate] backfilled a default Resume row for user {user.id}")
+        if users_needing_backfill:
+            db.commit()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

@@ -608,3 +608,29 @@ class ExtensionAnswerQuestionRequest(BaseModel):
 
 class ExtensionAnswerQuestionResponse(BaseModel):
     answer: str
+
+
+# --- Multiple resumes, one marked default. Named "Saved*" specifically
+# to avoid colliding with the pre-existing ResumeUpdate/ResumeParseOut
+# above, which belong to the older single-resume-text PUT /me/resume
+# flow and are unrelated to this feature. ---
+
+class SavedResumeCreate(BaseModel):
+    label: str = Field(default="", max_length=200)
+    resume_text: str = Field(min_length=1, max_length=20000)
+
+
+class SavedResumeUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, max_length=200)
+    resume_text: Optional[str] = Field(default=None, min_length=1, max_length=20000)
+
+
+class SavedResumeOut(BaseModel):
+    id: int
+    label: str
+    resume_text: str
+    is_default: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
