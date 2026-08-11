@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     free_tier_max_onboarding_plans_per_month: int = 5
     free_tier_max_job_buddy_messages_per_month: int = 60
     free_tier_max_org_ask_per_month: int = 100
-    free_tier_max_search_profiles: int = 1
+    free_tier_max_search_profiles: int = 2
 
     # --- Pro tier limits ---
     pro_tier_max_matches_per_month: int = 300

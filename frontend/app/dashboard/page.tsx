@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -66,6 +66,10 @@ export default function OverviewPage() {
       );
       if (result.usage_limit_reached) {
         setMessage((m) => m + " (Stopped early — monthly match limit reached.)");
+        showQuotaLimitModal(
+          "You've used up your monthly match limit for this billing cycle. " +
+          "It resets at the start of your next cycle, or upgrade to Pro for a higher limit right away."
+        );
       } else if (result.hit_job_cap) {
         setMessage((m) => m + " There are more unscored postings waiting — click \"Find new matches\" again to keep going, or check back after the nightly search runs.");
       }

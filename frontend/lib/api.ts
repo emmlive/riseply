@@ -13,6 +13,29 @@ export function clearToken() {
   localStorage.removeItem("token");
 }
 
+// A single global listener the dashboard layout registers itself with
+// (see QuotaLimitModal) -- lets api() surface a 429 (quota/plan-limit
+// reached) as a real, hard-to-miss modal from a single place, instead
+// of every page needing its own quota-handling logic. Existing
+// per-page inline error handling (setError, etc.) keeps working too --
+// this is additive, not a replacement, since api() still throws the
+// error either way.
+let onQuotaLimit: ((message: string) => void) | null = null;
+
+export function setQuotaLimitListener(fn: ((message: string) => void) | null) {
+  onQuotaLimit = fn;
+}
+
+// Exported directly (not just used internally by api() below) because
+// not every quota-reached signal is a 429 -- /pipeline/match
+// deliberately returns 200 with usage_limit_reached: true in the body
+// when it stops early mid-run, so it can still show whatever partial
+// results it found rather than failing the whole request. Pages need
+// a way to trigger the same modal for that case too.
+export function showQuotaLimitModal(message: string) {
+  onQuotaLimit?.(message);
+}
+
 export async function api<T = any>(
   path: string,
   options: RequestInit = {}
@@ -41,6 +64,9 @@ export async function api<T = any>(
       detail = body.detail || detail;
     } catch {
       // response wasn't JSON — keep statusText
+    }
+    if (res.status === 429 && onQuotaLimit) {
+      onQuotaLimit(typeof detail === "string" ? detail : "You've reached your plan's limit for this.");
     }
     throw new Error(detail);
   }

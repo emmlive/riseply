@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, clearToken, getToken, User, Organization } from "@/lib/api";
+import QuotaLimitModal from "@/components/QuotaLimitModal";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -89,6 +90,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </aside>
       <main className="main">{children}</main>
+      <QuotaLimitModal />
     </div>
   );
 }
