@@ -79,9 +79,12 @@ def run_discovery(db: Session) -> dict:
     regardless of the exact interleaving.
     """
     raw_jobs = []
-    raw_jobs += greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
-    raw_jobs += lever.fetch_all(discovery_sources.LEVER_COMPANIES)
-    raw_jobs += rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
+    gh_jobs = greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
+    lever_jobs = lever.fetch_all(discovery_sources.LEVER_COMPANIES)
+    rss_jobs = rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
+    raw_jobs += gh_jobs
+    raw_jobs += lever_jobs
+    raw_jobs += rss_jobs
 
     # Adzuna: general, all-industries keyword search -- driven by
     # whatever titles are actually in people's active search profiles
@@ -90,7 +93,13 @@ def run_discovery(db: Session) -> dict:
     # ADZUNA_APP_ID/ADZUNA_APP_KEY aren't configured (see adzuna.py).
     search_titles = _collect_active_search_titles(db)
     keywords_this_run = _select_keyword_rotation(search_titles, settings.adzuna_max_keywords_per_run)
-    raw_jobs += adzuna.fetch_by_keywords(keywords_this_run)
+    print(f"[discovery] {len(search_titles)} distinct active search-profile title(s) total, "
+          f"{len(keywords_this_run)} selected for Adzuna this run")
+    adzuna_jobs = adzuna.fetch_by_keywords(keywords_this_run)
+    raw_jobs += adzuna_jobs
+
+    print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
+          f"rss: {len(rss_jobs)}, adzuna: {len(adzuna_jobs)}, total: {len(raw_jobs)}")
 
     if not raw_jobs:
         return {"discovered": 0, "new": 0}
