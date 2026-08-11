@@ -73,6 +73,16 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
         for j in results:
             company = (j.get("company") or {}).get("display_name", "")
             location_name = (j.get("location") or {}).get("display_name", "")
+            # salary_min/salary_max are floats in Adzuna's response even
+            # though real-world salaries are always whole numbers --
+            # rounding to int here keeps the Job model's columns simple
+            # ints and avoids showing a person "$85432.18787" instead of
+            # "$85,432". Adzuna only returns these two fields when it
+            # actually has a number to give (stated or modeled) --
+            # .get() with None default preserves that "no data" signal
+            # rather than coercing a missing salary into a misleading 0.
+            salary_min = j.get("salary_min")
+            salary_max = j.get("salary_max")
             jobs.append({
                 # "adzuna" alone (not per-keyword) as the source name --
                 # the same real posting can legitimately surface under
@@ -89,6 +99,14 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
                 "location": location_name,
                 "url": j.get("redirect_url", ""),
                 "description": j.get("description", ""),
+                "salary_min": round(salary_min) if salary_min is not None else None,
+                "salary_max": round(salary_max) if salary_max is not None else None,
+                # Adzuna's search endpoint doesn't return a per-job
+                # currency field -- safe to hardcode since API_URL above
+                # is pinned to the "us" country index only (see its
+                # docstring on why non-US isn't supported yet).
+                "salary_currency": "USD" if (salary_min or salary_max) else "",
+                "salary_is_predicted": bool(j.get("salary_is_predicted")),
             })
 
     return jobs

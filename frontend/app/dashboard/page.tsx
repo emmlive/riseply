@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal, formatSalary } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -14,6 +14,7 @@ export default function OverviewPage() {
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
   const [profileCount, setProfileCount] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [checklistDismissed, setChecklistDismissed] = useState(
     typeof window !== "undefined" && localStorage.getItem("riseply_hide_getting_started") === "1"
   );
@@ -32,6 +33,7 @@ export default function OverviewPage() {
       setRise(r);
       setHasResume(!!me.resume_text.trim());
       setProfileCount(profiles.length);
+      setUserName((me.full_name || "").split(" ")[0]);
     } catch {
       // handled globally by api() redirecting to /login on 401
     }
@@ -101,7 +103,11 @@ export default function OverviewPage() {
       {!checklistDismissed && hasResume !== null && profileCount !== null && (hasResume === false || profileCount === 0 || (usage && usage.matches_used === 0)) && (
         <div className="card" style={{ borderColor: "var(--accent)" }}>
           <div className="card-row" style={{ alignItems: "flex-start" }}>
-            <h3 style={{ margin: 0 }}>Getting started</h3>
+            <h3 style={{ margin: 0 }}>
+              {hasResume === false && profileCount === 0
+                ? `Welcome${userName ? `, ${userName}` : ""}! Here's what to do next`
+                : "Getting started"}
+            </h3>
             <button className="btn btn-ghost btn-sm" onClick={dismissChecklist}>Dismiss</button>
           </div>
           <div style={{ marginTop: 10 }}>
@@ -136,6 +142,7 @@ export default function OverviewPage() {
               <div>
                 <div style={{ fontWeight: 600 }}>{nm.title} — {nm.company}</div>
                 <div className="hint">{nm.reason}</div>
+                {formatSalary(nm) && <div className="hint">{formatSalary(nm)}</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span className="ticket">match <span className="score">{nm.score}%</span></span>

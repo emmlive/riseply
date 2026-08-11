@@ -103,6 +103,13 @@ def run_discovery(db: Session) -> dict:
             source=j["source"], external_id=j["external_id"], company=j["company"],
             title=j["title"], location=j["location"], url=j["url"],
             description=j["description"],
+            # .get() rather than direct indexing -- only the Adzuna
+            # source populates these (see adzuna.py); Greenhouse/Lever/
+            # RSS job dicts simply don't have these keys at all, and
+            # should insert with "no salary data" rather than a KeyError.
+            salary_min=j.get("salary_min"), salary_max=j.get("salary_max"),
+            salary_currency=j.get("salary_currency", ""),
+            salary_is_predicted=j.get("salary_is_predicted", False),
         ).on_conflict_do_nothing(index_elements=["source", "external_id"])
         result = db.execute(stmt)
         if result.rowcount > 0:
@@ -182,6 +189,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             "title": job_row.title, "company": job_row.company,
             "location": job_row.location, "url": job_row.url,
             "description": job_row.description,
+            "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+            "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
         }
         try:
             best = matcher.best_profile_match(job, user.resume_text, profiles)
@@ -221,6 +230,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 "title": job_row.title, "company": job_row.company, "url": job_row.url,
                 "score": best["score"], "reason": best["reason"],
                 "matched_profile": best["profile_name"],
+                "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+                "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
             }))
             near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
             near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
@@ -329,6 +340,8 @@ def send_daily_digests(db: Session) -> dict:
             {
                 "title": job.title, "company": job.company, "location": job.location,
                 "match_score": app_row.match_score, "match_reason": app_row.match_reason, "url": job.url,
+                "salary_min": job.salary_min, "salary_max": job.salary_max,
+                "salary_currency": job.salary_currency, "salary_is_predicted": job.salary_is_predicted,
             }
             for app_row, job in rows
         ]

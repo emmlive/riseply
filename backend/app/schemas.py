@@ -127,6 +127,10 @@ class ApplicationOut(BaseModel):
     organization_logo_url: str = ""
     tailoring_rationale: str = ""
     has_tailored_resume_data: bool = False
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = ""
+    salary_is_predicted: bool = False
 
     class Config:
         from_attributes = True

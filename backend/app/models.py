@@ -146,6 +146,19 @@ class Job(Base):
     description = Column(Text, default="")
     discovered_at = Column(DateTime, default=datetime.utcnow)
 
+    # --- Salary (currently only populated by the Adzuna source --
+    # Greenhouse/Lever/RSS postings essentially never state a salary in
+    # a structured field, so these stay NULL/False for those rows;
+    # nullable rather than defaulting to 0 so the frontend can tell
+    # "no data" apart from "an actual $0 salary"). is_predicted
+    # distinguishes a real advertised figure from Adzuna's own salary
+    # model -- shown to the person so a predicted range isn't mistaken
+    # for what the employer actually stated.
+    salary_min = Column(Integer, nullable=True)
+    salary_max = Column(Integer, nullable=True)
+    salary_currency = Column(String, default="")
+    salary_is_predicted = Column(Boolean, default=False)
+
 
 class Application(Base):
     """A user's candidacy for a specific job — this is per-tenant."""

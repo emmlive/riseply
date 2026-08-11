@@ -63,6 +63,8 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
         has_tailored_resume_data=bool(app.tailored_resume_data),
+        salary_min=job.salary_min, salary_max=job.salary_max,
+        salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
     )
 
 
