@@ -604,10 +604,21 @@ class ExtensionAnswerQuestionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     company: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20000)
+    options: list[str] = Field(default_factory=list, max_length=100)
 
 
 class ExtensionAnswerQuestionResponse(BaseModel):
     answer: str
+
+
+class ExtensionCoverLetterRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    company: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+
+
+class ExtensionCoverLetterResponse(BaseModel):
+    cover_letter: str
 
 
 # --- Multiple resumes, one marked default. Named "Saved*" specifically

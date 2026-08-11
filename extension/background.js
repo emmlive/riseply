@@ -119,6 +119,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             body: JSON.stringify({
               question: message.question, title: message.title,
               company: message.company, description: message.description,
+              options: message.options || [],
+            }),
+          });
+          sendResponse({ success: true, ...result });
+          break;
+        }
+
+        case "GENERATE_COVER_LETTER": {
+          const result = await apiFetch("/extension/generate-cover-letter", {
+            method: "POST",
+            body: JSON.stringify({
+              title: message.title, company: message.company, description: message.description,
             }),
           });
           sendResponse({ success: true, ...result });
