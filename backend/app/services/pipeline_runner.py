@@ -172,10 +172,24 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     already_scored_subq = db.query(models.ScoredJob.job_id).filter(
         models.ScoredJob.user_id == user.id
     ).subquery()
+    # ORDER BY discovered_at DESC is load-bearing, not cosmetic: without
+    # it, this query returns rows in whatever order Postgres feels like
+    # (effectively insertion/id order in practice), and greenhouse.py's
+    # ~2,800-job backlog -- inserted every run BEFORE adzuna.py's much
+    # smaller, keyword-driven results -- permanently sits at the front
+    # of that order. A capped run (max_jobs=25 on the interactive
+    # "Find new matches" button) would then need on the order of a
+    # hundred clicks before ever reaching a single Adzuna row, no
+    # matter how many fresh, well-targeted postings Adzuna just found.
+    # Newest-first means a click always sees this run's freshest finds
+    # (across every source) before working backward into the old
+    # backlog -- the nightly scheduled job (max_jobs=None) still clears
+    # the full backlog regardless of order, so nothing is lost, just
+    # reprioritized for the interactive, capped case.
     unseen_jobs = db.query(models.Job).filter(
         not_(models.Job.id.in_(already_applied_subq)),
         not_(models.Job.id.in_(already_scored_subq)),
-    ).all()
+    ).order_by(models.Job.discovered_at.desc()).all()
 
     hit_job_cap = False
     if max_jobs is not None and len(unseen_jobs) > max_jobs:
