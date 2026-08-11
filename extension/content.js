@@ -148,6 +148,26 @@
     return false;
   }
 
+  function setSelectValueExact(select, exactText) {
+    // For AI-drafted select answers specifically -- already validated
+    // server-side to be verbatim-identical to a real option, so an
+    // EXACT match here (not the fuzzy substring match setSelectValue
+    // above uses for the hardcoded "Mobile" default) avoids selecting
+    // the wrong option when two options share overlapping text, e.g.
+    // "Yes" vs. "Yes, but I will need visa sponsorship in the future"
+    // -- substring matching on "Yes" could hit either one depending on
+    // iteration order; exact matching can't.
+    for (const opt of select.options) {
+      if ((opt.text || "").trim() === exactText) {
+        select.value = opt.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
   function fillElement(el, value) {
     // Single entry point runAutofill() calls regardless of whether the
     // matched field turned out to be a text input or a dropdown --
@@ -218,19 +238,52 @@
     return el.getAttribute("aria-label") || el.getAttribute("placeholder") || "";
   }
 
+  function isPlaceholderOptionText(text) {
+    return /^(select( one)?|please select|choose( one)?|--+.*--+|)$/i.test((text || "").trim());
+  }
+
+  const SENSITIVE_PATTERN = /(\bauthoriz\w*\s+to\s+work\b|work\s+authoriz|eligib(le|ility)\s*to\s*work|\bvisa\b|sponsorship|\brace\b|ethnicit|gender identity|\bdisabilit|veteran|sexual orientation|protected class)/i;
+
   function detectUnansweredQuestions() {
-    // Deliberately narrow to empty <textarea> elements -- the clear,
-    // common case for open-ended application questions ("Why do you
-    // want to work here?", work-authorization essay questions, etc).
-    // Doesn't touch radio groups or custom multi-choice widgets; those
-    // vary too much across sites to handle safely in a first version.
+    // Textareas: the clear, common case for open-ended application
+    // questions ("Why do you want to work here?", "Describe a
+    // challenging project"). Doesn't touch radio groups or custom
+    // multi-choice widgets; those vary too much across sites to
+    // handle safely in a first version.
     const questions = [];
     const textareas = document.querySelectorAll("textarea");
     for (const ta of textareas) {
       if ((ta.value || "").trim()) continue; // already has content -- don't touch it
       const label = getLabelForElement(ta);
-      if (label.length > 10) questions.push({ el: ta, question: label });
+      if (label.length > 10) {
+        questions.push({ el: ta, question: label, isSelect: false, sensitive: SENSITIVE_PATTERN.test(label) });
+      }
     }
+
+    // Selects: dropdown application questions -- "How did you hear
+    // about us?", pronouns, state/country, etc, as well as the
+    // legally-significant ones (work authorization, sponsorship, EEOC
+    // voluntary self-ID categories) that get flagged as sensitive
+    // rather than ever auto-answered. See the sensitive-vs-safe design
+    // note on the answer-question backend endpoint for why: resumes
+    // essentially never state citizenship/visa status (people are
+    // routinely advised to leave it off), so there's rarely anything
+    // real to infer this from, and a wrong guess here can silently
+    // submit a legally false statement or get someone auto-screened
+    // out of a job they were actually eligible for.
+    const selects = document.querySelectorAll("select");
+    for (const sel of selects) {
+      const selectedText = sel.selectedOptions[0]?.text || "";
+      if (sel.value && !isPlaceholderOptionText(selectedText)) continue; // already answered -- don't touch it
+      const label = getLabelForElement(sel);
+      if (label.length <= 2) continue;
+      const realOptions = Array.from(sel.options)
+        .map((o) => o.text.trim())
+        .filter((t) => t && !isPlaceholderOptionText(t));
+      if (realOptions.length < 2) continue; // not a meaningful choice to make
+      questions.push({ el: sel, question: label, isSelect: true, options: realOptions, sensitive: SENSITIVE_PATTERN.test(label) });
+    }
+
     return questions;
   }
 
@@ -517,20 +570,29 @@
       ${questions.map((q, i) => `
         <div style="margin-top:6px;padding:8px 10px;background:#F5F6F8;border-radius:8px;">
           <p class="hint" style="margin:0 0 6px;color:#16233D;">${escapeHtml(q.question.slice(0, 140))}${q.question.length > 140 ? "…" : ""}</p>
-          <button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>
+          ${q.sensitive
+            ? `<p class="hint" style="color:#C97A2B;margin:0;">⚠️ Needs your own answer -- not auto-filled on purpose.</p>`
+            : `<button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>`
+          }
         </div>
       `).join("")}
     `;
 
     questions.forEach((q, i) => {
+      if (q.sensitive) return; // no button was rendered for these -- see the note above
       const btn = root.getElementById(`riseply-answer-btn-${i}`);
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         btn.textContent = "Drafting…";
-        const result = await sendMessage({ type: "ANSWER_QUESTION", question: q.question, ...job });
+        const result = await sendMessage({
+          type: "ANSWER_QUESTION", question: q.question,
+          options: q.isSelect ? q.options : undefined,
+          ...job,
+        });
+        btn.disabled = false;
+        btn.textContent = "Draft with AI";
+
         if (!result.success) {
-          btn.disabled = false;
-          btn.textContent = "Draft with AI";
           if (result.status === 429) {
             btn.parentElement.insertAdjacentHTML("beforeend",
               `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`);
@@ -540,10 +602,19 @@
           }
           return;
         }
-        // Filled directly, but unmistakably marked as a draft that needs
-        // review -- per the explicit design decision this shouldn't
-        // look like a finished, ready-to-submit answer.
-        setNativeValue(q.el, `[AI-drafted — review before submitting]\n\n${result.answer}`);
+
+        if (q.isSelect) {
+          if (result.answer === "UNKNOWN" || !setSelectValueExact(q.el, result.answer)) {
+            btn.parentElement.insertAdjacentHTML("beforeend",
+              `<p class="hint" style="margin-top:6px;">Couldn't confidently determine an answer -- please pick manually.</p>`);
+            return;
+          }
+        } else {
+          // Filled directly, but unmistakably marked as a draft that
+          // needs review -- per the explicit design decision this
+          // shouldn't look like a finished, ready-to-submit answer.
+          setNativeValue(q.el, `[AI-drafted — review before submitting]\n\n${result.answer}`);
+        }
         btn.textContent = "Drafted ✓";
         btn.disabled = true;
         // Deliberately NOT calling renderUsage() here -- it only shows

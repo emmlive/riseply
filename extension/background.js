@@ -119,6 +119,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             body: JSON.stringify({
               question: message.question, title: message.title,
               company: message.company, description: message.description,
+              options: message.options || [],
             }),
           });
           sendResponse({ success: true, ...result });
