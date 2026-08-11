@@ -244,20 +244,29 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         db.commit()
 
         if not best["meets_threshold"]:
-            # Track the closest-scoring misses as we go, capped at
-            # NEAR_MISS_CAP, so a search that finds nothing real still
-            # has something concrete to show -- "nothing hit your bar,
-            # but here's what came closest" rather than a cold empty
-            # state that looks like the tool didn't do anything.
-            near_miss_candidates.append((best["score"], {
-                "title": job_row.title, "company": job_row.company, "url": job_row.url,
-                "score": best["score"], "reason": best["reason"],
-                "matched_profile": best["profile_name"],
-                "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
-                "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
-            }))
-            near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
-            near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
+            # A None profile_name means best_profile_match hard-skipped
+            # this job for EVERY active profile (wrong location, or an
+            # excluded company) without ever calling the LLM -- it was
+            # never actually evaluated, so showing it as a "closest
+            # this run" near-miss would be misleading (it'd display
+            # score: 0 and a generic explanation, looking like a real
+            # but very poor match rather than a job that was correctly
+            # ruled out before scoring even started).
+            if best["profile_name"] is not None:
+                # Track the closest-scoring misses as we go, capped at
+                # NEAR_MISS_CAP, so a search that finds nothing real still
+                # has something concrete to show -- "nothing hit your bar,
+                # but here's what came closest" rather than a cold empty
+                # state that looks like the tool didn't do anything.
+                near_miss_candidates.append((best["score"], {
+                    "title": job_row.title, "company": job_row.company, "url": job_row.url,
+                    "score": best["score"], "reason": best["reason"],
+                    "matched_profile": best["profile_name"],
+                    "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+                    "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
+                }))
+                near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
+                near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
             continue
 
         application = models.Application(

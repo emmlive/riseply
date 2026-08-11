@@ -8,6 +8,59 @@ from app.config import settings
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
 
+# Synonyms real job postings use for remote work, beyond the literal word
+# "remote" -- seen in the wild across Greenhouse/Lever/Adzuna postings.
+# Deliberately NOT trying to be exhaustive (e.g. not matching "hybrid" --
+# hybrid roles usually DO have a real onsite requirement, so treating them
+# as remote-equivalent would defeat the point of this filter).
+_REMOTE_SYNONYMS = ("remote", "work from home", "wfh", "anywhere", "distributed", "telecommute")
+
+
+def _location_matches(profile_locations: list[str], job_location: str, job_title: str = "") -> bool:
+    """Cheap, hard pre-filter run BEFORE the LLM call (see its use in
+    best_profile_match below) -- not a scoring signal, a yes/no gate.
+    Locations previously only affected the score itself (the LLM was
+    just told about them as one more piece of context), which meant a
+    job in the wrong city could still burn a scored slot AND surface as
+    a "near miss" despite being geographically impossible. This makes
+    location a hard requirement, same as exclude_companies right below
+    it, so the LLM is never even asked to score something the person
+    plainly couldn't take.
+
+    Deliberately permissive on ambiguous data rather than dropping
+    anything uncertain -- an empty/missing location on the job posting,
+    or the profile having no location preference at all, both pass
+    through rather than reject, since a false EXCLUDE here silently
+    removes a job from consideration forever (see the ScoredJob comment
+    a few lines below best_profile_match's use of this), while a false
+    INCLUDE just costs one scored slot and lets the LLM's own reasoning
+    catch it -- recoverable, not silent.
+    """
+    if not profile_locations:
+        return True  # no location preference set on this profile -- anywhere is fine
+
+    job_location_norm = (job_location or "").strip().lower()
+    if not job_location_norm:
+        return True  # can't confidently reject what we don't know
+
+    haystack = f"{job_location_norm} {job_title or ''}".lower()
+
+    for loc in profile_locations:
+        loc_norm = (loc or "").strip().lower()
+        if not loc_norm:
+            continue
+        if loc_norm in _REMOTE_SYNONYMS:
+            if any(syn in haystack for syn in _REMOTE_SYNONYMS):
+                return True
+            continue
+        # Substring match both directions -- profile says "Chicago" and
+        # job says "Chicago, IL" (or the reverse, a profile entered as
+        # "Chicago, IL" against a job posting that just says "Chicago").
+        if loc_norm in job_location_norm or job_location_norm in loc_norm:
+            return True
+
+    return False
+
 
 def score_job(resume_text: str, job: dict, profile: dict) -> dict:
     prompt = f"""You are helping a job seeker filter job postings. Score how
@@ -76,6 +129,8 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict]) -> dic
             continue
         if job["company"].lower() in {c.lower() for c in profile.get("exclude_companies", [])}:
             continue
+        if not _location_matches(profile.get("locations", []), job.get("location", ""), job.get("title", "")):
+            continue
         result = score_job(resume_text, job, profile)
         candidate = {
             "profile_name": profile["name"],
@@ -86,5 +141,6 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict]) -> dic
         if best is None or candidate["score"] > best["score"]:
             best = candidate
 
-    return best or {"profile_name": None, "score": 0, "reason": "no active profiles",
+    return best or {"profile_name": None, "score": 0,
+                     "reason": "No active search profile's location or excluded-company list allowed this job to be scored.",
                      "meets_threshold": False}
