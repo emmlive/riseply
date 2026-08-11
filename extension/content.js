@@ -112,6 +112,25 @@
   }
 
   function sendMessage(message, timeoutMs = 15000) {
+    // chrome.runtime.id disappears once this content script's context
+    // has been invalidated -- the extension was reloaded (dev) or
+    // Chrome auto-updated it (production) while this tab stayed open.
+    // Calling chrome.runtime.sendMessage on a dead context throws
+    // synchronously, which -- since the call sits inside a `new
+    // Promise((resolve) => ...)` with no try/catch -- surfaces as an
+    // unhandled promise rejection with a misleading stack trace rather
+    // than a clean, actionable failure. Checking first avoids the
+    // throw in the common case (extension reloaded during dev, or a
+    // background auto-update landing on a real user's still-open tab).
+    if (!chrome.runtime?.id) {
+      log("extension context invalidated -- page needs a refresh");
+      return Promise.resolve({
+        success: false,
+        error: "Riseply was updated. Please refresh this page.",
+        contextInvalidated: true,
+      });
+    }
+
     // Without this timeout, a lost response (e.g. the background
     // service worker getting terminated mid-request, which Chrome can
     // do if a request runs long -- Render's free-tier cold start after
@@ -120,7 +139,28 @@
     // no console error looks like. Racing against a timeout turns a
     // silent hang into a visible, actionable failure state instead.
     return Promise.race([
-      new Promise((resolve) => chrome.runtime.sendMessage(message, resolve)),
+      new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+              // Covers the context dying in the gap between the check
+              // above and the response actually coming back (e.g. an
+              // update lands mid-flight) -- the background service
+              // worker or its port is gone, so lastError is set instead
+              // of a real response ever arriving.
+              log("sendMessage lastError:", chrome.runtime.lastError.message);
+              resolve({ success: false, error: "Riseply was updated. Please refresh this page.", contextInvalidated: true });
+              return;
+            }
+            resolve(response);
+          });
+        } catch (err) {
+          // Belt-and-suspenders: context can also die in the gap
+          // between the check above and this call actually firing.
+          log("sendMessage threw synchronously:", err.message);
+          resolve({ success: false, error: "Riseply was updated. Please refresh this page.", contextInvalidated: true });
+        }
+      }),
       new Promise((resolve) =>
         setTimeout(() => {
           log("sendMessage timed out after", timeoutMs, "ms for", message.type);
@@ -799,6 +839,16 @@
   // just watch for the host element vanishing and put it back.
   function watchForRemoval(job) {
     const observer = new MutationObserver(() => {
+      if (!chrome.runtime?.id) {
+        // Context is dead (extension reloaded/updated under this open
+        // tab) -- re-injecting a sidebar at this point would just
+        // produce a panel that can never talk to the background
+        // script again. Stop watching; a page refresh is what actually
+        // fixes it, per the message sendMessage() now surfaces.
+        log("extension context invalidated -- stopping DOM watch");
+        observer.disconnect();
+        return;
+      }
       if (!document.getElementById("riseply-sidebar-host")) {
         log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();
