@@ -32,6 +32,23 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
+    # --- Job discovery: Adzuna (general, all-industries keyword search) ---
+    # Empty by default -- same kill-switch pattern as every other optional
+    # integration (Resend, Twilio, Stripe). Until both are set,
+    # sources/adzuna.py no-ops and discovery falls back to just the fixed
+    # Greenhouse/Lever/RSS sources in discovery_sources.py. Free at
+    # https://developer.adzuna.com/ -- register for an app_id/app_key pair.
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    # Adzuna's free tier is roughly 1,000 calls/month; one call = one
+    # keyword's worth of results. This bounds how many DISTINCT search-
+    # profile titles get queried in a single discovery run so a run with
+    # many active profiles across many users can't burn the whole
+    # monthly quota at once -- see pipeline_runner.run_discovery() for
+    # how the remainder rotate in on subsequent runs instead of being
+    # dropped entirely.
+    adzuna_max_keywords_per_run: int = 15
+
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other
     # optional integration (Stripe, Twilio, CRON_SECRET). Until

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep, CompanyStats, downloadFile } from "@/lib/api";
+import { api, Application, InterviewPrep, CompanyStats, downloadFile, formatSalary } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -160,6 +160,9 @@ export default function ApplicationsPage() {
                   <StatusPill status={app.status} />
                 </div>
                 <p className="muted" style={{ margin: "4px 0" }}>{app.job_location}</p>
+                {formatSalary(app) && (
+                  <p className="hint" style={{ margin: "0 0 4px", fontWeight: 600 }}>{formatSalary(app)}</p>
+                )}
                 <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
                 {app.notes && <p className="hint">{app.notes}</p>}
                 {stat && stat !== "none" && (
