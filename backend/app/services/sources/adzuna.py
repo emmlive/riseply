@@ -44,6 +44,13 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
     dicts in the same shape run_discovery() already expects from every
     other source (see greenhouse.py for the reference shape)."""
     if not settings.adzuna_app_id or not settings.adzuna_app_key:
+        # Deliberately loud (not just a silent []) -- a credentials-unset
+        # skip and a "made the call, got zero results" outcome look
+        # IDENTICAL from the outside (both return no new jobs, no
+        # exception), which made a real production issue undiagnosable
+        # from the logs alone. This print is the only thing that tells
+        # the two apart after the fact.
+        print("[adzuna] skipped -- ADZUNA_APP_ID/ADZUNA_APP_KEY not set")
         return []
 
     jobs = []
@@ -63,10 +70,19 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
         except requests.RequestException as e:
-            print(f"[adzuna] failed for keyword {keyword!r} page {page}: {e}")
+            # resp.text (when a response actually came back, e.g. a 401
+            # for a bad key pair) carries Adzuna's own error message --
+            # str(e) alone typically only shows the status code and URL,
+            # not WHY it was rejected, which is exactly the detail
+            # needed to tell "bad credentials" apart from "Adzuna is
+            # down" apart from "malformed request".
+            body = getattr(e, "response", None)
+            body_text = body.text[:300] if body is not None else "(no response body)"
+            print(f"[adzuna] failed for keyword {keyword!r} page {page}: {e} -- body: {body_text}")
             break
 
         results = data.get("results", [])
+        print(f"[adzuna] keyword {keyword!r} page {page}: {len(results)} results")
         if not results:
             break  # ran out of pages for this keyword -- no point requesting further pages
 
@@ -118,12 +134,23 @@ def fetch_by_keywords(keywords: list[str]) -> list[dict]:
     keyword erroring out shouldn't cost discovery every OTHER keyword's
     results in the same run."""
     if not settings.adzuna_app_id or not settings.adzuna_app_key:
+        print("[adzuna] skipped -- ADZUNA_APP_ID/ADZUNA_APP_KEY not set")
         return []
 
+    if not keywords:
+        # Distinct from the credentials-missing case above -- keys are
+        # fine, but there's nothing to search FOR (e.g. no active
+        # search profiles have any titles set yet). Same "returns []
+        # either way" ambiguity problem as the credentials check.
+        print("[adzuna] skipped -- no keywords to search (no active search profile titles)")
+        return []
+
+    print(f"[adzuna] querying {len(keywords)} keyword(s): {keywords}")
     all_jobs = []
     for kw in keywords:
         try:
             all_jobs.extend(fetch_jobs_for_keyword(kw))
         except Exception as e:
             print(f"[adzuna] unexpected error for keyword {kw!r}: {e}")
+    print(f"[adzuna] done -- {len(all_jobs)} total result(s) across {len(keywords)} keyword(s)")
     return all_jobs
