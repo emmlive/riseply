@@ -611,6 +611,16 @@ class ExtensionAnswerQuestionResponse(BaseModel):
     answer: str
 
 
+class ExtensionCoverLetterRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    company: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+
+
+class ExtensionCoverLetterResponse(BaseModel):
+    cover_letter: str
+
+
 # --- Multiple resumes, one marked default. Named "Saved*" specifically
 # to avoid colliding with the pre-existing ResumeUpdate/ResumeParseOut
 # above, which belong to the older single-resume-text PUT /me/resume

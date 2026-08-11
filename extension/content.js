@@ -79,6 +79,20 @@
     ) || null;
   }
 
+  function findCoverLetterField() {
+    // Looks specifically for a textarea labeled as a cover letter --
+    // separate from the general custom-question detection, since this
+    // is offered proactively via its own button rather than only
+    // showing up when the field happens to already be empty and get
+    // swept up in the general question scan.
+    const COVER_LETTER_PATTERN = /cover letter/i;
+    const textareas = document.querySelectorAll("textarea");
+    for (const ta of textareas) {
+      if (COVER_LETTER_PATTERN.test(getLabelForElement(ta))) return ta;
+    }
+    return null;
+  }
+
   function scrapeJobInfo() {
     const h1 = document.querySelector("h1");
     const title = (h1?.textContent || document.title || "").trim().slice(0, 300);
@@ -374,6 +388,22 @@
     .login-prompt { text-align: center; padding: 6px 0; }
     .login-prompt p { font-size: 12px; color: #5B6478; margin: 0 0 8px 0; }
     .filled-list { font-size: 11px; color: #5B6478; margin-top: 6px; }
+    .draft-preview {
+      all: initial; box-sizing: border-box; display: block; width: 100%;
+      font-family: -apple-system, 'Inter', sans-serif; font-size: 12px; color: #16233D;
+      border: 1px solid #E2E5EA; border-radius: 8px; padding: 8px; margin-top: 6px;
+      resize: vertical; background: #FFFFFF;
+    }
+    .draft-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .draft-actions button {
+      all: initial; box-sizing: border-box; flex: 1; text-align: center; padding: 6px 8px;
+      border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer;
+      font-family: -apple-system, 'Inter', sans-serif;
+    }
+    .draft-actions .confirm { background: #1F7A6C; color: white; }
+    .draft-actions .confirm:hover { background: #17604F; }
+    .draft-actions .discard { background: #F5F6F8; color: #5B6478; }
+    .draft-actions .discard:hover { background: #e9ebee; }
     .minimized-btn {
       all: initial; box-sizing: border-box; display: flex; align-items: center;
       justify-content: center; width: 44px; height: 44px; border-radius: 12px;
@@ -464,6 +494,8 @@
       <p class="hint">Autofill can't attach your resume or submit for you -- browsers block scripts from doing either, on purpose. Fill in fields, then finish it yourself.</p>
       <div id="riseply-filled-slot"></div>
       <div id="riseply-questions-slot"></div>
+      <button class="action secondary" id="riseply-coverletter-btn" style="margin-top:12px;">Generate cover letter</button>
+      <div id="riseply-coverletter-slot"></div>
     `;
 
     renderUsage(root);
@@ -553,6 +585,63 @@
 
       renderUnansweredQuestions(root, scrapeJobInfo()); // fresh scrape -- see the Score button's handler for why
     });
+
+    root.getElementById("riseply-coverletter-btn").addEventListener("click", async () => {
+      const btn = root.getElementById("riseply-coverletter-btn");
+      const clSlot = root.getElementById("riseply-coverletter-slot");
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      const result = await sendMessage({ type: "GENERATE_COVER_LETTER", ...scrapeJobInfo() });
+      btn.disabled = false;
+      btn.textContent = "Generate cover letter";
+
+      if (!result.success) {
+        if (result.status === 429) {
+          clSlot.innerHTML = `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`;
+        } else {
+          clSlot.innerHTML = `<p class="hint" style="color:#B23B3B;margin-top:6px;">${escapeHtml(result.error || "Couldn't generate a cover letter.")}</p>`;
+        }
+        return;
+      }
+
+      // Same confirm-before-touching-the-page pattern as question
+      // drafting: editable preview here first, nothing written to the
+      // real page until explicitly confirmed. If there's no actual
+      // cover-letter field on this page (most sites just want a
+      // file upload, which can't be auto-attached -- same hard
+      // browser restriction as the resume), copy-to-clipboard is
+      // always available as the fallback so generating is still
+      // useful even then.
+      const coverLetterEl = findCoverLetterField();
+      clSlot.innerHTML = `
+        <textarea class="draft-preview" id="riseply-cl-text" rows="8">${escapeHtml(result.cover_letter)}</textarea>
+        <div class="draft-actions">
+          ${coverLetterEl ? `<button class="confirm" id="riseply-cl-use">Use this — fill the field</button>` : ""}
+          <button class="discard" id="riseply-cl-copy">Copy to clipboard</button>
+        </div>
+      `;
+
+      if (coverLetterEl) {
+        root.getElementById("riseply-cl-use").addEventListener("click", () => {
+          const finalText = root.getElementById("riseply-cl-text").value;
+          setNativeValue(coverLetterEl, finalText);
+          clSlot.insertAdjacentHTML("beforeend", `<p class="filled-list">✓ Filled the cover letter field.</p>`);
+        });
+      }
+      root.getElementById("riseply-cl-copy").addEventListener("click", async () => {
+        const text = root.getElementById("riseply-cl-text").value;
+        const copyBtn = root.getElementById("riseply-cl-copy");
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = "Copied ✓";
+          setTimeout(() => { copyBtn.textContent = "Copy to clipboard"; }, 2000);
+        } catch {
+          // Clipboard API can be blocked in some contexts -- the
+          // textarea right above is still selectable/copyable by hand,
+          // so this failure isn't a dead end, just a missed shortcut.
+        }
+      });
+    });
   }
 
   function renderUnansweredQuestions(root, job) {
@@ -572,7 +661,8 @@
           <p class="hint" style="margin:0 0 6px;color:#16233D;">${escapeHtml(q.question.slice(0, 140))}${q.question.length > 140 ? "…" : ""}</p>
           ${q.sensitive
             ? `<p class="hint" style="color:#C97A2B;margin:0;">⚠️ Needs your own answer -- not auto-filled on purpose.</p>`
-            : `<button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>`
+            : `<button class="action secondary" id="riseply-answer-btn-${i}" style="margin:0;padding:6px 10px;font-size:12px;">Draft with AI</button>
+               <div id="riseply-answer-preview-${i}"></div>`
           }
         </div>
       `).join("")}
@@ -581,6 +671,8 @@
     questions.forEach((q, i) => {
       if (q.sensitive) return; // no button was rendered for these -- see the note above
       const btn = root.getElementById(`riseply-answer-btn-${i}`);
+      const previewSlot = root.getElementById(`riseply-answer-preview-${i}`);
+
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         btn.textContent = "Drafting…";
@@ -594,29 +686,60 @@
 
         if (!result.success) {
           if (result.status === 429) {
-            btn.parentElement.insertAdjacentHTML("beforeend",
-              `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`);
+            previewSlot.innerHTML = `<p class="hint" style="color:#C97A2B;margin-top:6px;">Monthly limit reached. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a></p>`;
           } else {
-            btn.parentElement.insertAdjacentHTML("beforeend",
-              `<p class="hint" style="color:#B23B3B;margin-top:6px;">${escapeHtml(result.error || "Couldn't draft an answer.")}</p>`);
+            previewSlot.innerHTML = `<p class="hint" style="color:#B23B3B;margin-top:6px;">${escapeHtml(result.error || "Couldn't draft an answer.")}</p>`;
           }
           return;
         }
 
         if (q.isSelect) {
-          if (result.answer === "UNKNOWN" || !setSelectValueExact(q.el, result.answer)) {
-            btn.parentElement.insertAdjacentHTML("beforeend",
-              `<p class="hint" style="margin-top:6px;">Couldn't confidently determine an answer -- please pick manually.</p>`);
+          if (result.answer === "UNKNOWN") {
+            previewSlot.innerHTML = `<p class="hint" style="margin-top:6px;">Couldn't confidently determine an answer -- please pick manually.</p>`;
             return;
           }
+          // Confirm step before touching the real page, per the
+          // explicit design decision -- see the same reasoning on the
+          // cover letter flow below.
+          previewSlot.innerHTML = `
+            <p class="hint" style="margin-top:6px;">AI suggests: <strong>${escapeHtml(result.answer)}</strong></p>
+            <div class="draft-actions">
+              <button class="confirm" id="riseply-confirm-${i}">Use this answer</button>
+              <button class="discard" id="riseply-discard-${i}">Discard</button>
+            </div>
+          `;
+          root.getElementById(`riseply-confirm-${i}`).addEventListener("click", () => {
+            if (setSelectValueExact(q.el, result.answer)) {
+              previewSlot.innerHTML = `<p class="filled-list">✓ Answered.</p>`;
+              btn.style.display = "none";
+            } else {
+              previewSlot.innerHTML = `<p class="hint" style="color:#B23B3B;">Couldn't set that option -- please pick manually.</p>`;
+            }
+          });
+          root.getElementById(`riseply-discard-${i}`).addEventListener("click", () => { previewSlot.innerHTML = ""; });
         } else {
-          // Filled directly, but unmistakably marked as a draft that
-          // needs review -- per the explicit design decision this
-          // shouldn't look like a finished, ready-to-submit answer.
-          setNativeValue(q.el, `[AI-drafted — review before submitting]\n\n${result.answer}`);
+          // Editable preview, not an immediate fill -- the person can
+          // tweak the draft right here before it ever touches the
+          // real page, then explicitly confirms. Since that review now
+          // genuinely happens (not just a marker string left in the
+          // field), there's no need for the old inline "[AI-drafted --
+          // review before submitting]" prefix on the final text
+          // anymore -- the confirm step IS the review.
+          previewSlot.innerHTML = `
+            <textarea class="draft-preview" id="riseply-draft-text-${i}" rows="4">${escapeHtml(result.answer)}</textarea>
+            <div class="draft-actions">
+              <button class="confirm" id="riseply-confirm-${i}">Use this answer</button>
+              <button class="discard" id="riseply-discard-${i}">Discard</button>
+            </div>
+          `;
+          root.getElementById(`riseply-confirm-${i}`).addEventListener("click", () => {
+            const finalText = root.getElementById(`riseply-draft-text-${i}`).value;
+            setNativeValue(q.el, finalText);
+            previewSlot.innerHTML = `<p class="filled-list">✓ Answered.</p>`;
+            btn.style.display = "none";
+          });
+          root.getElementById(`riseply-discard-${i}`).addEventListener("click", () => { previewSlot.innerHTML = ""; });
         }
-        btn.textContent = "Drafted ✓";
-        btn.disabled = true;
         // Deliberately NOT calling renderUsage() here -- it only shows
         // the shared match quota, but drafting an answer consumes the
         // separate interview_prep quota instead. Calling it here would
