@@ -15,8 +15,53 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
-from app.services.sources import greenhouse, lever, rss_boards
+from app.services.sources import greenhouse, lever, rss_boards, adzuna
 from app.services import discovery_sources
+from app.config import settings
+
+
+def _collect_active_search_titles(db: Session) -> list[str]:
+    """Every distinct job title across every user's ACTIVE search
+    profiles, shared-pool-wide (not per-user -- discovery itself isn't
+    tenant-scoped, only matching is). This is what makes discovery follow
+    whatever industries people are actually searching for instead of
+    being capped at a hand-picked company list: a user whose profile
+    targets "Compliance Analyst" or "Store Manager" or "ICU Nurse" makes
+    that title a live Adzuna query the very next discovery run, with zero
+    code changes needed for that industry.
+    """
+    rows = db.query(models.SearchProfile.titles).filter_by(active=True).all()
+    seen_lower = set()
+    titles = []
+    for (titles_json,) in rows:
+        try:
+            for t in json.loads(titles_json or "[]"):
+                t = (t or "").strip()
+                if t and t.lower() not in seen_lower:
+                    seen_lower.add(t.lower())
+                    titles.append(t)
+        except (json.JSONDecodeError, TypeError):
+            continue  # a malformed row shouldn't take down discovery for everyone else
+    return titles
+
+
+def _select_keyword_rotation(keywords: list[str], max_per_run: int) -> list[str]:
+    """Bounds how many distinct keywords get queried in a single run
+    (see adzuna_max_keywords_per_run's docstring in config.py for why),
+    while still covering every keyword over time rather than always
+    querying the same first N and starving the rest. Stateless by
+    design -- no new table to track "which keywords were queried
+    last" -- deterministically rotates the starting offset by day of
+    year instead, so running this repeatedly across days works through
+    the full list, and running it repeatedly within the same day is
+    harmless idempotent overlap rather than a bug.
+    """
+    if len(keywords) <= max_per_run:
+        return keywords
+    keywords_sorted = sorted(keywords, key=str.lower)
+    n = len(keywords_sorted)
+    offset = datetime.utcnow().timetuple().tm_yday % n
+    return [keywords_sorted[(offset + i) % n] for i in range(max_per_run)]
 
 
 def run_discovery(db: Session) -> dict:
@@ -37,6 +82,15 @@ def run_discovery(db: Session) -> dict:
     raw_jobs += greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
     raw_jobs += lever.fetch_all(discovery_sources.LEVER_COMPANIES)
     raw_jobs += rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
+
+    # Adzuna: general, all-industries keyword search -- driven by
+    # whatever titles are actually in people's active search profiles
+    # right now, not a fixed list. See _collect_active_search_titles()
+    # and _select_keyword_rotation() above for why. No-ops cleanly if
+    # ADZUNA_APP_ID/ADZUNA_APP_KEY aren't configured (see adzuna.py).
+    search_titles = _collect_active_search_titles(db)
+    keywords_this_run = _select_keyword_rotation(search_titles, settings.adzuna_max_keywords_per_run)
+    raw_jobs += adzuna.fetch_by_keywords(keywords_this_run)
 
     if not raw_jobs:
         return {"discovered": 0, "new": 0}
