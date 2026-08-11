@@ -63,6 +63,22 @@
     return Boolean(applyEl) && bodyTextLength > 1500;
   }
 
+  function findApplicationGateButton() {
+    // Distinct from the narrow APPLY_PATTERN above (which is tuned to
+    // avoid false-positiving on "Apply filters"/"Apply coupon" for
+    // page-type DETECTION). This one is specifically for pointing a
+    // person at their next click when autofill found zero fields --
+    // Workday-style ATS sites commonly show a landing screen ("Start
+    // Your Application", "Start Application", "Continue") before any
+    // real form field exists at all, seen live more than once tonight.
+    // A bit broader is fine here since a false match just offers an
+    // extra button to click, not a change in what gets scored/filled.
+    const GATE_PATTERN = /^(start (your )?application|start now|continue|apply now|begin)$/i;
+    return Array.from(document.querySelectorAll("a, button")).find((el) =>
+      GATE_PATTERN.test((el.textContent || "").trim())
+    ) || null;
+  }
+
   function scrapeJobInfo() {
     const h1 = document.querySelector("h1");
     const title = (h1?.textContent || document.title || "").trim().slice(0, 300);
@@ -264,7 +280,7 @@
     .panel {
       all: initial;
       font-family: -apple-system, 'Inter', sans-serif;
-      width: 300px;
+      width: 360px;
       background: #FFFFFF;
       border: 1px solid #E2E5EA;
       border-radius: 12px;
@@ -460,9 +476,27 @@
         return;
       }
       const filled = runAutofill(result.candidate);
-      slot.innerHTML = filled.length
-        ? `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`
-        : `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
+      if (filled.length) {
+        slot.innerHTML = `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`;
+      } else {
+        const gateBtn = findApplicationGateButton();
+        if (gateBtn) {
+          slot.innerHTML = `
+            <p class="filled-list">This looks like a landing page, not the application form yet.</p>
+            <button class="action secondary" id="riseply-gate-btn" style="margin-top:6px;">Go to the application →</button>
+          `;
+          root.getElementById("riseply-gate-btn").addEventListener("click", () => {
+            // Human-initiated either way: the person clicked THIS
+            // button first, deliberately, to reach the real form --
+            // this just saves them hunting for the page's own button
+            // rather than silently clicking anything on their behalf
+            // without them choosing to.
+            gateBtn.click();
+          });
+        } else {
+          slot.innerHTML = `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
+        }
+      }
 
       renderUnansweredQuestions(root, scrapeJobInfo()); // fresh scrape -- see the Score button's handler for why
     });
