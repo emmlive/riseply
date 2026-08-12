@@ -21,12 +21,20 @@ export default function OverviewPage() {
 
   async function load() {
     try {
-      const [u, apps, r, me, profiles] = await Promise.all([
+      const [u, apps, r, me, profiles, persistedNearMisses] = await Promise.all([
         api<Usage>("/usage"),
         api<Application[]>("/applications?status=pending_approval"),
         api<RiseIndexMe>("/rise-index/me"),
         api<User>("/me"),
         api<SearchProfile[]>("/profiles"),
+        // Loads whatever near-misses were persisted from the LAST
+        // "Find new matches" run -- without this, a page refresh would
+        // show an empty "Closest this run" card even though a real
+        // record of it exists now (see models.NearMissResult). Only
+        // used to seed initial state; a fresh POST /pipeline/match
+        // click still updates nearMisses directly via its own response
+        // in runPipeline() below, same as before.
+        api<NearMiss[]>("/pipeline/near-misses"),
       ]);
       setUsage(u);
       setPending(apps);
@@ -34,6 +42,7 @@ export default function OverviewPage() {
       setHasResume(!!me.resume_text.trim());
       setProfileCount(profiles.length);
       setUserName((me.full_name || "").split(" ")[0]);
+      setNearMisses(persistedNearMisses);
     } catch {
       // handled globally by api() redirecting to /login on 401
     }
