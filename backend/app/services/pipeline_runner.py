@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
-from app.services.sources import greenhouse, lever, rss_boards, adzuna
+from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok
 from app.services import discovery_sources
 from app.config import settings
 
@@ -113,9 +113,19 @@ def run_discovery(db: Session) -> dict:
     gh_jobs = greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
     lever_jobs = lever.fetch_all(discovery_sources.LEVER_COMPANIES)
     rss_jobs = rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
+    # RemoteOK: free, no-auth, general-purpose public JSON API -- despite
+    # the name recognition being programming-heavy, lists roles across
+    # many functions (design, support, sales, marketing, PM, etc), so
+    # this is a genuine additional job bank rather than a niche source.
+    # See remoteok.py's module docstring for the important caveat that
+    # its exact field shape couldn't be verified with a live fetch from
+    # the build environment -- its diagnostic logging is deliberately
+    # thorough for exactly that reason.
+    remoteok_jobs = remoteok.fetch_jobs()
     raw_jobs += gh_jobs
     raw_jobs += lever_jobs
     raw_jobs += rss_jobs
+    raw_jobs += remoteok_jobs
 
     # Adzuna: general, all-industries keyword search -- driven by
     # whatever titles are actually in people's active search profiles
@@ -153,7 +163,7 @@ def run_discovery(db: Session) -> dict:
     raw_jobs += adzuna_location_jobs
 
     print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
-          f"rss: {len(rss_jobs)}, adzuna (keyword): {len(adzuna_jobs)}, "
+          f"rss: {len(rss_jobs)}, remoteok: {len(remoteok_jobs)}, adzuna (keyword): {len(adzuna_jobs)}, "
           f"adzuna (location-paired): {len(adzuna_location_jobs)}, total: {len(raw_jobs)}")
 
     if not raw_jobs:
