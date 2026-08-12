@@ -352,6 +352,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 # but here's what came closest" rather than a cold empty
                 # state that looks like the tool didn't do anything.
                 near_miss_candidates.append((best["score"], {
+                    "job_id": job_row.id,
                     "title": job_row.title, "company": job_row.company, "url": job_row.url,
                     "score": best["score"], "reason": best["reason"],
                     "matched_profile": best["profile_name"],
@@ -484,6 +485,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 continue  # excluded on company even with location ignored
 
             near_miss_candidates.append((best["score"], {
+                "job_id": job_row.id,
                 "title": job_row.title, "company": job_row.company, "url": job_row.url,
                 "score": best["score"], "reason": best["reason"],
                 "matched_profile": best["profile_name"],
@@ -498,6 +500,23 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # if there are genuine matches to review, a "here's what almost
     # worked" list would just be noise.
     near_misses = [c[1] for c in near_miss_candidates] if not queued else []
+
+    # Persist this run's near-misses so they survive a page refresh
+    # (see models.NearMissResult's docstring) -- previously these only
+    # lived in frontend React state, wiped the instant the page
+    # reloaded, unlike a real Application from the same run which
+    # already persists correctly. Always replaces every prior row for
+    # this user, even down to zero -- an empty near-miss list (a real
+    # match was found, or genuinely nothing came close) is itself the
+    # correct current state to show, not something to leave stale.
+    db.query(models.NearMissResult).filter_by(user_id=user.id).delete()
+    for nm in near_misses:
+        db.add(models.NearMissResult(
+            user_id=user.id, job_id=nm["job_id"], score=nm["score"],
+            reason=nm["reason"], matched_profile=nm["matched_profile"],
+            location_mismatch=nm.get("location_mismatch", False),
+        ))
+    db.commit()
 
     rise_index.award_points(db, user, "run_search", "Ran a job search")
     return {

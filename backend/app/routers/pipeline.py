@@ -45,6 +45,32 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     }
 
 
+@router.get("/pipeline/near-misses", response_model=list[schemas.NearMissOut])
+def get_near_misses(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The current user's persisted near-misses (see models.NearMissResult)
+    -- lets the dashboard show 'what came closest last time' on a fresh
+    page load, not only right after a POST /pipeline/match response.
+    Empty list is a valid, correct answer (no run yet, or the last run
+    found a real match / genuinely nothing close), not an error case.
+    """
+    rows = db.query(models.NearMissResult, models.Job).join(
+        models.Job, models.NearMissResult.job_id == models.Job.id
+    ).filter(models.NearMissResult.user_id == user.id).order_by(
+        models.NearMissResult.score.desc()
+    ).all()
+
+    return [
+        schemas.NearMissOut(
+            title=job.title, company=job.company, url=job.url,
+            score=nm.score, reason=nm.reason, matched_profile=nm.matched_profile,
+            salary_min=job.salary_min, salary_max=job.salary_max,
+            salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
+            location_mismatch=bool(nm.location_mismatch),
+        )
+        for nm, job in rows
+    ]
+
+
 # --- Applications list + approve/reject ---
 
 def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:

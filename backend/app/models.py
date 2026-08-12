@@ -656,6 +656,45 @@ class ScoredJob(Base):
     scored_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class NearMissResult(Base):
+    """The 'Closest this run' near-misses from the LAST run that didn't
+    produce a real match -- a snapshot of 'what came closest last
+    time', not a growing history. All existing rows for a user get
+    replaced every time run_matching_for_user() computes a fresh
+    near-miss list (see its use in pipeline_runner.py).
+
+    Before this model existed, near-misses only ever lived in the
+    frontend's React state, populated directly from the one-time
+    POST /pipeline/match response -- an ordinary page refresh silently
+    erased them, even though a real Application from that same run
+    would have survived (because Applications DO persist to the
+    database). This closes that gap the same way: mirrors
+    Application's shape (job_id FK + a score/reason/matched_profile
+    snapshot, with title/company/url/salary fetched via the Job
+    relationship at display time) rather than duplicating those
+    fields here.
+    """
+    __tablename__ = "near_miss_results"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+
+    score = Column(Integer, default=0)
+    reason = Column(Text, default="")
+    matched_profile = Column(String, default="")
+    # True when this result only surfaced via run_matching_for_user's
+    # location-fallback pass (see matcher.best_profile_match's
+    # ignore_location option) -- lets the frontend keep showing the
+    # same "Outside your preferred location" label after a page
+    # refresh that it showed in the original POST response.
+    location_mismatch = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    job = relationship("Job")
+
+
 class FailureLog(Base):
     """Logged whenever a metered Claude API call fails (i.e. whenever
     usage.decrement() is called to refund a failed attempt). This is a
