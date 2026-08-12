@@ -141,6 +141,8 @@ export interface Application {
   salary_max: number | null;
   salary_currency: string;
   salary_is_predicted: boolean;
+  is_archived: boolean;
+  archived_at: string | null;
 }
 
 // Shared by both the Overview near-misses list and the Applications

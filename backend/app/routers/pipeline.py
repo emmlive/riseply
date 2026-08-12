@@ -65,18 +65,30 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         has_tailored_resume_data=bool(app.tailored_resume_data),
         salary_min=job.salary_min, salary_max=job.salary_max,
         salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
+        is_archived=bool(app.is_archived), archived_at=app.archived_at,
     )
 
 
 @router.get("/applications", response_model=list[schemas.ApplicationOut])
 def list_applications(
     status: str | None = None,
+    archived: bool = False,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
+    """archived=False (the default) excludes archived applications --
+    every existing status tab (All/Awaiting review/Approved/etc) keeps
+    working exactly as before with zero frontend changes required,
+    since archiving something now makes it disappear from all of them
+    automatically. archived=True is the inverse -- shows ONLY archived
+    applications, for a dedicated Archived view.
+    """
     q = db.query(models.Application, models.Job).join(
         models.Job, models.Application.job_id == models.Job.id
-    ).filter(models.Application.user_id == user.id)
+    ).filter(
+        models.Application.user_id == user.id,
+        models.Application.is_archived == archived,
+    )
     if status:
         q = q.filter(models.Application.status == status)
     q = q.order_by(models.Application.match_score.desc())
@@ -197,6 +209,39 @@ def reject_application(
     db.commit()
     rise_index.award_points(db, user, "review_match", "Reviewed a match")
     return {"status": "rejected"}
+
+
+# --- Archivable pattern (request-handling half -- see models.Application's
+# is_archived/archived_at columns for the storage half). Any status --
+# rejected, accepted, or still pending -- can be archived; this is
+# purely "get this out of my default view," independent of and does
+# not change the underlying status. Copy this pair verbatim onto any
+# future model that adopts the same pattern. ---
+
+@router.post("/applications/{application_id}/archive")
+def archive_application(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.is_archived = True
+    app_row.archived_at = datetime.utcnow()
+    db.commit()
+    return {"status": "archived"}
+
+
+@router.post("/applications/{application_id}/unarchive")
+def unarchive_application(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.is_archived = False
+    app_row.archived_at = None
+    db.commit()
+    return {"status": "unarchived"}
 
 
 @router.post("/applications/{application_id}/mark-submitted")
