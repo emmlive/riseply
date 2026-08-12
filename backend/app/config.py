@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     # exists (narrow-location profiles were under-served by a purely
     # national keyword search).
     adzuna_max_location_pairs_per_run: int = 10
+    # How many result pages to pull per keyword (50 results/page).
+    # Directly multiplies call volume against the monthly quota --
+    # (keywords_per_run + location_pairs_per_run) * pages_per_keyword
+    # = calls per discovery run. Was hardcoded at 1; raised to 2 by
+    # default for meaningfully wider coverage per keyword/location
+    # pair, at roughly double the call cost per run. Tune down if
+    # actual monthly usage is running close to Adzuna's ~1,000
+    # call/month free-tier limit.
+    adzuna_pages_per_keyword: int = 2
 
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other

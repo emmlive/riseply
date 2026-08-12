@@ -32,17 +32,13 @@ from app.config import settings
 API_URL = "https://api.adzuna.com/v1/api/jobs/us/search/{page}"
 
 RESULTS_PER_PAGE = 50
-# How many pages to pull per keyword per run. Kept small on purpose --
-# multiplies directly against the monthly call budget (keywords x pages),
-# and the goal here is broad keyword COVERAGE across many different
-# search profiles, not exhaustive depth on any single one.
-PAGES_PER_KEYWORD = 1
 
 
 def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
-    """One keyword, up to PAGES_PER_KEYWORD pages. Returns normalized job
-    dicts in the same shape run_discovery() already expects from every
-    other source (see greenhouse.py for the reference shape)."""
+    """One keyword, up to settings.adzuna_pages_per_keyword pages. Returns
+    normalized job dicts in the same shape run_discovery() already
+    expects from every other source (see greenhouse.py for the
+    reference shape)."""
     if not settings.adzuna_app_id or not settings.adzuna_app_key:
         # Deliberately loud (not just a silent []) -- a credentials-unset
         # skip and a "made the call, got zero results" outcome look
@@ -54,7 +50,7 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
         return []
 
     jobs = []
-    for page in range(1, PAGES_PER_KEYWORD + 1):
+    for page in range(1, settings.adzuna_pages_per_keyword + 1):
         params = {
             "app_id": settings.adzuna_app_id,
             "app_key": settings.adzuna_app_key,
