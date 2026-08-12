@@ -119,9 +119,14 @@ Respond ONLY with JSON, no other text, in this exact shape:
     return {"score": int(result["score"]), "reason": result.get("reason", "")}
 
 
-def best_profile_match(job: dict, resume_text: str, profiles: list[dict]) -> dict:
+def best_profile_match(job: dict, resume_text: str, profiles: list[dict], ignore_location: bool = False) -> dict:
     """Scores one job against every active search profile, returns the best:
     {"profile_name": str, "score": int, "reason": str, "meets_threshold": bool}
+
+    ignore_location=True is used only by run_matching_for_user()'s
+    location-fallback pass (see its docstring) -- exclude_companies
+    still applies even then, since that's an explicit "never show me
+    this company" instruction, not a soft preference like location.
     """
     best = None
     for profile in profiles:
@@ -129,7 +134,7 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict]) -> dic
             continue
         if job["company"].lower() in {c.lower() for c in profile.get("exclude_companies", [])}:
             continue
-        if not _location_matches(profile.get("locations", []), job.get("location", ""), job.get("title", "")):
+        if not ignore_location and not _location_matches(profile.get("locations", []), job.get("location", ""), job.get("title", "")):
             continue
         result = score_job(resume_text, job, profile)
         candidate = {
