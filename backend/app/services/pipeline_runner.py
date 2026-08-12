@@ -20,6 +20,37 @@ from app.services import discovery_sources
 from app.config import settings
 
 
+def _collect_active_location_hints(db: Session) -> list[str]:
+    """Every distinct, non-remote location string across every user's
+    ACTIVE search profiles -- the location-equivalent of
+    _collect_active_search_titles() above, used to pair keywords with
+    real place names for Adzuna's `where` filter (see
+    fetch_by_keyword_location_pairs()). "Remote" and its synonyms are
+    deliberately excluded here -- Adzuna's `where` filter expects an
+    actual place name to search near, and passing the literal word
+    "remote" to it wouldn't mean anything to that API (the broad,
+    keyword-only queries in run_discovery already surface remote
+    postings fine on their own, since remote roles show up regardless
+    of what `where` value -- or the absence of one -- is used).
+    """
+    rows = db.query(models.SearchProfile.locations).filter_by(active=True).all()
+    seen_lower = set()
+    locations = []
+    for (locations_json,) in rows:
+        try:
+            for loc in json.loads(locations_json or "[]"):
+                loc = (loc or "").strip()
+                if not loc or loc.lower() in seen_lower:
+                    continue
+                if loc.lower() in matcher._REMOTE_SYNONYMS:
+                    continue
+                seen_lower.add(loc.lower())
+                locations.append(loc)
+        except (json.JSONDecodeError, TypeError):
+            continue  # a malformed row shouldn't take down discovery for everyone else
+    return locations
+
+
 def _collect_active_search_titles(db: Session) -> list[str]:
     """Every distinct job title across every user's ACTIVE search
     profiles, shared-pool-wide (not per-user -- discovery itself isn't
@@ -98,8 +129,32 @@ def run_discovery(db: Session) -> dict:
     adzuna_jobs = adzuna.fetch_by_keywords(keywords_this_run)
     raw_jobs += adzuna_jobs
 
+    # Location-paired queries: additive to the broad keyword-only batch
+    # above, not a replacement. A purely national "what=Compliance
+    # Analyst" search can under-serve a profile targeting one specific
+    # city -- pairing keywords with real place names via Adzuna's
+    # `where` filter directly boosts how much of what gets discovered
+    # actually fits a narrow-location profile, rather than relying on
+    # the broad search to happen to surface enough local results on its
+    # own. Location hints exclude "Remote" (see
+    # _collect_active_location_hints()'s docstring for why) -- broad
+    # queries already cover remote postings fine regardless of `where`.
+    location_hints = _collect_active_location_hints(db)
+    location_pairs_this_run = []
+    if location_hints and keywords_this_run:
+        max_pairs = settings.adzuna_max_location_pairs_per_run
+        for i in range(min(max_pairs, len(keywords_this_run))):
+            kw = keywords_this_run[i]
+            loc = location_hints[i % len(location_hints)]  # round-robin through available locations
+            location_pairs_this_run.append((kw, loc))
+    print(f"[discovery] {len(location_hints)} distinct active search-profile location hint(s) total, "
+          f"{len(location_pairs_this_run)} keyword/location pair(s) selected for Adzuna this run")
+    adzuna_location_jobs = adzuna.fetch_by_keyword_location_pairs(location_pairs_this_run)
+    raw_jobs += adzuna_location_jobs
+
     print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
-          f"rss: {len(rss_jobs)}, adzuna: {len(adzuna_jobs)}, total: {len(raw_jobs)}")
+          f"rss: {len(rss_jobs)}, adzuna (keyword): {len(adzuna_jobs)}, "
+          f"adzuna (location-paired): {len(adzuna_location_jobs)}, total: {len(raw_jobs)}")
 
     if not raw_jobs:
         return {"discovered": 0, "new": 0}
@@ -125,6 +180,24 @@ def run_discovery(db: Session) -> dict:
             new_count += 1
     db.commit()
     return {"discovered": len(raw_jobs), "new": new_count}
+
+
+def _all_profiles_exclude_company(profiles: list[dict], company: str) -> bool:
+    """True only if EVERY active profile explicitly excludes this
+    company -- used to decide whether a job with profile_name=None
+    should be marked ScoredJob permanently (see its use above). A job
+    skipped by some profiles on company and others on location is
+    treated as recoverable (returns False here) rather than durable --
+    the safe default, since the only cost of under-marking is one
+    wasted (cheap, no-LLM-call) iteration on a future run, while
+    over-marking permanently hides a job that a profile edit should
+    have been able to surface again.
+    """
+    company_lower = (company or "").lower()
+    active = [p for p in profiles if p.get("active", True)]
+    if not active:
+        return False
+    return all(company_lower in {c.lower() for c in p.get("exclude_companies", [])} for p in active)
 
 
 def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None = None) -> dict:
@@ -229,19 +302,29 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             usage.decrement(db, user.id, "match", 1)
             continue
 
-        # Mark this job as evaluated for this user regardless of outcome,
-        # so a future run doesn't re-score (and re-bill quota for) it
-        # again just because it fell short this time. ON CONFLICT DO
-        # NOTHING guards the same race the discovery insert guards
+        # Mark this job as evaluated for this user regardless of scoring
+        # outcome (a real LLM score, meeting threshold or not) -- EXCEPT
+        # when profile_name is None purely because every active profile
+        # hard-skipped it on LOCATION. That skip is comparatively likely
+        # to change (a profile's locations get edited far more often
+        # than exclude_companies does), and marking it scored here would
+        # permanently hide it from ever being reconsidered -- including
+        # from the location-fallback pass a few lines below, which
+        # needs exactly these jobs to still be "unseen" when the
+        # primary pass found nothing to show. A company-excluded job
+        # (profile_name also None, but for that reason) still gets
+        # marked -- that exclusion IS meant to be durable. ON CONFLICT
+        # DO NOTHING guards the same race the discovery insert guards
         # against -- two near-simultaneous runs for the same user
         # shouldn't crash into each other's insert.
-        insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
-        db.execute(
-            insert_fn(models.ScoredJob)
-            .values(user_id=user.id, job_id=job_row.id)
-            .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
-        )
-        db.commit()
+        if best["profile_name"] is not None or _all_profiles_exclude_company(profiles, job_row.company):
+            insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+            db.execute(
+                insert_fn(models.ScoredJob)
+                .values(user_id=user.id, job_id=job_row.id)
+                .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
+            )
+            db.commit()
 
         if not best["meets_threshold"]:
             # A None profile_name means best_profile_match hard-skipped
@@ -264,6 +347,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                     "matched_profile": best["profile_name"],
                     "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
                     "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
+                    "location_mismatch": False,
                 }))
                 near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
                 near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
@@ -330,6 +414,75 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 except Exception as e:
                     print(f"[pipeline] New match SMS failed for user {user.id}, application {application.id}: {e}")
         queued.append(application.id)
+
+    # Location fallback: the hard location filter in best_profile_match
+    # (see matcher.py) is deliberately strict -- great when there's
+    # enough location-compatible inventory, but for a narrow profile
+    # (e.g. only "Chicago", no Remote) on a run where the discovered
+    # pool just doesn't have much there yet, strict filtering alone
+    # could mean an empty or near-empty "Closest this run" -- which
+    # reads as "this tool found nothing for me" and is a worse
+    # experience than a clearly-labeled imperfect result. Only runs
+    # when it's actually needed: nothing real was found this run AND
+    # the near-miss list has open slots. Never auto-queues an
+    # Application from this pass, even for a job that would otherwise
+    # meet the score threshold -- these jobs violate an explicit
+    # stated preference, so surfacing them for the person to decide on
+    # is appropriate; silently treating them as a real match is not.
+    FALLBACK_LOCATION_JOB_CAP = 10
+    if not queued and len(near_miss_candidates) < NEAR_MISS_CAP and not limit_hit:
+        already_scored_now_subq = db.query(models.ScoredJob.job_id).filter(
+            models.ScoredJob.user_id == user.id
+        ).subquery()
+        fallback_jobs = db.query(models.Job).filter(
+            not_(models.Job.id.in_(already_applied_subq)),
+            not_(models.Job.id.in_(already_scored_now_subq)),
+        ).order_by(models.Job.discovered_at.desc()).limit(FALLBACK_LOCATION_JOB_CAP).all()
+
+        for job_row in fallback_jobs:
+            if len(near_miss_candidates) >= NEAR_MISS_CAP:
+                break
+            try:
+                usage.check_and_increment(db, user, "match", 1)
+            except HTTPException:
+                limit_hit = True
+                break
+
+            job = {
+                "title": job_row.title, "company": job_row.company,
+                "location": job_row.location, "url": job_row.url,
+                "description": job_row.description,
+                "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+                "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
+            }
+            try:
+                best = matcher.best_profile_match(job, user.resume_text, profiles, ignore_location=True)
+            except Exception as e:
+                print(f"[matcher] location-fallback scoring failed for job {job_row.id} ({job_row.company} — {job_row.title}): {e}")
+                usage.decrement(db, user.id, "match", 1)
+                continue
+
+            insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+            db.execute(
+                insert_fn(models.ScoredJob)
+                .values(user_id=user.id, job_id=job_row.id)
+                .on_conflict_do_nothing(index_elements=["user_id", "job_id"])
+            )
+            db.commit()
+
+            if best["profile_name"] is None:
+                continue  # excluded on company even with location ignored
+
+            near_miss_candidates.append((best["score"], {
+                "title": job_row.title, "company": job_row.company, "url": job_row.url,
+                "score": best["score"], "reason": best["reason"],
+                "matched_profile": best["profile_name"],
+                "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+                "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
+                "location_mismatch": True,
+            }))
+            near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
+            near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
 
     # Near-misses are only worth surfacing when nothing real was found --
     # if there are genuine matches to review, a "here's what almost

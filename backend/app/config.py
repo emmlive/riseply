@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # how the remainder rotate in on subsequent runs instead of being
     # dropped entirely.
     adzuna_max_keywords_per_run: int = 15
+    # Bounds the SEPARATE location-paired query batch (title x location,
+    # via Adzuna's `where` filter) -- additive to the broad keyword-only
+    # batch above, not a replacement for it. Kept smaller since it's
+    # extra call volume on top of the existing budget; see
+    # pipeline_runner._collect_active_location_hints() for why this
+    # exists (narrow-location profiles were under-served by a purely
+    # national keyword search).
+    adzuna_max_location_pairs_per_run: int = 10
 
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other

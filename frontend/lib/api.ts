@@ -321,6 +321,7 @@ export interface NearMiss {
   salary_max: number | null;
   salary_currency: string;
   salary_is_predicted: boolean;
+  location_mismatch: boolean;
 }
 
 // --- Admin ---

@@ -128,6 +128,34 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
     return jobs
 
 
+def fetch_by_keyword_location_pairs(pairs: list[tuple[str, str]]) -> list[dict]:
+    """Same shape as fetch_by_keywords, but each (keyword, location) pair
+    queries Adzuna's `where` filter directly -- meaningfully boosts the
+    odds of finding postings for a narrow, specific location (e.g. a
+    profile that only wants "Chicago", no Remote) instead of relying on
+    a broad national keyword search to happen to surface enough of
+    them. See pipeline_runner._collect_active_location_hints() for how
+    the location half of each pair gets chosen.
+    """
+    if not settings.adzuna_app_id or not settings.adzuna_app_key:
+        print("[adzuna] skipped (location-paired) -- ADZUNA_APP_ID/ADZUNA_APP_KEY not set")
+        return []
+
+    if not pairs:
+        print("[adzuna] skipped (location-paired) -- no keyword/location pairs to search")
+        return []
+
+    print(f"[adzuna] querying {len(pairs)} location-paired keyword(s): {pairs}")
+    all_jobs = []
+    for kw, loc in pairs:
+        try:
+            all_jobs.extend(fetch_jobs_for_keyword(kw, location=loc))
+        except Exception as e:
+            print(f"[adzuna] unexpected error for pair ({kw!r}, {loc!r}): {e}")
+    print(f"[adzuna] done (location-paired) -- {len(all_jobs)} total result(s) across {len(pairs)} pair(s)")
+    return all_jobs
+
+
 def fetch_by_keywords(keywords: list[str]) -> list[dict]:
     """Fetches for several keywords and flattens the results. Per-keyword
     failures (a bad query, a transient 5xx) don't abort the rest -- one

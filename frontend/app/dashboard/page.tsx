@@ -141,6 +141,11 @@ export default function OverviewPage() {
             <div key={i} className="points-event-row">
               <div>
                 <div style={{ fontWeight: 600 }}>{nm.title} — {nm.company}</div>
+                {nm.location_mismatch && (
+                  <div className="hint" style={{ color: "var(--warning, #C97A2B)", fontWeight: 600 }}>
+                    Outside your preferred location
+                  </div>
+                )}
                 <div className="hint">{nm.reason}</div>
                 {formatSalary(nm) && <div className="hint">{formatSalary(nm)}</div>}
               </div>
