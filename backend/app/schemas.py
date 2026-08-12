@@ -131,6 +131,8 @@ class ApplicationOut(BaseModel):
     salary_max: Optional[int] = None
     salary_currency: str = ""
     salary_is_predicted: bool = False
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -217,6 +217,19 @@ class Application(Base):
     tailoring_rationale = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
+    # --- Archivable pattern ---
+    # Standard convention for "let a user hide something from their
+    # default view without deleting it": is_archived + archived_at,
+    # exactly these two column names/types. Application is the first
+    # model to use it, but the pattern (not just these two columns) is
+    # meant to be copied verbatim onto any future list that grows
+    # unbounded and needs the same "clean up my view, don't lose my
+    # data" behavior -- see the archive/unarchive endpoints in
+    # routers/pipeline.py for the matching request-handling half of
+    # this convention.
+    is_archived = Column(Boolean, default=False, server_default="false")
+    archived_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     status_updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     submitted_at = Column(DateTime, nullable=True)
