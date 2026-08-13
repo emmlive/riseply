@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -96,6 +96,7 @@ export interface User {
   subscription_status: string;
   is_admin: boolean;
   admin_role: string;
+  bookmarklet_token: string;
 }
 
 export interface SavedResume {
