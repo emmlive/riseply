@@ -58,6 +58,7 @@ class UserOut(BaseModel):
     subscription_status: str
     is_admin: bool
     admin_role: str
+    bookmarklet_token: str = ""
 
     class Config:
         from_attributes = True

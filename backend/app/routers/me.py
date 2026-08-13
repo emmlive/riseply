@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -12,13 +14,33 @@ router = APIRouter(prefix="/me", tags=["me"])
 MAX_RESUME_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB -- generous for a resume, guards against abuse
 
 
-def _to_out(user: models.User) -> schemas.UserOut:
+def _ensure_bookmarklet_token(user: models.User, db: Session) -> str:
+    """Lazily generates and persists a bookmarklet_token on first
+    access, rather than at signup -- most users will never use the
+    bookmarklet feature, so there's no reason to write a token for
+    every account up front. Same secrets.token_urlsafe(32) pattern
+    already used for password-reset tokens elsewhere in this codebase.
+    """
+    if not user.bookmarklet_token:
+        user.bookmarklet_token = secrets.token_urlsafe(32)
+        db.commit()
+        db.refresh(user)
+    return user.bookmarklet_token
+
+
+def _to_out(user: models.User, db: Session | None = None) -> schemas.UserOut:
     """Coalesces any unexpected NULLs to sensible defaults before
     serialization. Every real signup goes through the ORM, which applies
     each column's default -- so this shouldn't fire in practice -- but
     it's cheap insurance against a response crash if a row was ever
     touched outside the normal app flow (a manual DB fix, a future
-    migration, etc.)."""
+    migration, etc.).
+
+    db is optional (None only for callers that don't need
+    bookmarklet_token populated, e.g. contexts with no session handy) --
+    passing it enables the lazy-generation path in
+    _ensure_bookmarklet_token above.
+    """
     return schemas.UserOut(
         id=user.id,
         email=user.email,
@@ -38,12 +60,13 @@ def _to_out(user: models.User) -> schemas.UserOut:
         subscription_status=user.subscription_status or "",
         is_admin=bool(user.is_admin),
         admin_role=user.admin_role or "",
+        bookmarklet_token=(_ensure_bookmarklet_token(user, db) if db is not None else (user.bookmarklet_token or "")),
     )
 
 
 @router.get("", response_model=schemas.UserOut)
-def get_me(user: models.User = Depends(get_current_user)):
-    return _to_out(user)
+def get_me(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _to_out(user, db)
 
 
 @router.patch("", response_model=schemas.UserOut)
@@ -84,7 +107,7 @@ def update_me(
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
-    return _to_out(user)
+    return _to_out(user, db)
 
 
 @router.put("/resume", response_model=schemas.UserOut)
@@ -96,7 +119,7 @@ def update_resume(
     user.resume_text = payload.resume_text
     db.commit()
     db.refresh(user)
-    return _to_out(user)
+    return _to_out(user, db)
 
 
 @router.post("/resume/parse", response_model=schemas.ResumeParseOut)
@@ -115,3 +138,20 @@ async def parse_resume_file(
 
     text = resume_parser.extract_resume_text(file.filename or "", contents)
     return schemas.ResumeParseOut(resume_text=text)
+
+
+@router.post("/regenerate-bookmarklet-token", response_model=schemas.UserOut)
+def regenerate_bookmarklet_token(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Invalidates any previously-issued bookmarklet link -- the old
+    token stops resolving to anything (see GET /bookmarklet.js), so a
+    link that's been exposed somewhere it shouldn't (shared by
+    accident, saved on a public machine, etc) can be cut off without
+    needing to change a password or any other credential.
+    """
+    user.bookmarklet_token = secrets.token_urlsafe(32)
+    db.commit()
+    db.refresh(user)
+    return _to_out(user, db)

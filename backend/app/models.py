@@ -27,6 +27,22 @@ class User(Base):
     linkedin_url = Column(String, default="")
     portfolio_url = Column(String, default="")
 
+    # Durable (not single-use, not short-lived like PasswordResetToken)
+    # token authorizing GET /bookmarklet.js -- that endpoint has to be
+    # publicly fetchable via a plain <script src="..."> tag (which can't
+    # attach an Authorization header the way a normal API call can), so
+    # this token in the URL itself is the only practical way to identify
+    # whose data to serve. Generated lazily on first request rather than
+    # at signup, same pattern already used elsewhere in this codebase.
+    # Regenerable (see POST /me/regenerate-bookmarklet-token) to
+    # invalidate a previously-issued bookmarklet link if it's ever
+    # exposed somewhere it shouldn't be -- not a security downgrade from
+    # the old fully-inline bookmarklet design (which baked the exact
+    # same profile fields into a plaintext, permanently-unrevocable
+    # URL); if anything this is strictly more revocable than what it
+    # replaces.
+    bookmarklet_token = Column(String, nullable=True, unique=True, index=True)
+
     resume_text = Column(Text, default="")
 
     notify_email = Column(String, default="")  # defaults to account email if blank
