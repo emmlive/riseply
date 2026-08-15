@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
-from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok
+from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow
 from app.services import discovery_sources
 from app.config import settings
 
@@ -122,10 +122,18 @@ def run_discovery(db: Session) -> dict:
     # the build environment -- its diagnostic logging is deliberately
     # thorough for exactly that reason.
     remoteok_jobs = remoteok.fetch_jobs()
+    # Arbeitnow: free, no-auth, general-purpose public JSON API pulling
+    # from real ATS platforms -- primarily Europe-based, but includes
+    # remote postings the existing location matcher already knows how
+    # to surface for a Remote-seeking profile regardless of employer
+    # country. See arbeitnow.py's module docstring for the same
+    # unverified-live-schema caveat remoteok.py has.
+    arbeitnow_jobs = arbeitnow.fetch_jobs()
     raw_jobs += gh_jobs
     raw_jobs += lever_jobs
     raw_jobs += rss_jobs
     raw_jobs += remoteok_jobs
+    raw_jobs += arbeitnow_jobs
 
     # Adzuna: general, all-industries keyword search -- driven by
     # whatever titles are actually in people's active search profiles
@@ -163,8 +171,9 @@ def run_discovery(db: Session) -> dict:
     raw_jobs += adzuna_location_jobs
 
     print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
-          f"rss: {len(rss_jobs)}, remoteok: {len(remoteok_jobs)}, adzuna (keyword): {len(adzuna_jobs)}, "
-          f"adzuna (location-paired): {len(adzuna_location_jobs)}, total: {len(raw_jobs)}")
+          f"rss: {len(rss_jobs)}, remoteok: {len(remoteok_jobs)}, arbeitnow: {len(arbeitnow_jobs)}, "
+          f"adzuna (keyword): {len(adzuna_jobs)}, adzuna (location-paired): {len(adzuna_location_jobs)}, "
+          f"total: {len(raw_jobs)}")
 
     if not raw_jobs:
         return {"discovered": 0, "new": 0}
