@@ -121,7 +121,22 @@ class Settings(BaseSettings):
     # time regardless of the user's monthly limit or pool size. The
     # scheduled batch job isn't capped -- it works through the rest
     # overnight without anyone waiting on it.
-    manual_match_run_job_cap: int = 25
+    #
+    # Tier-differentiated (previously a single shared manual_match_run_
+    # job_cap=25 for everyone) so Pro is a genuinely deeper search per
+    # click, not just more monthly clicks at the same depth -- a felt
+    # reason to upgrade, not just a higher number on a usage meter
+    # nobody's watching in the moment.
+    free_tier_match_run_job_cap: int = 40
+    pro_tier_match_run_job_cap: int = 100
+    # A new user's very first "Find new matches" click (see
+    # models.User.used_welcome_search) scores this many instead of
+    # their tier's normal per-click cap, and doesn't consume any of
+    # the monthly match quota at all -- see routers/pipeline.py. The
+    # goal is a strong first impression, and for a free-tier user, a
+    # real preview of what Pro-depth search feels like.
+    welcome_search_job_cap: int = 100
+
 
     # --- Org Buddy as a Service: hybrid pricing (base plan + overage) ---
     # Real prices live in Stripe (like the individual Pro plan) -- these

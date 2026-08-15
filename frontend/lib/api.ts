@@ -97,6 +97,7 @@ export interface User {
   is_admin: boolean;
   admin_role: string;
   bookmarklet_token: string;
+  used_welcome_search: boolean;
 }
 
 export interface SavedResume {

@@ -59,6 +59,7 @@ class UserOut(BaseModel):
     is_admin: bool
     admin_role: str
     bookmarklet_token: str = ""
+    used_welcome_search: bool = False
 
     class Config:
         from_attributes = True

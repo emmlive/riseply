@@ -210,7 +210,7 @@ def _all_profiles_exclude_company(profiles: list[dict], company: str) -> bool:
     return all(company_lower in {c.lower() for c in p.get("exclude_companies", [])} for p in active)
 
 
-def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None = None) -> dict:
+def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None = None, skip_usage_metering: bool = False) -> dict:
     """Returns {"queued_application_ids": [...], "usage_limit_reached": bool,
     "skipped_reason": str | None}. Never raises for expected "nothing to
     do" cases (no resume, no active profiles) -- those come back as a
@@ -224,11 +224,20 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     up to the user's monthly limit, which for an admin account is
     unbounded), taking minutes with no way for the UI to show real
     progress in between. The interactive endpoint (POST /pipeline/match)
-    passes a small cap so a click returns in a reasonable time; the
+    passes a tier-based cap so a click returns in a reasonable time; the
     scheduled batch job (POST /internal/scheduled-run) passes none, so it
     still works through the full backlog overnight. hit_job_cap in the
     return value tells the caller there's more left uncapped by usage --
     worth surfacing differently from "genuinely out of jobs to score."
+
+    skip_usage_metering=True bypasses usage.check_and_increment entirely
+    for this call -- used for the one-time "welcome search" (see
+    models.User.used_welcome_search) so a brand-new user's first search
+    doesn't eat into their monthly match quota before they've even seen
+    what the product can find. hit_job_cap (from max_jobs truncation) is
+    unrelated and still works normally either way -- that just reflects
+    whether more unseen jobs exist beyond what got scored this run, which
+    is useful information regardless of billing.
     """
     if not user.resume_text.strip():
         return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume", "near_misses": [], "hit_job_cap": False}
@@ -285,11 +294,12 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     limit_hit = False
 
     for job_row in unseen_jobs:
-        try:
-            usage.check_and_increment(db, user, "match", 1)
-        except HTTPException:
-            limit_hit = True
-            break
+        if not skip_usage_metering:
+            try:
+                usage.check_and_increment(db, user, "match", 1)
+            except HTTPException:
+                limit_hit = True
+                break
 
         job = {
             "title": job_row.title, "company": job_row.company,
@@ -453,11 +463,12 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         for job_row in fallback_jobs:
             if len(near_miss_candidates) >= NEAR_MISS_CAP:
                 break
-            try:
-                usage.check_and_increment(db, user, "match", 1)
-            except HTTPException:
-                limit_hit = True
-                break
+            if not skip_usage_metering:
+                try:
+                    usage.check_and_increment(db, user, "match", 1)
+                except HTTPException:
+                    limit_hit = True
+                    break
 
             job = {
                 "title": job_row.title, "company": job_row.company,
