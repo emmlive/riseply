@@ -36,12 +36,32 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=settings.manual_match_run_job_cap)
+    # A brand-new user's very first click gets a deliberately deeper,
+    # unmetered "welcome search" instead of their tier's normal per-click
+    # cap -- see models.User.used_welcome_search and config.py's
+    # welcome_search_job_cap for the reasoning. Scoped to this
+    # interactive endpoint only, not the nightly scheduled job (which is
+    # already uncapped and always metered) -- someone's first real
+    # search realistically happens via this button, not an overnight
+    # cron that ran before they'd used the product at all.
+    is_welcome_search = not user.used_welcome_search
+    if is_welcome_search:
+        max_jobs = settings.welcome_search_job_cap
+    else:
+        max_jobs = settings.pro_tier_match_run_job_cap if usage.is_pro(user) else settings.free_tier_match_run_job_cap
+
+    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=max_jobs, skip_usage_metering=is_welcome_search)
+
+    if is_welcome_search:
+        user.used_welcome_search = True
+        db.commit()
     return {
         "queued_application_ids": result["queued_application_ids"],
         "usage_limit_reached": result["usage_limit_reached"],
         "near_misses": result["near_misses"],
         "hit_job_cap": result["hit_job_cap"],
+        "is_welcome_search": is_welcome_search,
+        "jobs_searched": max_jobs,
     }
 
 

@@ -43,6 +43,18 @@ class User(Base):
     # replaces.
     bookmarklet_token = Column(String, nullable=True, unique=True, index=True)
 
+    # True after this user's very first "Find new matches" click has
+    # run -- see routers/pipeline.py's use of this to grant a one-time,
+    # unmetered "welcome search" that scores far more jobs than a
+    # normal click (settings.welcome_search_job_cap, well above either
+    # tier's regular per-click depth) without touching the monthly
+    # match quota. The goal is a genuinely strong first impression --
+    # someone's very first search should feel comprehensive, not
+    # limited by the same tight per-click cap every subsequent search
+    # gets, and for a free-tier user this is also a real, felt preview
+    # of what Pro's deeper searches are like every time.
+    used_welcome_search = Column(Boolean, default=False, server_default="false")
+
     resume_text = Column(Text, default="")
 
     notify_email = Column(String, default="")  # defaults to account email if blank

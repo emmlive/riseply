@@ -61,6 +61,7 @@ def _to_out(user: models.User, db: Session | None = None) -> schemas.UserOut:
         is_admin=bool(user.is_admin),
         admin_role=user.admin_role or "",
         bookmarklet_token=(_ensure_bookmarklet_token(user, db) if db is not None else (user.bookmarklet_token or "")),
+        used_welcome_search=bool(user.used_welcome_search),
     )
 
 
