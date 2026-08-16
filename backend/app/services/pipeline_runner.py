@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
-from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow
+from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs
 from app.services import discovery_sources
 from app.config import settings
 
@@ -147,6 +147,19 @@ def run_discovery(db: Session) -> dict:
     adzuna_jobs = adzuna.fetch_by_keywords(keywords_this_run)
     raw_jobs += adzuna_jobs
 
+    # USAJobs: US federal job search, keyword-driven off the same
+    # search_titles collected above -- reuses _select_keyword_rotation()
+    # with its own independent cap/rotation state (usajobs_max_keywords_
+    # per_run) rather than sharing Adzuna's exact selected keyword set,
+    # since the two sources have entirely separate rate limits and there's
+    # no reason a run should be limited to the SAME 15 titles for both.
+    # No-ops cleanly if USAJOBS_API_KEY/USAJOBS_EMAIL aren't configured
+    # (see usajobs.py).
+    usajobs_keywords_this_run = _select_keyword_rotation(search_titles, settings.usajobs_max_keywords_per_run)
+    print(f"[discovery] {len(usajobs_keywords_this_run)} selected for USAJobs this run")
+    usajobs_jobs = usajobs.fetch_by_keywords(usajobs_keywords_this_run)
+    raw_jobs += usajobs_jobs
+
     # Location-paired queries: additive to the broad keyword-only batch
     # above, not a replacement. A purely national "what=Compliance
     # Analyst" search can under-serve a profile targeting one specific
@@ -172,7 +185,8 @@ def run_discovery(db: Session) -> dict:
 
     print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
           f"rss: {len(rss_jobs)}, remoteok: {len(remoteok_jobs)}, arbeitnow: {len(arbeitnow_jobs)}, "
-          f"adzuna (keyword): {len(adzuna_jobs)}, adzuna (location-paired): {len(adzuna_location_jobs)}, "
+          f"adzuna (keyword): {len(adzuna_jobs)}, usajobs: {len(usajobs_jobs)}, "
+          f"adzuna (location-paired): {len(adzuna_location_jobs)}, "
           f"total: {len(raw_jobs)}")
 
     if not raw_jobs:
