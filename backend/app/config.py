@@ -66,6 +66,31 @@ class Settings(BaseSettings):
     # call/month free-tier limit.
     adzuna_pages_per_keyword: int = 2
 
+    # --- Job discovery: USAJobs (US federal jobs, keyword search) ---
+    # Empty by default -- same kill-switch pattern as Adzuna above.
+    # Until both are set, sources/usajobs.py no-ops. Free at
+    # https://developer.usajobs.gov/apirequest/ -- register with an
+    # email address and receive an Authorization-Key by return email.
+    # Unlike most APIs, the registered EMAIL itself is required on
+    # every request (as the User-Agent header, not a browser string --
+    # USAJobs' own docs note this inverted convention trips people up)
+    # alongside the key, so both need to be stored, not just the key.
+    usajobs_api_key: str = ""
+    usajobs_email: str = ""
+    # USAJobs doesn't publish an explicit rate limit the way Adzuna
+    # does, but it's rate-limited per User-Agent string regardless --
+    # same bounding pattern as Adzuna's keyword cap so a run with many
+    # active search profiles can't hammer it, and so the remainder
+    # rotate in on subsequent runs (see
+    # pipeline_runner._select_keyword_rotation(), reused here rather
+    # than duplicated).
+    usajobs_max_keywords_per_run: int = 15
+    # USAJobs supports up to 500 results/page (far higher than
+    # Adzuna's 50) -- kept modest here since this is per KEYWORD, and
+    # federal listings for a single title are usually a much smaller,
+    # more specific pool than a general commercial job board's.
+    usajobs_results_per_page: int = 50
+
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other
     # optional integration (Stripe, Twilio, CRON_SECRET). Until
