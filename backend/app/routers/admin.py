@@ -347,6 +347,41 @@ def delete_support_message(
     return {"deleted": True}
 
 
+@router.get("/canned-replies", response_model=list[schemas.CannedReplyOut])
+def list_canned_replies(
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_view("support")),
+):
+    return db.query(models.CannedReply).order_by(models.CannedReply.title).all()
+
+
+@router.post("/canned-replies", response_model=schemas.CannedReplyOut)
+def create_canned_reply(
+    payload: schemas.CannedReplyCreate,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("support")),
+):
+    reply = models.CannedReply(title=payload.title, body=payload.body)
+    db.add(reply)
+    db.commit()
+    db.refresh(reply)
+    return reply
+
+
+@router.delete("/canned-replies/{reply_id}")
+def delete_canned_reply(
+    reply_id: int,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("support")),
+):
+    reply = db.query(models.CannedReply).filter_by(id=reply_id).first()
+    if not reply:
+        raise HTTPException(status_code=404, detail="Canned reply not found.")
+    db.delete(reply)
+    db.commit()
+    return {"deleted": True}
+
+
 # --- Organizations (Org Buddy as a Service / "Enterprise") ---
 
 @router.get("/organizations", response_model=list[schemas.AdminOrganizationOut])

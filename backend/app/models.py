@@ -315,6 +315,20 @@ class SupportMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class CannedReply(Base):
+    """A reusable reply template a support admin can insert into the
+    reply textarea with one click, then edit before sending -- never
+    sent automatically/unedited. Meant to help one person cover more
+    ground on repetitive questions without literally being a bigger
+    team."""
+    __tablename__ = "canned_replies"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class Organization(Base):
     """A company using 'Org Buddy as a Service' -- their own customized
     version of the traditional workplace onboarding-buddy practice,

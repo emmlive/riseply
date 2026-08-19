@@ -480,6 +480,21 @@ class AdminSupportReplyRequest(BaseModel):
     reply: str = Field(min_length=1, max_length=5000)
 
 
+class CannedReplyCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class CannedReplyOut(BaseModel):
+    id: int
+    title: str
+    body: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # --- Admin: organizations ---
 
 class AdminOrganizationOut(BaseModel):

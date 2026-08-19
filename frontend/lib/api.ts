@@ -424,6 +424,13 @@ export interface AdminSupportMessage {
   created_at: string;
 }
 
+export interface CannedReply {
+  id: number;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
 export interface AdminOrganization {
   id: number;
   name: string;
