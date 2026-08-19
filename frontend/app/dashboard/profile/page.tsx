@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, User } from "@/lib/api";
+import { api, User, API_URL } from "@/lib/api";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -18,10 +18,8 @@ export default function ProfilePage() {
   const [copied, setCopied] = useState(false);
 
   async function copyBookmarklet() {
-    const link = buildAutoFillBookmarklet({
-      full_name: form.full_name, email: user?.email || "", phone: form.phone,
-      location: form.location, linkedin_url: form.linkedin_url, portfolio_url: form.portfolio_url,
-    });
+    if (!user?.bookmarklet_token) return;
+    const link = buildAutoFillBookmarklet(user.bookmarklet_token, API_URL);
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
@@ -202,14 +200,14 @@ export default function ProfilePage() {
         <h3 style={{ marginTop: 0 }}>Auto-fill bookmarklet</h3>
         <p className="hint" style={{ marginTop: -4 }}>
           Runs entirely in your own browser, on the actual job application page you have open —
-          fills in your name, email, phone, and links using the info above. You'll still need to
-          attach your resume and hit submit yourself; browsers don't let a script do either of
-          those, on purpose.
+          fills in your name, email, phone, and links using your current profile info, fetched
+          fresh each time. You'll still need to attach your resume and hit submit yourself;
+          browsers don't let a script do either of those, on purpose.
         </p>
 
         <p style={{ fontWeight: 600, marginBottom: 4 }}>Option 1: copy the link (most reliable)</p>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="btn btn-ghost btn-sm" onClick={copyBookmarklet}>
+          <button className="btn btn-ghost btn-sm" onClick={copyBookmarklet} disabled={!user?.bookmarklet_token}>
             {copied ? "Copied ✓" : "Copy auto-fill link"}
           </button>
         </div>
@@ -217,20 +215,24 @@ export default function ProfilePage() {
           <li>Click the button above to copy the link.</li>
           <li>Right-click your browser's bookmarks bar and choose "Add page" (or click the ⭐ in your address bar, then edit it).</li>
           <li>Paste the copied link into the URL field, give it any name (e.g. "Riseply Auto-fill"), and save.</li>
+          <li>
+            If the pasted text is missing "javascript:" at the very start, some browsers strip it
+            when you paste into a URL field as a security precaution — just retype "javascript:"
+            at the beginning yourself and it'll work the same.
+          </li>
         </ol>
 
         <p style={{ fontWeight: 600, marginTop: 16, marginBottom: 4 }}>Option 2: drag the button</p>
-        <a
-          href={buildAutoFillBookmarklet({
-            full_name: form.full_name, email: user?.email || "", phone: form.phone,
-            location: form.location, linkedin_url: form.linkedin_url, portfolio_url: form.portfolio_url,
-          })}
-          className="btn btn-ghost btn-sm"
-          onClick={(e) => e.preventDefault()}
-          draggable
-        >
-          📋 Riseply Auto-fill
-        </a>
+        {user?.bookmarklet_token && (
+          <a
+            href={buildAutoFillBookmarklet(user.bookmarklet_token, API_URL)}
+            className="btn btn-ghost btn-sm"
+            onClick={(e) => e.preventDefault()}
+            draggable
+          >
+            📋 Riseply Auto-fill
+          </a>
+        )}
         <p className="hint" style={{ marginTop: 8 }}>
           Press and hold, then drag this button up onto your bookmarks bar — this works in most
           browsers, but if nothing shows up there afterward, use Option 1 instead. Clicking it here
@@ -239,9 +241,26 @@ export default function ProfilePage() {
 
         <p className="hint" style={{ marginTop: 12 }}>
           Once it's saved as a bookmark, use it by going to a real job application page and
-          clicking the bookmark from your bookmarks bar — not from here. If you update your
-          profile later, repeat whichever option you used, since the link has today's info baked
-          into it.
+          clicking the bookmark from your bookmarks bar — not from here. Unlike before, it always
+          pulls your current profile info when it runs, so you don't need to redo this after
+          updating your profile.
+        </p>
+
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ marginTop: 12 }}
+          onClick={async () => {
+            if (!confirm("This invalidates any bookmarklet link you've already saved — you'll need to copy or drag a new one afterward. Continue?")) return;
+            const updated = await api<User>("/me/regenerate-bookmarklet-token", { method: "POST" });
+            setUser(updated);
+          }}
+        >
+          Invalidate old links
+        </button>
+        <p className="hint" style={{ marginTop: 4 }}>
+          If a bookmarklet link ever ends up somewhere it shouldn't (shared by accident, saved on
+          a public computer), use this to cut it off — any bookmark made from the old link stops
+          working immediately, without touching your password.
         </p>
       </div>
     </div>

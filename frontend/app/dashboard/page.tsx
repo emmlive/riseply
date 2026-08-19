@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal, formatSalary } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -13,25 +13,45 @@ export default function OverviewPage() {
   const [error, setError] = useState("");
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
+  const [hasSearchedBefore, setHasSearchedBefore] = useState<boolean | null>(null);
   const [profileCount, setProfileCount] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [checklistDismissed, setChecklistDismissed] = useState(
     typeof window !== "undefined" && localStorage.getItem("riseply_hide_getting_started") === "1"
   );
 
   async function load() {
     try {
-      const [u, apps, r, me, profiles] = await Promise.all([
+      const [u, apps, r, me, profiles, persistedNearMisses] = await Promise.all([
         api<Usage>("/usage"),
         api<Application[]>("/applications?status=pending_approval"),
         api<RiseIndexMe>("/rise-index/me"),
         api<User>("/me"),
         api<SearchProfile[]>("/profiles"),
+        // Loads whatever near-misses were persisted from the LAST
+        // "Find new matches" run -- without this, a page refresh would
+        // show an empty "Closest this run" card even though a real
+        // record of it exists now (see models.NearMissResult). Only
+        // used to seed initial state; a fresh POST /pipeline/match
+        // click still updates nearMisses directly via its own response
+        // in runPipeline() below, same as before.
+        api<NearMiss[]>("/pipeline/near-misses"),
       ]);
       setUsage(u);
       setPending(apps);
       setRise(r);
       setHasResume(!!me.resume_text.trim());
+      // used_welcome_search (not usage.matches_used) is the right signal
+      // here specifically because the welcome search deliberately does
+      // NOT increment matches_used (see routers/pipeline.py's
+      // skip_usage_metering) -- matches_used > 0 would incorrectly stay
+      // false after someone's very first, deepest search of all.
+      // used_welcome_search flips true exactly once, on that first
+      // click, welcome or not, and stays true forever after.
+      setHasSearchedBefore(me.used_welcome_search);
       setProfileCount(profiles.length);
+      setUserName((me.full_name || "").split(" ")[0]);
+      setNearMisses(persistedNearMisses);
     } catch {
       // handled globally by api() redirecting to /login on 401
     }
@@ -53,17 +73,34 @@ export default function OverviewPage() {
     setNearMisses([]);
     try {
       await api("/pipeline/discover", { method: "POST" });
-      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean }>(
+      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number }>(
         "/pipeline/match",
         { method: "POST" }
       );
-      setMessage(
-        result.queued_application_ids.length > 0
-          ? `Found ${result.queued_application_ids.length} new match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
-          : result.near_misses.length > 0
-          ? "Nothing quite cleared your bar this run — here's what came closest."
-          : "No new matches this run. Try again later as new postings come in."
-      );
+      if (result.is_welcome_search) {
+        // The one genuinely different message in this whole function --
+        // deliberately leads with the depth number itself (100, not
+        // "a lot" or "many"), since that concrete figure is the actual
+        // "wow" -- and for a free-tier user, doubles as a real preview
+        // of what Pro's every-click depth looks like, not just a one-
+        // time bonus they'll never think about again.
+        setMessage(
+          `Your first search went deep — we scored ${result.jobs_searched} postings for you. ` +
+          (result.queued_application_ids.length > 0
+            ? `Found ${result.queued_application_ids.length} match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
+            : result.near_misses.length > 0
+            ? "Nothing quite cleared your bar yet, but here's what came closest."
+            : "Nothing close yet — try loosening your search criteria, or check back as new postings come in.")
+        );
+      } else {
+        setMessage(
+          result.queued_application_ids.length > 0
+            ? `Found ${result.queued_application_ids.length} new match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
+            : result.near_misses.length > 0
+            ? "Nothing quite cleared your bar this run — here's what came closest."
+            : "No new matches this run. Try again later as new postings come in."
+        );
+      }
       if (result.usage_limit_reached) {
         setMessage((m) => m + " (Stopped early — monthly match limit reached.)");
         showQuotaLimitModal(
@@ -98,17 +135,21 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {!checklistDismissed && hasResume !== null && profileCount !== null && (hasResume === false || profileCount === 0 || (usage && usage.matches_used === 0)) && (
+      {!checklistDismissed && hasResume !== null && profileCount !== null && (hasResume === false || profileCount === 0 || !hasSearchedBefore) && (
         <div className="card" style={{ borderColor: "var(--accent)" }}>
           <div className="card-row" style={{ alignItems: "flex-start" }}>
-            <h3 style={{ margin: 0 }}>Getting started</h3>
+            <h3 style={{ margin: 0 }}>
+              {hasResume === false && profileCount === 0
+                ? `Welcome${userName ? `, ${userName}` : ""}! Here's what to do next`
+                : "Getting started"}
+            </h3>
             <button className="btn btn-ghost btn-sm" onClick={dismissChecklist}>Dismiss</button>
           </div>
           <div style={{ marginTop: 10 }}>
             <ChecklistStep done={hasResume} label="Add your resume" href="/dashboard/resume" />
             <ChecklistStep done={profileCount > 0} label="Create a search profile" href="/dashboard/profiles" />
-            <ChecklistStep done={!!usage && usage.matches_used > 0} label='Click "Find new matches" above' />
-            <ChecklistStep done={pending.length === 0 && !!usage && usage.matches_used > 0} label="Review your matches as they come in" href="/dashboard/applications" />
+            <ChecklistStep done={!!hasSearchedBefore} label='Click "Find new matches" above' />
+            <ChecklistStep done={pending.length === 0 && !!hasSearchedBefore} label="Review your matches as they come in" href="/dashboard/applications" />
           </div>
           <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
             Every match lands here for you to approve or reject — nothing gets submitted
@@ -135,7 +176,13 @@ export default function OverviewPage() {
             <div key={i} className="points-event-row">
               <div>
                 <div style={{ fontWeight: 600 }}>{nm.title} — {nm.company}</div>
+                {nm.location_mismatch && (
+                  <div className="hint" style={{ color: "var(--warning, #C97A2B)", fontWeight: 600 }}>
+                    Outside your preferred location
+                  </div>
+                )}
                 <div className="hint">{nm.reason}</div>
+                {formatSalary(nm) && <div className="hint">{formatSalary(nm)}</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span className="ticket">match <span className="score">{nm.score}%</span></span>

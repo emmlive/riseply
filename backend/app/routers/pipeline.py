@@ -36,13 +36,59 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=settings.manual_match_run_job_cap)
+    # A brand-new user's very first click gets a deliberately deeper,
+    # unmetered "welcome search" instead of their tier's normal per-click
+    # cap -- see models.User.used_welcome_search and config.py's
+    # welcome_search_job_cap for the reasoning. Scoped to this
+    # interactive endpoint only, not the nightly scheduled job (which is
+    # already uncapped and always metered) -- someone's first real
+    # search realistically happens via this button, not an overnight
+    # cron that ran before they'd used the product at all.
+    is_welcome_search = not user.used_welcome_search
+    if is_welcome_search:
+        max_jobs = settings.welcome_search_job_cap
+    else:
+        max_jobs = settings.pro_tier_match_run_job_cap if usage.is_pro(user) else settings.free_tier_match_run_job_cap
+
+    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=max_jobs, skip_usage_metering=is_welcome_search)
+
+    if is_welcome_search:
+        user.used_welcome_search = True
+        db.commit()
     return {
         "queued_application_ids": result["queued_application_ids"],
         "usage_limit_reached": result["usage_limit_reached"],
         "near_misses": result["near_misses"],
         "hit_job_cap": result["hit_job_cap"],
+        "is_welcome_search": is_welcome_search,
+        "jobs_searched": max_jobs,
     }
+
+
+@router.get("/pipeline/near-misses", response_model=list[schemas.NearMissOut])
+def get_near_misses(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The current user's persisted near-misses (see models.NearMissResult)
+    -- lets the dashboard show 'what came closest last time' on a fresh
+    page load, not only right after a POST /pipeline/match response.
+    Empty list is a valid, correct answer (no run yet, or the last run
+    found a real match / genuinely nothing close), not an error case.
+    """
+    rows = db.query(models.NearMissResult, models.Job).join(
+        models.Job, models.NearMissResult.job_id == models.Job.id
+    ).filter(models.NearMissResult.user_id == user.id).order_by(
+        models.NearMissResult.score.desc()
+    ).all()
+
+    return [
+        schemas.NearMissOut(
+            title=job.title, company=job.company, url=job.url,
+            score=nm.score, reason=nm.reason, matched_profile=nm.matched_profile,
+            salary_min=job.salary_min, salary_max=job.salary_max,
+            salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
+            location_mismatch=bool(nm.location_mismatch),
+        )
+        for nm, job in rows
+    ]
 
 
 # --- Applications list + approve/reject ---
@@ -63,18 +109,32 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
         has_tailored_resume_data=bool(app.tailored_resume_data),
+        salary_min=job.salary_min, salary_max=job.salary_max,
+        salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
+        is_archived=bool(app.is_archived), archived_at=app.archived_at,
     )
 
 
 @router.get("/applications", response_model=list[schemas.ApplicationOut])
 def list_applications(
     status: str | None = None,
+    archived: bool = False,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
+    """archived=False (the default) excludes archived applications --
+    every existing status tab (All/Awaiting review/Approved/etc) keeps
+    working exactly as before with zero frontend changes required,
+    since archiving something now makes it disappear from all of them
+    automatically. archived=True is the inverse -- shows ONLY archived
+    applications, for a dedicated Archived view.
+    """
     q = db.query(models.Application, models.Job).join(
         models.Job, models.Application.job_id == models.Job.id
-    ).filter(models.Application.user_id == user.id)
+    ).filter(
+        models.Application.user_id == user.id,
+        models.Application.is_archived == archived,
+    )
     if status:
         q = q.filter(models.Application.status == status)
     q = q.order_by(models.Application.match_score.desc())
@@ -195,6 +255,39 @@ def reject_application(
     db.commit()
     rise_index.award_points(db, user, "review_match", "Reviewed a match")
     return {"status": "rejected"}
+
+
+# --- Archivable pattern (request-handling half -- see models.Application's
+# is_archived/archived_at columns for the storage half). Any status --
+# rejected, accepted, or still pending -- can be archived; this is
+# purely "get this out of my default view," independent of and does
+# not change the underlying status. Copy this pair verbatim onto any
+# future model that adopts the same pattern. ---
+
+@router.post("/applications/{application_id}/archive")
+def archive_application(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.is_archived = True
+    app_row.archived_at = datetime.utcnow()
+    db.commit()
+    return {"status": "archived"}
+
+
+@router.post("/applications/{application_id}/unarchive")
+def unarchive_application(
+    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+):
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row.is_archived = False
+    app_row.archived_at = None
+    db.commit()
+    return {"status": "unarchived"}
 
 
 @router.post("/applications/{application_id}/mark-submitted")

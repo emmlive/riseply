@@ -32,6 +32,65 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
+    # --- Job discovery: Adzuna (general, all-industries keyword search) ---
+    # Empty by default -- same kill-switch pattern as every other optional
+    # integration (Resend, Twilio, Stripe). Until both are set,
+    # sources/adzuna.py no-ops and discovery falls back to just the fixed
+    # Greenhouse/Lever/RSS sources in discovery_sources.py. Free at
+    # https://developer.adzuna.com/ -- register for an app_id/app_key pair.
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    # Adzuna's free tier is roughly 1,000 calls/month; one call = one
+    # keyword's worth of results. This bounds how many DISTINCT search-
+    # profile titles get queried in a single discovery run so a run with
+    # many active profiles across many users can't burn the whole
+    # monthly quota at once -- see pipeline_runner.run_discovery() for
+    # how the remainder rotate in on subsequent runs instead of being
+    # dropped entirely.
+    adzuna_max_keywords_per_run: int = 15
+    # Bounds the SEPARATE location-paired query batch (title x location,
+    # via Adzuna's `where` filter) -- additive to the broad keyword-only
+    # batch above, not a replacement for it. Kept smaller since it's
+    # extra call volume on top of the existing budget; see
+    # pipeline_runner._collect_active_location_hints() for why this
+    # exists (narrow-location profiles were under-served by a purely
+    # national keyword search).
+    adzuna_max_location_pairs_per_run: int = 10
+    # How many result pages to pull per keyword (50 results/page).
+    # Directly multiplies call volume against the monthly quota --
+    # (keywords_per_run + location_pairs_per_run) * pages_per_keyword
+    # = calls per discovery run. Was hardcoded at 1; raised to 2 by
+    # default for meaningfully wider coverage per keyword/location
+    # pair, at roughly double the call cost per run. Tune down if
+    # actual monthly usage is running close to Adzuna's ~1,000
+    # call/month free-tier limit.
+    adzuna_pages_per_keyword: int = 2
+
+    # --- Job discovery: USAJobs (US federal jobs, keyword search) ---
+    # Empty by default -- same kill-switch pattern as Adzuna above.
+    # Until both are set, sources/usajobs.py no-ops. Free at
+    # https://developer.usajobs.gov/apirequest/ -- register with an
+    # email address and receive an Authorization-Key by return email.
+    # Unlike most APIs, the registered EMAIL itself is required on
+    # every request (as the User-Agent header, not a browser string --
+    # USAJobs' own docs note this inverted convention trips people up)
+    # alongside the key, so both need to be stored, not just the key.
+    usajobs_api_key: str = ""
+    usajobs_email: str = ""
+    # USAJobs doesn't publish an explicit rate limit the way Adzuna
+    # does, but it's rate-limited per User-Agent string regardless --
+    # same bounding pattern as Adzuna's keyword cap so a run with many
+    # active search profiles can't hammer it, and so the remainder
+    # rotate in on subsequent runs (see
+    # pipeline_runner._select_keyword_rotation(), reused here rather
+    # than duplicated).
+    usajobs_max_keywords_per_run: int = 15
+    # USAJobs supports up to 500 results/page (far higher than
+    # Adzuna's 50) -- kept modest here since this is per KEYWORD, and
+    # federal listings for a single title are usually a much smaller,
+    # more specific pool than a general commercial job board's.
+    usajobs_results_per_page: int = 50
+
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other
     # optional integration (Stripe, Twilio, CRON_SECRET). Until
@@ -87,7 +146,22 @@ class Settings(BaseSettings):
     # time regardless of the user's monthly limit or pool size. The
     # scheduled batch job isn't capped -- it works through the rest
     # overnight without anyone waiting on it.
-    manual_match_run_job_cap: int = 25
+    #
+    # Tier-differentiated (previously a single shared manual_match_run_
+    # job_cap=25 for everyone) so Pro is a genuinely deeper search per
+    # click, not just more monthly clicks at the same depth -- a felt
+    # reason to upgrade, not just a higher number on a usage meter
+    # nobody's watching in the moment.
+    free_tier_match_run_job_cap: int = 40
+    pro_tier_match_run_job_cap: int = 100
+    # A new user's very first "Find new matches" click (see
+    # models.User.used_welcome_search) scores this many instead of
+    # their tier's normal per-click cap, and doesn't consume any of
+    # the monthly match quota at all -- see routers/pipeline.py. The
+    # goal is a strong first impression, and for a free-tier user, a
+    # real preview of what Pro-depth search feels like.
+    welcome_search_job_cap: int = 100
+
 
     # --- Org Buddy as a Service: hybrid pricing (base plan + overage) ---
     # Real prices live in Stripe (like the individual Pro plan) -- these

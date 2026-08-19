@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep, CompanyStats, downloadFile } from "@/lib/api";
+import { api, Application, InterviewPrep, CompanyStats, downloadFile, formatSalary } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -14,6 +14,12 @@ const STATUS_FILTERS = [
   { value: "rejected", label: "Rejected" },
 ];
 
+// A distinct pseudo-filter, not a real status -- archived is its own
+// dimension (any status can be archived), so this is handled specially
+// in load() below rather than being just another value in the status
+// query param.
+const ARCHIVED_FILTER = "__archived__";
+
 export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
@@ -23,6 +29,10 @@ export default function ApplicationsPage() {
   const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
 
   async function load(status: string) {
+    if (status === ARCHIVED_FILTER) {
+      setApps(await api<Application[]>("/applications?archived=true"));
+      return;
+    }
     const qs = status ? `?status=${status}` : "";
     setApps(await api<Application[]>(`/applications${qs}`));
   }
@@ -73,6 +83,16 @@ export default function ApplicationsPage() {
     setBusyId(id);
     try {
       await api(`/applications/${id}/${action}`, { method: "POST" });
+      await load(filter);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function toggleArchive(id: number, archive: boolean) {
+    setBusyId(id);
+    try {
+      await api(`/applications/${id}/${archive ? "archive" : "unarchive"}`, { method: "POST" });
       await load(filter);
     } finally {
       setBusyId(null);
@@ -134,6 +154,13 @@ export default function ApplicationsPage() {
             {f.label}
           </button>
         ))}
+        <button
+          className="btn btn-ghost btn-sm"
+          style={filter === ARCHIVED_FILTER ? { background: "var(--accent-soft)", color: "var(--accent-hover)", borderColor: "var(--accent)" } : {}}
+          onClick={() => setFilter(ARCHIVED_FILTER)}
+        >
+          Archived
+        </button>
       </div>
 
       {apps.length === 0 && (
@@ -145,6 +172,7 @@ export default function ApplicationsPage() {
           {filter === "interviewing" && "Nothing in an interview stage yet."}
           {filter === "accepted" && "No accepted offers yet — once you get one, mark it accepted to unlock Job Buddy for it."}
           {filter === "rejected" && "Nothing rejected — that's a good thing."}
+          {filter === ARCHIVED_FILTER && "Nothing archived — archive an application to tuck it out of your default view without losing it."}
         </div>
       )}
 
@@ -160,6 +188,9 @@ export default function ApplicationsPage() {
                   <StatusPill status={app.status} />
                 </div>
                 <p className="muted" style={{ margin: "4px 0" }}>{app.job_location}</p>
+                {formatSalary(app) && (
+                  <p className="hint" style={{ margin: "0 0 4px", fontWeight: 600 }}>{formatSalary(app)}</p>
+                )}
                 <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
                 {app.notes && <p className="hint">{app.notes}</p>}
                 {stat && stat !== "none" && (
@@ -170,6 +201,14 @@ export default function ApplicationsPage() {
                 )}
                 <div style={{ display: "flex", gap: 10, marginTop: 10, fontSize: "0.85rem", alignItems: "center" }}>
                   <a href={app.job_url} target="_blank" rel="noreferrer">View posting →</a>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: "2px 8px" }}
+                    disabled={busyId === app.id}
+                    onClick={() => toggleArchive(app.id, !app.is_archived)}
+                  >
+                    {app.is_archived ? "Unarchive" : "Archive"}
+                  </button>
                   {app.has_tailored_resume_data && (
                     <a
                       href="#"

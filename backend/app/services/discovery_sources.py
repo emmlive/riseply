@@ -7,8 +7,15 @@ could let admins manage this from a UI instead of editing code.
 
 RSS_JOB_FEEDS = [
     "https://remotive.com/remote-jobs/feed",  # all categories; matcher filters relevance per user
-    "https://weworkremotely.com/categories/remote-programming-jobs.rss",
-    "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+    # WWR's single all-jobs feed, not individual category feeds -- covers
+    # every category they publish (Programming, DevOps/Sysadmin, Design,
+    # Product, Customer Support, Sales & Marketing, Management &
+    # Finance, and "All Other") in one official feed. Picking specific
+    # categories by hand is the same curation-bias problem as a
+    # hardcoded company list, just one level removed -- this avoids
+    # that entirely rather than trying to guess which categories matter.
+    # Confirmed via https://weworkremotely.com/remote-job-rss-feed.
+    "https://weworkremotely.com/remote-jobs.rss",
 ]
 
 GREENHOUSE_COMPANIES: list[str] = [

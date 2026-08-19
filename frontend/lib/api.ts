@@ -96,6 +96,8 @@ export interface User {
   subscription_status: string;
   is_admin: boolean;
   admin_role: string;
+  bookmarklet_token: string;
+  used_welcome_search: boolean;
 }
 
 export interface SavedResume {
@@ -137,6 +139,28 @@ export interface Application {
   organization_logo_url: string;
   tailoring_rationale: string;
   has_tailored_resume_data: boolean;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  salary_is_predicted: boolean;
+  is_archived: boolean;
+  archived_at: string | null;
+}
+
+// Shared by both the Overview near-misses list and the Applications
+// list -- same "do we actually have a number" + formatting logic the
+// backend's notifier._format_salary() uses for emails, kept in sync by
+// hand since this is TS/Python across two different runtimes.
+export function formatSalary(job: {
+  salary_min: number | null; salary_max: number | null;
+  salary_currency: string; salary_is_predicted: boolean;
+}): string {
+  const { salary_min: lo, salary_max: hi, salary_currency, salary_is_predicted } = job;
+  if (!lo && !hi) return "";
+  const symbol = salary_currency === "USD" || !salary_currency ? "$" : `${salary_currency} `;
+  const fmt = (n: number) => `${symbol}${Math.round(n).toLocaleString()}`;
+  const range = lo && hi && lo !== hi ? `${fmt(lo)}–${fmt(hi)}` : fmt(hi || lo || 0);
+  return salary_is_predicted ? `${range} (est.)` : range;
 }
 
 export interface Usage {
@@ -363,6 +387,11 @@ export interface NearMiss {
   score: number;
   reason: string;
   matched_profile: string;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  salary_is_predicted: boolean;
+  location_mismatch: boolean;
 }
 
 // --- Admin ---

@@ -1,6 +1,26 @@
 from app.config import settings
 
 
+def _format_salary(job: dict) -> str:
+    """Shared by every email template that shows a job. Returns "" when
+    there's nothing to show (most Greenhouse/Lever/RSS postings, and
+    some Adzuna ones -- not every posting states or predicts a salary)
+    so callers can just conditionally append a line rather than every
+    template re-implementing this same "do we actually have both
+    numbers" check.
+    """
+    lo, hi = job.get("salary_min"), job.get("salary_max")
+    if not lo and not hi:
+        return ""
+    currency = job.get("salary_currency") or "USD"
+    symbol = "$" if currency == "USD" else f"{currency} "
+    if lo and hi and lo != hi:
+        range_str = f"{symbol}{lo:,.0f}–{symbol}{hi:,.0f}"
+    else:
+        range_str = f"{symbol}{(hi or lo):,.0f}"
+    return f"{range_str} (estimated)" if job.get("salary_is_predicted") else range_str
+
+
 def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None, attachment_filename: str = "attachment.docx"):
     if not settings.resend_api_key:
         print(f"[notifier] Resend not configured — skipping email to {to_addr}: {subject}\n{body}\n")
@@ -32,6 +52,7 @@ def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | N
 
 
 def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filename: str = "", resume_data: bytes | None = None):
+    salary = _format_salary(job)
     send_email(
         to_addr,
         f"New job match: {job['title']} @ {job['company']} ({job['match_score']}%)",
@@ -39,7 +60,8 @@ def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filena
             f"{job['title']} at {job['company']}\n"
             f"Matched profile: {job.get('matched_profile', 'n/a')}\n"
             f"Location: {job['location']}\n"
-            f"Match score: {job['match_score']}/100 — {job.get('match_reason', '')}\n"
+            + (f"Salary: {salary}\n" if salary else "")
+            + f"Match score: {job['match_score']}/100 — {job.get('match_reason', '')}\n"
             f"Link: {job['url']}\n\n"
             f"Review and approve/reject it in your dashboard."
         ),
@@ -63,10 +85,11 @@ def notify_digest(to_addr: str, matches: list[dict]):
     if not matches:
         return
     matches_sorted = sorted(matches, key=lambda m: m["match_score"], reverse=True)
-    lines = [
-        f"- {m['title']} @ {m['company']} ({m['match_score']}%) — {m['location']}\n  {m['url']}"
-        for m in matches_sorted
-    ]
+    lines = []
+    for m in matches_sorted:
+        salary = _format_salary(m)
+        salary_part = f" — {salary}" if salary else ""
+        lines.append(f"- {m['title']} @ {m['company']} ({m['match_score']}%) — {m['location']}{salary_part}\n  {m['url']}")
     count = len(matches)
     send_email(
         to_addr,

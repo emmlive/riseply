@@ -58,6 +58,8 @@ class UserOut(BaseModel):
     subscription_status: str
     is_admin: bool
     admin_role: str
+    bookmarklet_token: str = ""
+    used_welcome_search: bool = False
 
     class Config:
         from_attributes = True
@@ -106,7 +108,29 @@ class SearchProfileOut(SearchProfileIn):
         from_attributes = True
 
 
-# --- Applications ---
+# --- Near-misses ---
+# See models.NearMissResult -- these are jobs that didn't clear a
+# profile's match threshold, persisted so they survive a page refresh
+# (they previously only lived in frontend React state). Deliberately
+# NOT built from_attributes off the ORM row directly the way
+# ApplicationOut is -- title/company/url/salary live on the related
+# Job row, not on NearMissResult itself, so the router assembles this
+# from both (see GET /pipeline/near-misses).
+class NearMissOut(BaseModel):
+    title: str
+    company: str
+    url: str
+    score: int
+    reason: str
+    matched_profile: str
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = ""
+    salary_is_predicted: bool = False
+    location_mismatch: bool = False
+
+
+
 
 class ApplicationOut(BaseModel):
     id: int
@@ -127,6 +151,12 @@ class ApplicationOut(BaseModel):
     organization_logo_url: str = ""
     tailoring_rationale: str = ""
     has_tailored_resume_data: bool = False
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = ""
+    salary_is_predicted: bool = False
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -79,6 +79,31 @@
     ) || null;
   }
 
+  function findSubmitButton() {
+    // Deliberately does NOT include "Apply Now" -- that phrase is
+    // ambiguous with the page's initial landing-page CTA (see
+    // APPLY_PATTERN above and GATE_PATTERN just above this function),
+    // and offering a "Submit application" action that's actually
+    // still pointing at the very first click of the flow would be
+    // actively misleading, not just imprecise. This pattern is
+    // specifically for the FINAL control on an already-filled-out
+    // form -- only offered (see its use in the fill-button handler
+    // below) once autofill has actually filled at least one real
+    // field this session, which is what keeps it from also matching
+    // on a landing page.
+    const SUBMIT_PATTERN = /^(submit|submit application|submit your application|send application)$/i;
+    // type="submit" inputs (not just <button>) are common on older-
+    // style/non-React ATS forms and wouldn't be caught by the a/button
+    // query alone.
+    const candidates = [
+      ...document.querySelectorAll("a, button"),
+      ...document.querySelectorAll('input[type="submit"]'),
+    ];
+    return candidates.find((el) =>
+      SUBMIT_PATTERN.test((el.value || el.textContent || "").trim())
+    ) || null;
+  }
+
   function findCoverLetterField() {
     // Looks specifically for a textarea labeled as a cover letter --
     // separate from the general custom-question detection, since this
@@ -112,6 +137,25 @@
   }
 
   function sendMessage(message, timeoutMs = 15000) {
+    // chrome.runtime.id disappears once this content script's context
+    // has been invalidated -- the extension was reloaded (dev) or
+    // Chrome auto-updated it (production) while this tab stayed open.
+    // Calling chrome.runtime.sendMessage on a dead context throws
+    // synchronously, which -- since the call sits inside a `new
+    // Promise((resolve) => ...)` with no try/catch -- surfaces as an
+    // unhandled promise rejection with a misleading stack trace rather
+    // than a clean, actionable failure. Checking first avoids the
+    // throw in the common case (extension reloaded during dev, or a
+    // background auto-update landing on a real user's still-open tab).
+    if (!chrome.runtime?.id) {
+      log("extension context invalidated -- page needs a refresh");
+      return Promise.resolve({
+        success: false,
+        error: "Riseply was updated. Please refresh this page.",
+        contextInvalidated: true,
+      });
+    }
+
     // Without this timeout, a lost response (e.g. the background
     // service worker getting terminated mid-request, which Chrome can
     // do if a request runs long -- Render's free-tier cold start after
@@ -120,7 +164,28 @@
     // no console error looks like. Racing against a timeout turns a
     // silent hang into a visible, actionable failure state instead.
     return Promise.race([
-      new Promise((resolve) => chrome.runtime.sendMessage(message, resolve)),
+      new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+              // Covers the context dying in the gap between the check
+              // above and the response actually coming back (e.g. an
+              // update lands mid-flight) -- the background service
+              // worker or its port is gone, so lastError is set instead
+              // of a real response ever arriving.
+              log("sendMessage lastError:", chrome.runtime.lastError.message);
+              resolve({ success: false, error: "Riseply was updated. Please refresh this page.", contextInvalidated: true });
+              return;
+            }
+            resolve(response);
+          });
+        } catch (err) {
+          // Belt-and-suspenders: context can also die in the gap
+          // between the check above and this call actually firing.
+          log("sendMessage threw synchronously:", err.message);
+          resolve({ success: false, error: "Riseply was updated. Please refresh this page.", contextInvalidated: true });
+        }
+      }),
       new Promise((resolve) =>
         setTimeout(() => {
           log("sendMessage timed out after", timeoutMs, "ms for", message.type);
@@ -324,7 +389,21 @@
     for (const [label, value] of pairs) {
       if (!value) continue;
       const el = findField(label);
-      if (el && fillElement(el, value)) filled.push(label);
+      if (!el) continue;
+      // A field labeled "location" is ambiguous in a way none of the
+      // other pairs above are: on a text input it's almost always
+      // "your current city" (safe to fill with the candidate's home
+      // location); on a SELECT it's much more often a controlled list
+      // of real office locations to choose FROM ("which office are you
+      // applying to"), completely unrelated to where the candidate
+      // lives -- fuzzy substring-matching the candidate's raw city text
+      // against that list (see setSelectValue) could silently pick the
+      // wrong office with no indication anything went wrong. Only
+      // skipped for this one label; the others don't have this
+      // ambiguity (an email/phone/linkedin SELECT would be unusual
+      // enough to not special-case).
+      if (label === "location" && el.tagName === "SELECT") continue;
+      if (fillElement(el, value)) filled.push(label);
     }
 
     // Fields with no corresponding profile data at all (Riseply doesn't
@@ -491,7 +570,7 @@
       <div id="riseply-score-slot"></div>
       <button class="action primary" id="riseply-score-btn">Score my resume</button>
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
-      <p class="hint">Autofill can't attach your resume or submit for you -- browsers block scripts from doing either, on purpose. Fill in fields, then finish it yourself.</p>
+      <p class="hint">Autofill can't attach your resume -- browsers block scripts from setting a file upload, on purpose. Drag it in yourself once fields are filled. Riseply also won't submit on your own -- you'll always get a final button to click yourself.</p>
       <div id="riseply-filled-slot"></div>
       <div id="riseply-questions-slot"></div>
       <button class="action secondary" id="riseply-coverletter-btn" style="margin-top:12px;">Generate cover letter</button>
@@ -562,7 +641,41 @@
       }
       const filled = runAutofill(result.candidate);
       if (filled.length) {
-        slot.innerHTML = `<p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>`;
+        const submitBtn = findSubmitButton();
+        slot.innerHTML = `
+          <p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>
+          ${submitBtn ? `
+            <p class="hint" style="margin-top:8px;">Once your resume is attached and everything looks right:</p>
+            <button class="action primary" id="riseply-submit-btn" style="margin-top:4px;">Submit application →</button>
+            <div id="riseply-submit-confirm-slot"></div>
+          ` : ""}
+        `;
+        if (submitBtn) {
+          root.getElementById("riseply-submit-btn").addEventListener("click", () => {
+            // Two-step confirm, not a direct click -- unlike the gate
+            // button above (which just moves the person to the real
+            // form, fully reversible), this is the actual, effectively
+            // irreversible final step of a real application. Requiring
+            // an explicit second click keeps this squarely a
+            // human-initiated action Riseply is only proxying, not one
+            // it's making on the person's behalf.
+            const confirmSlot = root.getElementById("riseply-submit-confirm-slot");
+            confirmSlot.innerHTML = `
+              <p class="hint" style="color:#C97A2B;margin-top:8px;">This clicks ${escapeHtml(location.hostname)}'s own submit button. Make sure your resume is attached and everything above looks right -- this can't be undone.</p>
+              <div class="draft-actions">
+                <button class="confirm" id="riseply-submit-confirm">Yes, submit</button>
+                <button class="discard" id="riseply-submit-cancel">Cancel</button>
+              </div>
+            `;
+            root.getElementById("riseply-submit-confirm").addEventListener("click", () => {
+              submitBtn.click();
+              confirmSlot.innerHTML = `<p class="filled-list">✓ Submitted.</p>`;
+            });
+            root.getElementById("riseply-submit-cancel").addEventListener("click", () => {
+              confirmSlot.innerHTML = "";
+            });
+          });
+        }
       } else {
         const gateBtn = findApplicationGateButton();
         if (gateBtn) {
@@ -799,6 +912,16 @@
   // just watch for the host element vanishing and put it back.
   function watchForRemoval(job) {
     const observer = new MutationObserver(() => {
+      if (!chrome.runtime?.id) {
+        // Context is dead (extension reloaded/updated under this open
+        // tab) -- re-injecting a sidebar at this point would just
+        // produce a panel that can never talk to the background
+        // script again. Stop watching; a page refresh is what actually
+        // fixes it, per the message sendMessage() now surfaces.
+        log("extension context invalidated -- stopping DOM watch");
+        observer.disconnect();
+        return;
+      }
       if (!document.getElementById("riseply-sidebar-host")) {
         log("sidebar host was removed from the DOM -- re-injecting");
         const root = injectSidebar();

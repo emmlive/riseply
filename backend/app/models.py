@@ -27,6 +27,34 @@ class User(Base):
     linkedin_url = Column(String, default="")
     portfolio_url = Column(String, default="")
 
+    # Durable (not single-use, not short-lived like PasswordResetToken)
+    # token authorizing GET /bookmarklet.js -- that endpoint has to be
+    # publicly fetchable via a plain <script src="..."> tag (which can't
+    # attach an Authorization header the way a normal API call can), so
+    # this token in the URL itself is the only practical way to identify
+    # whose data to serve. Generated lazily on first request rather than
+    # at signup, same pattern already used elsewhere in this codebase.
+    # Regenerable (see POST /me/regenerate-bookmarklet-token) to
+    # invalidate a previously-issued bookmarklet link if it's ever
+    # exposed somewhere it shouldn't be -- not a security downgrade from
+    # the old fully-inline bookmarklet design (which baked the exact
+    # same profile fields into a plaintext, permanently-unrevocable
+    # URL); if anything this is strictly more revocable than what it
+    # replaces.
+    bookmarklet_token = Column(String, nullable=True, unique=True, index=True)
+
+    # True after this user's very first "Find new matches" click has
+    # run -- see routers/pipeline.py's use of this to grant a one-time,
+    # unmetered "welcome search" that scores far more jobs than a
+    # normal click (settings.welcome_search_job_cap, well above either
+    # tier's regular per-click depth) without touching the monthly
+    # match quota. The goal is a genuinely strong first impression --
+    # someone's very first search should feel comprehensive, not
+    # limited by the same tight per-click cap every subsequent search
+    # gets, and for a free-tier user this is also a real, felt preview
+    # of what Pro's deeper searches are like every time.
+    used_welcome_search = Column(Boolean, default=False, server_default="false")
+
     resume_text = Column(Text, default="")
 
     notify_email = Column(String, default="")  # defaults to account email if blank
@@ -146,6 +174,19 @@ class Job(Base):
     description = Column(Text, default="")
     discovered_at = Column(DateTime, default=datetime.utcnow)
 
+    # --- Salary (currently only populated by the Adzuna source --
+    # Greenhouse/Lever/RSS postings essentially never state a salary in
+    # a structured field, so these stay NULL/False for those rows;
+    # nullable rather than defaulting to 0 so the frontend can tell
+    # "no data" apart from "an actual $0 salary"). is_predicted
+    # distinguishes a real advertised figure from Adzuna's own salary
+    # model -- shown to the person so a predicted range isn't mistaken
+    # for what the employer actually stated.
+    salary_min = Column(Integer, nullable=True)
+    salary_max = Column(Integer, nullable=True)
+    salary_currency = Column(String, default="")
+    salary_is_predicted = Column(Boolean, default=False)
+
 
 class Application(Base):
     """A user's candidacy for a specific job — this is per-tenant."""
@@ -203,6 +244,19 @@ class Application(Base):
     # tailoring itself still succeeds either way, this is additive.
     tailoring_rationale = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
+
+    # --- Archivable pattern ---
+    # Standard convention for "let a user hide something from their
+    # default view without deleting it": is_archived + archived_at,
+    # exactly these two column names/types. Application is the first
+    # model to use it, but the pattern (not just these two columns) is
+    # meant to be copied verbatim onto any future list that grows
+    # unbounded and needs the same "clean up my view, don't lose my
+    # data" behavior -- see the archive/unarchive endpoints in
+    # routers/pipeline.py for the matching request-handling half of
+    # this convention.
+    is_archived = Column(Boolean, default=False, server_default="false")
+    archived_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     status_updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
@@ -758,6 +812,45 @@ class ScoredJob(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     scored_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class NearMissResult(Base):
+    """The 'Closest this run' near-misses from the LAST run that didn't
+    produce a real match -- a snapshot of 'what came closest last
+    time', not a growing history. All existing rows for a user get
+    replaced every time run_matching_for_user() computes a fresh
+    near-miss list (see its use in pipeline_runner.py).
+
+    Before this model existed, near-misses only ever lived in the
+    frontend's React state, populated directly from the one-time
+    POST /pipeline/match response -- an ordinary page refresh silently
+    erased them, even though a real Application from that same run
+    would have survived (because Applications DO persist to the
+    database). This closes that gap the same way: mirrors
+    Application's shape (job_id FK + a score/reason/matched_profile
+    snapshot, with title/company/url/salary fetched via the Job
+    relationship at display time) rather than duplicating those
+    fields here.
+    """
+    __tablename__ = "near_miss_results"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+
+    score = Column(Integer, default=0)
+    reason = Column(Text, default="")
+    matched_profile = Column(String, default="")
+    # True when this result only surfaced via run_matching_for_user's
+    # location-fallback pass (see matcher.best_profile_match's
+    # ignore_location option) -- lets the frontend keep showing the
+    # same "Outside your preferred location" label after a page
+    # refresh that it showed in the original POST response.
+    location_mismatch = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    job = relationship("Job")
 
 
 class FailureLog(Base):
