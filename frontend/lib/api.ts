@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -439,6 +439,16 @@ export interface EnterpriseBillingRequestOut {
   estimated_employees: number;
   notes: string;
   status: string;
+  created_at: string;
+}
+
+export interface OrgSSOConfig {
+  id: number;
+  provider_name: string;
+  issuer: string;
+  client_id: string;
+  allowed_email_domain: string;
+  enabled: boolean;
   created_at: string;
 }
 

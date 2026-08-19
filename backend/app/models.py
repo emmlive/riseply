@@ -350,6 +350,56 @@ class EnterpriseBillingRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class OrgSSOConfig(Base):
+    """Enterprise SSO for one org, via a standard OIDC (OpenID Connect)
+    identity provider -- Okta, Azure AD, Google Workspace, or any other
+    OIDC-compliant IdP the org's IT team already uses.
+
+    Deliberately OIDC, not raw SAML: an OIDC ID token is a signed JWT
+    that can be verified with a well-established library (this app
+    already depends on python-jose for its own auth tokens) against
+    the provider's published public keys. Hand-rolling SAML's XML
+    signature verification is a notorious source of real
+    vulnerabilities even in mature libraries -- not a risk worth taking
+    under time pressure for a feature this security-critical, and OIDC
+    covers the same practical need for every IdP that matters here.
+
+    allowed_email_domain is a real safety boundary, not just metadata:
+    unlike Google/Microsoft (universally-trusted top-level identity
+    providers this app already integrates with directly), this is an
+    org-configured, narrower-scope integration -- restricting it to a
+    specific email domain limits the blast radius if the integration
+    is ever misconfigured."""
+    __tablename__ = "org_sso_configs"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_org_sso_config"),)
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    provider_name = Column(String, default="")  # display only, e.g. "Okta"
+    issuer = Column(String, nullable=False)  # e.g. https://acme.okta.com
+    client_id = Column(String, nullable=False)
+    client_secret = Column(String, nullable=False)
+    allowed_email_domain = Column(String, nullable=False)
+    enabled = Column(Boolean, default=True, server_default="true")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class SSOLoginState(Base):
+    """A short-lived, single-use CSRF token for the SSO login flow.
+    Database-backed rather than a cookie specifically because the
+    frontend (riseply.com) and backend (a separate Render subdomain)
+    are different origins -- a cookie set during the redirect-to-IdP
+    step wouldn't reliably come back on the frontend's later POST to
+    the callback endpoint. Checked for expiry and deleted on first use
+    (see routers/sso.py) so it can't be replayed."""
+    __tablename__ = "sso_login_states"
+
+    id = Column(Integer, primary_key=True)
+    state = Column(String, unique=True, nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class Organization(Base):
     """A company using 'Org Buddy as a Service' -- their own customized
     version of the traditional workplace onboarding-buddy practice,

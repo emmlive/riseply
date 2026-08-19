@@ -296,6 +296,35 @@ class EnterpriseBillingRequestStatusUpdate(BaseModel):
     status: str
 
 
+class OrgSSOConfigCreate(BaseModel):
+    provider_name: str = Field(default="", max_length=100)
+    issuer: str = Field(min_length=1, max_length=500)
+    client_id: str = Field(min_length=1, max_length=500)
+    client_secret: str = Field(min_length=1, max_length=500)
+    allowed_email_domain: str = Field(min_length=1, max_length=200)
+
+
+class OrgSSOConfigOut(BaseModel):
+    id: int
+    provider_name: str
+    issuer: str
+    client_id: str
+    allowed_email_domain: str
+    enabled: bool
+    created_at: datetime
+    # Deliberately no client_secret field -- write-only, same principle
+    # as never returning a password hash. Once set, it can be replaced
+    # but never read back through the API.
+
+    class Config:
+        from_attributes = True
+
+
+class SSOCallbackRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+    state: str = Field(min_length=1, max_length=200)
+
+
 class ChecklistItemCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     description: str = Field(default="", max_length=1000)

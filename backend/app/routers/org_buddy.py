@@ -1058,6 +1058,69 @@ def list_enterprise_billing_requests(
     )
 
 
+@router.get("/{organization_id}/sso-config", response_model=schemas.OrgSSOConfigOut | None)
+def get_sso_config(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    return db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+
+
+@router.post("/{organization_id}/sso-config", response_model=schemas.OrgSSOConfigOut)
+def set_sso_config(
+    organization_id: int,
+    payload: schemas.OrgSSOConfigCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Validates the issuer actually resolves to a real OIDC discovery
+    document before saving -- catches a typo'd issuer URL immediately
+    at setup time, rather than only surfacing as a broken login for
+    the first employee who tries to use it."""
+    _require_admin(db, organization_id, user.id)
+
+    from app.services import oidc_sso
+    discovery = oidc_sso.discover(payload.issuer)
+    if not discovery.get("authorization_endpoint") or not discovery.get("token_endpoint") or not discovery.get("jwks_uri"):
+        raise HTTPException(status_code=400, detail="That issuer's discovery document is missing required endpoints — double check the issuer URL.")
+
+    config = db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+    if config:
+        config.provider_name = payload.provider_name
+        config.issuer = payload.issuer
+        config.client_id = payload.client_id
+        config.client_secret = payload.client_secret
+        config.allowed_email_domain = payload.allowed_email_domain
+        config.enabled = True
+    else:
+        config = models.OrgSSOConfig(
+            organization_id=organization_id, provider_name=payload.provider_name,
+            issuer=payload.issuer, client_id=payload.client_id, client_secret=payload.client_secret,
+            allowed_email_domain=payload.allowed_email_domain,
+        )
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+@router.delete("/{organization_id}/sso-config")
+def delete_sso_config(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    config = db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="No SSO configuration to remove.")
+    db.delete(config)
+    db.commit()
+    return {"deleted": True}
+
+
 # --- Ghost Onboarder: what employees have been asking ---
 
 @router.get("/{organization_id}/qa-logs", response_model=list[schemas.OrgQALogOut])

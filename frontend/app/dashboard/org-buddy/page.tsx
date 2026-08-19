@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -127,6 +127,16 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [ebSending, setEbSending] = useState(false);
   const [ebError, setEbError] = useState("");
   const [enterpriseBillingSent, setEnterpriseBillingSent] = useState("");
+  const [ssoConfig, setSsoConfig] = useState<OrgSSOConfig | null>(null);
+  const [showSsoForm, setShowSsoForm] = useState(false);
+  const [ssoProviderName, setSsoProviderName] = useState("");
+  const [ssoIssuer, setSsoIssuer] = useState("");
+  const [ssoClientId, setSsoClientId] = useState("");
+  const [ssoClientSecret, setSsoClientSecret] = useState("");
+  const [ssoDomain, setSsoDomain] = useState("");
+  const [ssoSaving, setSsoSaving] = useState(false);
+  const [ssoError, setSsoError] = useState("");
+  const [ssoLinkCopied, setSsoLinkCopied] = useState(false);
   const [contacts, setContacts] = useState<OrgContact[]>([]);
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -183,6 +193,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     // rather than rendering an empty shell.
     api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats).catch(() => {});
     api<OrgAnalytics>(`/orgs/${org.id}/analytics`).then(setAnalytics).catch(() => {});
+    api<OrgSSOConfig | null>(`/orgs/${org.id}/sso-config`).then(setSsoConfig).catch(() => {});
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
@@ -359,6 +370,49 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     } finally {
       setEbSending(false);
     }
+  }
+
+  async function saveSsoConfig() {
+    if (!ssoIssuer.trim() || !ssoClientId.trim() || !ssoClientSecret.trim() || !ssoDomain.trim()) return;
+    setSsoSaving(true);
+    setSsoError("");
+    try {
+      const saved = await api<OrgSSOConfig>(`/orgs/${org.id}/sso-config`, {
+        method: "POST",
+        body: JSON.stringify({
+          provider_name: ssoProviderName.trim(),
+          issuer: ssoIssuer.trim(),
+          client_id: ssoClientId.trim(),
+          client_secret: ssoClientSecret.trim(),
+          allowed_email_domain: ssoDomain.trim(),
+        }),
+      });
+      setSsoConfig(saved);
+      setShowSsoForm(false);
+      setSsoClientSecret(""); // never linger in state once saved
+    } catch (err: any) {
+      setSsoError(err.message || "Couldn't save that SSO configuration.");
+    } finally {
+      setSsoSaving(false);
+    }
+  }
+
+  async function removeSsoConfig() {
+    if (!confirm("Remove SSO for this organization? Employees will need to sign in the normal way afterward.")) return;
+    try {
+      await api(`/orgs/${org.id}/sso-config`, { method: "DELETE" });
+      setSsoConfig(null);
+    } catch (err: any) {
+      alert(err.message || "Couldn't remove that.");
+    }
+  }
+
+  function copySsoLink() {
+    const link = `${API_URL}/auth/sso/${org.id}/login`;
+    navigator.clipboard.writeText(link).then(() => {
+      setSsoLinkCopied(true);
+      setTimeout(() => setSsoLinkCopied(false), 2000);
+    });
   }
 
   async function addContact() {
@@ -800,6 +854,88 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                 </>
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {!org.is_sandbox && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Enterprise SSO</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            Let employees sign in with your company's own identity provider — Okta, Azure AD,
+            Google Workspace, or any other OIDC-compliant provider. Auto-provisions new employees
+            with regular access only, same as joining with a code — SSO never grants admin rights.
+          </p>
+
+          {ssoConfig && !showSsoForm ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span className="pill pill-approved">Connected</span>
+                <span style={{ fontWeight: 600 }}>{ssoConfig.provider_name || ssoConfig.issuer}</span>
+              </div>
+              <p className="hint" style={{ margin: "0 0 4px" }}>Issuer: {ssoConfig.issuer}</p>
+              <p className="hint" style={{ margin: "0 0 10px" }}>Restricted to @{ssoConfig.allowed_email_domain} accounts</p>
+
+              <div className="field">
+                <label>Your SSO login link — share this with employees</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input readOnly value={`${API_URL}/auth/sso/${org.id}/login`} style={{ flex: 1 }} />
+                  <button className="btn btn-ghost btn-sm" onClick={copySsoLink}>{ssoLinkCopied ? "Copied ✓" : "Copy"}</button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => {
+                  setShowSsoForm(true);
+                  setSsoProviderName(ssoConfig.provider_name);
+                  setSsoIssuer(ssoConfig.issuer);
+                  setSsoClientId(ssoConfig.client_id);
+                  setSsoClientSecret("");
+                  setSsoDomain(ssoConfig.allowed_email_domain);
+                }}>
+                  Edit
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={removeSsoConfig}>Remove</button>
+              </div>
+            </div>
+          ) : !showSsoForm ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowSsoForm(true)}>Set up SSO</button>
+          ) : (
+            <>
+              <div className="field">
+                <label>Provider name (optional, for your own reference)</label>
+                <input value={ssoProviderName} onChange={(e) => setSsoProviderName(e.target.value)} placeholder="e.g. Okta" />
+              </div>
+              <div className="field">
+                <label>Issuer URL</label>
+                <input value={ssoIssuer} onChange={(e) => setSsoIssuer(e.target.value)} placeholder="https://acme.okta.com" />
+              </div>
+              <div className="field">
+                <label>Client ID</label>
+                <input value={ssoClientId} onChange={(e) => setSsoClientId(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Client secret</label>
+                <input
+                  type="password"
+                  value={ssoClientSecret}
+                  onChange={(e) => setSsoClientSecret(e.target.value)}
+                  placeholder={ssoConfig ? "Enter a new secret to replace the existing one" : ""}
+                />
+              </div>
+              <div className="field">
+                <label>Allowed email domain</label>
+                <input value={ssoDomain} onChange={(e) => setSsoDomain(e.target.value)} placeholder="acme.com" />
+              </div>
+              {ssoError && <p className="error-text">{ssoError}</p>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={saveSsoConfig}
+                        disabled={ssoSaving || !ssoIssuer.trim() || !ssoClientId.trim() || !ssoClientSecret.trim() || !ssoDomain.trim()}>
+                  {ssoSaving ? "Saving…" : "Save"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowSsoForm(false)}>Cancel</button>
+              </div>
+            </>
           )}
         </div>
       )}
