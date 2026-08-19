@@ -819,7 +819,7 @@ def assign_mentor(
     db.refresh(assignment)
 
     return schemas.MentorAssignmentOut(
-        id=assignment.id, name=contact.name, email=contact.email,
+        id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
         description=contact.description, assigned_at=assignment.assigned_at,
     )
 

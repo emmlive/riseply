@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse } from "@/lib/api";
+import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -165,6 +165,10 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [askAnswer, setAskAnswer] = useState<OrgAskResponse | null>(null);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState("");
+  const [mentor, setMentor] = useState<MentorAssignment | null>(null);
+  const [goals, setGoals] = useState<CareerGoal[]>([]);
+  const [newGoal, setNewGoal] = useState("");
+  const [addingGoal, setAddingGoal] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -172,6 +176,8 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     api<OrgContact[]>(`/applications/${applicationId}/handoff-contacts`).then(setHandoffContacts).catch(() => {});
     api<ChecklistProgressItem[]>(`/applications/${applicationId}/checklist`).then(setChecklist).catch(() => {});
     api<LessonDelivery[]>(`/applications/${applicationId}/lessons`).then(setLessons).catch(() => {});
+    api<MentorAssignment | null>(`/applications/${applicationId}/mentor`).then(setMentor).catch(() => {});
+    api<CareerGoal[]>(`/applications/${applicationId}/career-goals`).then(setGoals).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
       .then((p) => {
@@ -237,6 +243,51 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       alert(err.message || "Couldn't send that — try again.");
     } finally {
       setHandoffSending(false);
+    }
+  }
+
+  function openHandoffToMentor() {
+    if (!mentor) return;
+    setHandoffContactId(mentor.contact_id);
+    setShowHandoffForm(true);
+  }
+
+  async function addGoal() {
+    if (!newGoal.trim()) return;
+    setAddingGoal(true);
+    try {
+      const goal = await api<CareerGoal>(`/applications/${applicationId}/career-goals`, {
+        method: "POST", body: JSON.stringify({ goal_text: newGoal.trim() }),
+      });
+      setGoals((prev) => [goal, ...prev]);
+      setNewGoal("");
+    } catch (err: any) {
+      alert(err.message || "Couldn't add that goal.");
+    } finally {
+      setAddingGoal(false);
+    }
+  }
+
+  async function toggleGoalAchieved(goal: CareerGoal) {
+    try {
+      if (goal.achieved_at) {
+        // No "un-achieve" endpoint exists -- achieving is a one-way
+        // milestone, same as checking off an onboarding checklist item.
+        return;
+      }
+      const updated = await api<CareerGoal>(`/applications/${applicationId}/career-goals/${goal.id}/achieve`, { method: "POST" });
+      setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    } catch (err: any) {
+      alert(err.message || "Couldn't update that goal.");
+    }
+  }
+
+  async function removeGoal(goalId: number) {
+    try {
+      await api(`/applications/${applicationId}/career-goals/${goalId}`, { method: "DELETE" });
+      setGoals((prev) => prev.filter((g) => g.id !== goalId));
+    } catch (err: any) {
+      alert(err.message || "Couldn't remove that goal.");
     }
   }
 
@@ -460,6 +511,81 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
               )}
             </div>
           )}
+
+          {mentor && (
+            <div className="card" style={{ borderColor: "var(--accent)", background: "linear-gradient(180deg, var(--accent-soft) 0%, var(--surface) 120px)" }}>
+              <p className="hint" style={{ margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 600, color: "var(--accent-hover)" }}>
+                Your Mentor
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="avatar-initial">{mentor.name.charAt(0).toUpperCase()}</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontFamily: "var(--font-display)", fontSize: "1.05rem" }}>{mentor.name}</div>
+                  {mentor.description && <div className="hint" style={{ marginTop: 1 }}>{mentor.description}</div>}
+                </div>
+              </div>
+              <p className="hint" style={{ marginTop: 12, marginBottom: 10 }}>
+                Assigned to help you specifically, beyond what Job Buddy can do directly.
+              </p>
+              <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
+            </div>
+          )}
+
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Career goals</h3>
+            <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+              Job Buddy keeps these in mind across your conversations, the way a real mentor
+              remembers what you're working toward instead of starting fresh every time.
+            </p>
+
+            {goals.length === 0 ? (
+              <p className="muted" style={{ marginBottom: 12 }}>
+                No goals set yet — add one below and Job Buddy will factor it into its advice.
+              </p>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                {goals.map((goal) => (
+                  <div key={goal.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 0" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!goal.achieved_at}
+                      disabled={!!goal.achieved_at}
+                      onChange={() => toggleGoalAchieved(goal)}
+                      style={{ marginTop: 3 }}
+                      title={goal.achieved_at ? "Achieved" : "Mark as achieved"}
+                    />
+                    <span style={{
+                      flex: 1, textDecoration: goal.achieved_at ? "line-through" : "none",
+                      color: goal.achieved_at ? "var(--ink-muted)" : "inherit",
+                    }}>
+                      {goal.goal_text}
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: "2px 8px" }}
+                      onClick={() => removeGoal(goal.id)}
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={newGoal}
+                onChange={(e) => setNewGoal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addGoal(); }}
+                placeholder="e.g. Get better at public speaking"
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-primary btn-sm" onClick={addGoal} disabled={addingGoal || !newGoal.trim()}>
+                {addingGoal ? "Adding…" : "Add"}
+              </button>
+            </div>
+          </div>
 
           {handoffContacts.length > 0 && (
             <div className="card">

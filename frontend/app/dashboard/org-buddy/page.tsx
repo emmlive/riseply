@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import { api, downloadFile, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -124,8 +124,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [contactEmail, setContactEmail] = useState("");
   const [contactDesc, setContactDesc] = useState("");
   const [contactDept, setContactDept] = useState<string>("");
+  const [contactIsMentor, setContactIsMentor] = useState(false);
   const [addingContact, setAddingContact] = useState(false);
   const [contactError, setContactError] = useState("");
+  const [employees, setEmployees] = useState<OrgEmployee[]>([]);
+  const [assigningEmployeeId, setAssigningEmployeeId] = useState<number | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [deptName, setDeptName] = useState("");
   const [addingDept, setAddingDept] = useState(false);
@@ -175,6 +178,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
+    api<OrgEmployee[]>(`/orgs/${org.id}/employees`).then(setEmployees).catch(() => {});
     api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
     api<ChecklistItem[]>(`/orgs/${org.id}/checklist`).then(setChecklist);
     api<OrgLesson[]>(`/orgs/${org.id}/lessons`).then(setLessons);
@@ -334,14 +338,29 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         body: JSON.stringify({
           name: contactName, email: contactEmail, description: contactDesc,
           department_id: contactDept ? Number(contactDept) : null,
+          is_mentor: contactIsMentor,
         }),
       });
-      setContactName(""); setContactEmail(""); setContactDesc("");
+      setContactName(""); setContactEmail(""); setContactDesc(""); setContactIsMentor(false);
       load();
     } catch (err: any) {
       setContactError(err.message || "Couldn't add that contact.");
     } finally {
       setAddingContact(false);
+    }
+  }
+
+  async function assignMentor(applicationId: number, contactId: number) {
+    setAssigningEmployeeId(applicationId);
+    try {
+      await api(`/orgs/${org.id}/employees/${applicationId}/assign-mentor`, {
+        method: "POST", body: JSON.stringify({ contact_id: contactId }),
+      });
+      load();
+    } catch (err: any) {
+      alert(err.message || "Couldn't assign that mentor.");
+    } finally {
+      setAssigningEmployeeId(null);
     }
   }
 
@@ -770,9 +789,15 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
 
         {contacts.map((c) => (
           <div key={c.id} className="points-event-row">
-            <div>
-              <div style={{ fontWeight: 600 }}>{c.name} — {c.email}</div>
-              <div className="hint">{c.description || "(no description)"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="avatar-initial avatar-initial-sm">{c.name.charAt(0).toUpperCase()}</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>
+                  {c.name} — {c.email}
+                  {c.is_mentor && <span className="pill pill-approved" style={{ marginLeft: 8 }}>Mentor</span>}
+                </div>
+                <div className="hint">{c.description || "(no description)"}</div>
+              </div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => removeContactEntry(c.id)}>Remove</button>
           </div>
@@ -791,6 +816,12 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <label>What they help with</label>
             <input value={contactDesc} onChange={(e) => setContactDesc(e.target.value)} placeholder="e.g. Office tours & facilities" />
           </div>
+          <div className="field">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
+              <input type="checkbox" checked={contactIsMentor} onChange={(e) => setContactIsMentor(e.target.checked)} style={{ width: "auto" }} />
+              Available as a mentor — can be assigned 1:1 to specific employees below
+            </label>
+          </div>
           {departments.length > 0 && (
             <div className="field">
               <label>Scope</label>
@@ -804,8 +835,55 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           <button className="btn btn-primary btn-sm" onClick={addContact}
                   disabled={addingContact || !contactName.trim() || !contactEmail.trim()}>
             {addingContact ? "Adding…" : "Add contact"}
+
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Mentor assignments</h3>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Pair a specific employee with one mentor from the pool above. Assigned mentors show up
+          on the employee's Job Buddy page with a direct "Request an intro" — not just left in
+          the general contact list.
+        </p>
+
+        {employees.length === 0 ? (
+          <p className="muted">No employees have joined yet.</p>
+        ) : (
+          employees.map((e) => {
+            const mentorPool = contacts.filter((c) => c.is_mentor && (c.department_id === null || c.department_id === e.department_id));
+            return (
+              <div key={e.application_id} className="points-event-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className="avatar-initial avatar-initial-sm">{e.user_full_name.charAt(0).toUpperCase()}</span>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{e.user_full_name}</div>
+                    <div className="hint">
+                      {e.user_email}{e.department_name && ` · ${e.department_name}`}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {e.mentor_name && <span className="pill pill-approved">{e.mentor_name}</span>}
+                  {mentorPool.length > 0 ? (
+                    <select
+                      value=""
+                      disabled={assigningEmployeeId === e.application_id}
+                      onChange={(ev) => { if (ev.target.value) assignMentor(e.application_id, Number(ev.target.value)); }}
+                      style={{ width: 180 }}
+                    >
+                      <option value="">{e.mentor_name ? "Reassign…" : "Assign a mentor…"}</option>
+                      {mentorPool.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  ) : (
+                    <span className="hint">No eligible mentors yet</span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       <div className="card">

@@ -263,6 +263,7 @@ export interface OrgContact {
 
 export interface MentorAssignment {
   id: number;
+  contact_id: number;
   name: string;
   email: string;
   description: string;
@@ -274,6 +275,16 @@ export interface CareerGoal {
   goal_text: string;
   created_at: string;
   achieved_at: string | null;
+}
+
+export interface OrgEmployee {
+  application_id: number;
+  user_email: string;
+  user_full_name: string;
+  department_id: number | null;
+  department_name: string | null;
+  joined_at: string;
+  mentor_name: string | null;
 }
 
 export interface Department {

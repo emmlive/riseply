@@ -337,6 +337,7 @@ class MentorAssignRequest(BaseModel):
 
 class MentorAssignmentOut(BaseModel):
     id: int
+    contact_id: int
     name: str
     email: str
     description: str
