@@ -442,7 +442,52 @@ class OrgHumanContact(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     description = Column(String, default="")  # e.g. "Office tours & facilities"
+    # Distinguishes the general contact pool (anyone can request a
+    # handoff to any of them) from the mentor pool specifically, which
+    # gets explicitly 1:1 assigned to individual employees via
+    # MentorAssignment below, rather than just being suggested broadly.
+    is_mentor = Column(Boolean, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class MentorAssignment(Base):
+    """Pairs one employee (via their org-linked Application) with one
+    mentor (an OrgHumanContact row with is_mentor=True). Deliberately
+    reuses OrgHumanContact/HandoffRequest wholesale rather than
+    building parallel infrastructure -- a mentor IS a human contact,
+    just one that's been explicitly 1:1 assigned instead of left in
+    the general pool anyone can reach out to. 'Request an intro' from
+    an assigned mentor uses the exact same HandoffRequest flow already
+    built for the general contact list (a note the employee wrote,
+    never their chat history)."""
+    __tablename__ = "mentor_assignments"
+    __table_args__ = (UniqueConstraint("application_id", name="uq_application_mentor"),)
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    contact_id = Column(Integer, ForeignKey("org_human_contacts.id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class CareerGoal(Base):
+    """A short-term growth goal the employee set for themselves via Job
+    Buddy -- persisted so ongoing guidance can be grounded in what THIS
+    specific person said they want to work on, instead of starting
+    fresh every conversation. This is the AI-mentorship half of the
+    feature; MentorAssignment above is the human-pairing half.
+
+    Employee-owned and employee-visible only. Deliberately NOT surfaced
+    in org admin analytics -- unlike checklist/lesson data (enrollment
+    and progress signals, fair game for aggregate reporting), a
+    person's stated career goals are personal content, same privacy
+    boundary as their Job Buddy chat itself."""
+    __tablename__ = "career_goals"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    goal_text = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    achieved_at = Column(DateTime, nullable=True)
 
 
 class OrgChecklistItem(Base):

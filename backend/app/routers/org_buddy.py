@@ -1,6 +1,7 @@
 import csv
 import io
 import secrets
+from datetime import datetime
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
@@ -671,6 +672,7 @@ def add_contact(
     contact = models.OrgHumanContact(
         organization_id=organization_id, department_id=payload.department_id,
         name=payload.name, email=payload.email, description=payload.description,
+        is_mentor=payload.is_mentor,
     )
     db.add(contact)
     db.commit()
@@ -713,6 +715,113 @@ def delete_contact(
     db.delete(contact)
     db.commit()
     return {"deleted": True}
+
+
+# --- Mentor assignment -- pairs an employee with one specific mentor
+# from the contact pool (a contact with is_mentor=True), rather than
+# just leaving them in the general list anyone can reach out to. ---
+
+@router.get("/{organization_id}/employees", response_model=list[schemas.OrgEmployeeOut])
+def list_employees(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Joined employees (not the pre-registration roster -- this is who's
+    actually signed up), with enough detail to assign a mentor to each.
+    Deliberately only name/email/department/join date/mentor status --
+    same aggregate-adjacent, no-conversation-content boundary as
+    everywhere else admin-facing in Org Buddy."""
+    _require_admin(db, organization_id, user.id)
+
+    rows = (
+        db.query(models.Application, models.User)
+        .join(models.User, models.Application.user_id == models.User.id)
+        .filter(models.Application.organization_id == organization_id)
+        .order_by(models.Application.created_at.desc())
+        .all()
+    )
+
+    dept_names = {d.id: d.name for d in db.query(models.Department).filter_by(organization_id=organization_id).all()}
+
+    app_ids = [a.id for a, _ in rows]
+    mentor_names: dict[int, str] = {}
+    if app_ids:
+        assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
+        contact_ids = [a.contact_id for a in assignments]
+        contacts_by_id = {c.id: c.name for c in db.query(models.OrgHumanContact).filter(models.OrgHumanContact.id.in_(contact_ids)).all()} if contact_ids else {}
+        for a in assignments:
+            mentor_names[a.application_id] = contacts_by_id.get(a.contact_id)
+
+    return [
+        schemas.OrgEmployeeOut(
+            application_id=app_row.id, user_email=user_row.email,
+            user_full_name=user_row.full_name or user_row.email,
+            department_id=app_row.department_id,
+            department_name=dept_names.get(app_row.department_id) if app_row.department_id else None,
+            joined_at=app_row.created_at,
+            mentor_name=mentor_names.get(app_row.id),
+        )
+        for app_row, user_row in rows
+    ]
+
+
+@router.get("/{organization_id}/mentors", response_model=list[schemas.OrgContactOut])
+def list_mentors(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The assignable mentor pool -- admin-facing (for picking who to
+    assign), scoped the same way as the general contact list."""
+    member = _require_member(db, organization_id, user.id)
+    q = db.query(models.OrgHumanContact).filter_by(organization_id=organization_id, is_mentor=True)
+    if member.role != "admin":
+        dept_id = member.department_id
+        q = q.filter(
+            (models.OrgHumanContact.department_id == None)  # noqa: E711
+            | (models.OrgHumanContact.department_id == dept_id)
+        )
+    return q.all()
+
+
+@router.post("/{organization_id}/employees/{application_id}/assign-mentor", response_model=schemas.MentorAssignmentOut)
+def assign_mentor(
+    organization_id: int,
+    application_id: int,
+    payload: schemas.MentorAssignRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    application = db.query(models.Application).filter_by(
+        id=application_id, organization_id=organization_id
+    ).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Employee not found in this organization.")
+
+    contact = db.query(models.OrgHumanContact).filter_by(
+        id=payload.contact_id, organization_id=organization_id, is_mentor=True
+    ).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="That mentor wasn't found.")
+
+    _require_scope_admin(db, organization_id, user.id, application.department_id)
+
+    existing = db.query(models.MentorAssignment).filter_by(application_id=application_id).first()
+    if existing:
+        existing.contact_id = contact.id
+        existing.assigned_at = datetime.utcnow()
+        assignment = existing
+    else:
+        assignment = models.MentorAssignment(application_id=application_id, contact_id=contact.id)
+        db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    return schemas.MentorAssignmentOut(
+        id=assignment.id, name=contact.name, email=contact.email,
+        description=contact.description, assigned_at=assignment.assigned_at,
+    )
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

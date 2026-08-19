@@ -257,7 +257,23 @@ export interface OrgContact {
   email: string;
   description: string;
   department_id: number | null;
+  is_mentor: boolean;
   created_at: string;
+}
+
+export interface MentorAssignment {
+  id: number;
+  name: string;
+  email: string;
+  description: string;
+  assigned_at: string;
+}
+
+export interface CareerGoal {
+  id: number;
+  goal_text: string;
+  created_at: string;
+  achieved_at: string | null;
 }
 
 export interface Department {
