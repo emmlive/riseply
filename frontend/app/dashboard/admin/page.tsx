@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
-  AdminOrganization, AdminSystemHealth, AdminFlaggedMessage,
+  AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
 type Tab = "overview" | "users" | "organizations" | "health" | "moderation" | "support" | "admins";
@@ -425,8 +425,27 @@ function AdminsTab({ currentAdminId }: { currentAdminId: number }) {
 
 function OrganizationsTab() {
   const [orgs, setOrgs] = useState<AdminOrganization[]>([]);
+  const [billingRequests, setBillingRequests] = useState<EnterpriseBillingRequestOut[]>([]);
 
   useEffect(() => { api<AdminOrganization[]>("/admin/organizations").then(setOrgs); }, []);
+  useEffect(() => { loadBillingRequests(); }, []);
+
+  async function loadBillingRequests() {
+    try {
+      setBillingRequests(await api<EnterpriseBillingRequestOut[]>("/admin/enterprise-billing-requests"));
+    } catch {
+      // billing-scope readonly/etc. handled the same as everywhere else -- just don't show it
+    }
+  }
+
+  async function updateBillingRequestStatus(id: number, status: string) {
+    try {
+      await api(`/admin/enterprise-billing-requests/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      loadBillingRequests();
+    } catch (err: any) {
+      alert(err.message || "Couldn't update that.");
+    }
+  }
 
   // Sandbox orgs (admin pilot access) are deliberately excluded from
   // every real business metric here -- they can't be billed at all
@@ -452,6 +471,37 @@ function OrganizationsTab() {
           <div className="label">Total members</div>
         </div>
       </div>
+
+      {billingRequests.filter((r) => r.status !== "resolved").length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Enterprise billing requests</h3>
+          {billingRequests.filter((r) => r.status !== "resolved").map((req) => {
+            const org = orgs.find((o) => o.id === req.organization_id);
+            return (
+              <div key={req.id} className="points-event-row" style={{ alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {org?.name || `Org #${req.organization_id}`}
+                    <span className={`pill ${req.status === "pending" ? "pill-pending" : "pill-default"}`} style={{ marginLeft: 8 }}>
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="hint">
+                    {req.billing_contact_name} &lt;{req.billing_contact_email}&gt; · ~{req.estimated_employees} employees
+                  </div>
+                  {req.notes && <div className="hint" style={{ marginTop: 2 }}>{req.notes}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {req.status === "pending" && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => updateBillingRequestStatus(req.id, "contacted")}>Mark contacted</button>
+                  )}
+                  <button className="btn btn-ghost btn-sm" onClick={() => updateBillingRequestStatus(req.id, "resolved")}>Mark resolved</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="card">
         {realOrgs.map((org) => (
@@ -619,6 +669,46 @@ function SupportTab({ role }: { role: string }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const canReply = role === "super" || role === "support";
+  const [cannedReplies, setCannedReplies] = useState<CannedReply[]>([]);
+  const [showCannedManager, setShowCannedManager] = useState(false);
+  const [newCannedTitle, setNewCannedTitle] = useState("");
+  const [newCannedBody, setNewCannedBody] = useState("");
+  const [addingCanned, setAddingCanned] = useState(false);
+
+  async function loadCannedReplies() {
+    try {
+      setCannedReplies(await api<CannedReply[]>("/admin/canned-replies"));
+    } catch {
+      // support-scope admins without view access just won't see the picker
+    }
+  }
+
+  async function addCannedReply() {
+    if (!newCannedTitle.trim() || !newCannedBody.trim()) return;
+    setAddingCanned(true);
+    try {
+      await api("/admin/canned-replies", { method: "POST", body: JSON.stringify({ title: newCannedTitle, body: newCannedBody }) });
+      setNewCannedTitle(""); setNewCannedBody("");
+      await loadCannedReplies();
+    } catch (err: any) {
+      alert(err.message || "Couldn't save that template.");
+    } finally {
+      setAddingCanned(false);
+    }
+  }
+
+  async function deleteCannedReply(id: number) {
+    try {
+      await api(`/admin/canned-replies/${id}`, { method: "DELETE" });
+      await loadCannedReplies();
+    } catch (err: any) {
+      alert(err.message || "Couldn't delete that template.");
+    }
+  }
+
+  function insertCanned(messageId: number, body: string) {
+    setReplyDrafts((prev) => ({ ...prev, [messageId]: body }));
+  }
 
   async function load(status: string, searchTerm: string) {
     const params = new URLSearchParams();
@@ -632,6 +722,26 @@ function SupportTab({ role }: { role: string }) {
     const timeout = setTimeout(() => load(filter, search), search ? 300 : 0);
     return () => clearTimeout(timeout);
   }, [filter, search]);
+
+  useEffect(() => { loadCannedReplies(); }, []);
+
+  function ageInHours(createdAt: string): number {
+    return (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+  }
+
+  function ageBadge(createdAt: string, status: string) {
+    if (status !== "open") return null;
+    const hours = ageInHours(createdAt);
+    if (hours < 24) return null; // fresh -- no need to call it out
+    const days = Math.floor(hours / 24);
+    const label = days >= 1 ? `${days}d open` : `${Math.floor(hours)}h open`;
+    const urgent = hours >= 72;
+    return (
+      <span className={`pill ${urgent ? "pill-rejected" : "pill-pending"}`} style={{ marginLeft: 8 }}>
+        {label}
+      </span>
+    );
+  }
 
   async function sendReply(id: number) {
     const reply = replyDrafts[id];
@@ -712,6 +822,7 @@ function SupportTab({ role }: { role: string }) {
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span className={`pill ${m.status === "open" ? "pill-pending" : "pill-approved"}`}>{m.status}</span>
+              {ageBadge(m.created_at, m.status)}
               {canReply && (
                 <>
                   {m.status === "open" && (
@@ -732,6 +843,16 @@ function SupportTab({ role }: { role: string }) {
             <div className="brief">Replied: {m.admin_reply}</div>
           ) : canReply ? (
             <div style={{ marginTop: 10 }}>
+              {cannedReplies.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => { if (e.target.value) insertCanned(m.id, cannedReplies.find((c) => String(c.id) === e.target.value)?.body || ""); }}
+                  style={{ marginBottom: 8, width: "auto" }}
+                >
+                  <option value="">Insert a template…</option>
+                  {cannedReplies.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </select>
+              )}
               <textarea
                 rows={3}
                 placeholder="Write a reply…"
@@ -750,6 +871,45 @@ function SupportTab({ role }: { role: string }) {
           ) : null}
         </div>
       ))}
+
+      {canReply && (
+        <div className="card">
+          <div className="card-row">
+            <h3 style={{ margin: 0 }}>Reply templates</h3>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowCannedManager((s) => !s)}>
+              {showCannedManager ? "Hide" : "Manage"}
+            </button>
+          </div>
+          {showCannedManager && (
+            <>
+              {cannedReplies.map((c) => (
+                <div key={c.id} className="points-event-row">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{c.title}</div>
+                    <div className="hint">{c.body.slice(0, 100)}{c.body.length > 100 ? "…" : ""}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => deleteCannedReply(c.id)}>Remove</button>
+                </div>
+              ))}
+              <div style={{ marginTop: cannedReplies.length > 0 ? 16 : 0 }}>
+                <div className="field">
+                  <label>Title</label>
+                  <input value={newCannedTitle} onChange={(e) => setNewCannedTitle(e.target.value)} placeholder="e.g. Billing question" />
+                </div>
+                <div className="field">
+                  <label>Reply text</label>
+                  <textarea rows={3} value={newCannedBody} onChange={(e) => setNewCannedBody(e.target.value)}
+                            placeholder="Thanks for reaching out about billing…" />
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={addCannedReply}
+                        disabled={addingCanned || !newCannedTitle.trim() || !newCannedBody.trim()}>
+                  {addingCanned ? "Adding…" : "Add template"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

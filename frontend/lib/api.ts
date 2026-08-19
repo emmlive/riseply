@@ -453,6 +453,34 @@ export interface AdminSupportMessage {
   created_at: string;
 }
 
+export interface CannedReply {
+  id: number;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
+export interface EnterpriseBillingRequestOut {
+  id: number;
+  organization_id: number;
+  billing_contact_name: string;
+  billing_contact_email: string;
+  estimated_employees: number;
+  notes: string;
+  status: string;
+  created_at: string;
+}
+
+export interface OrgSSOConfig {
+  id: number;
+  provider_name: string;
+  issuer: string;
+  client_id: string;
+  allowed_email_domain: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface AdminOrganization {
   id: number;
   name: string;

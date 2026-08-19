@@ -999,6 +999,128 @@ def org_billing(
     )
 
 
+@router.post("/{organization_id}/request-enterprise-billing", response_model=schemas.EnterpriseBillingRequestOut)
+def request_enterprise_billing(
+    organization_id: int,
+    payload: schemas.EnterpriseBillingRequestCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Deliberately just captures the request and notifies a human --
+    see the note on EnterpriseBillingRequest for why this isn't an
+    automated invoicing system."""
+    _require_admin(db, organization_id, user.id)
+    org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    request = models.EnterpriseBillingRequest(
+        organization_id=organization_id, requested_by_user_id=user.id,
+        billing_contact_name=payload.billing_contact_name,
+        billing_contact_email=payload.billing_contact_email,
+        estimated_employees=payload.estimated_employees, notes=payload.notes,
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    support_inbox = settings.support_email or settings.resend_from_email
+    try:
+        from app.services import notifier
+        notifier.send_email(
+            support_inbox,
+            f"[Riseply] Enterprise billing request — {org_row.name}",
+            (
+                f"Organization: {org_row.name} (id {organization_id})\n"
+                f"Requested by: {user.full_name or user.email} ({user.email})\n"
+                f"Billing contact: {payload.billing_contact_name} <{payload.billing_contact_email}>\n"
+                f"Estimated employees: {payload.estimated_employees}\n\n"
+                f"Notes:\n{payload.notes or '(none)'}"
+            ),
+        )
+    except Exception as e:
+        print(f"[org_buddy] Enterprise billing request notification failed for org {organization_id}: {e}")
+        # Deliberately not raised as an error -- the request is already
+        # saved and admin-visible either way; a failed notification
+        # email shouldn't make the person think their request was lost.
+
+    return request
+
+
+@router.get("/{organization_id}/enterprise-billing-requests", response_model=list[schemas.EnterpriseBillingRequestOut])
+def list_enterprise_billing_requests(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    return (
+        db.query(models.EnterpriseBillingRequest).filter_by(organization_id=organization_id)
+        .order_by(models.EnterpriseBillingRequest.created_at.desc()).all()
+    )
+
+
+@router.get("/{organization_id}/sso-config", response_model=schemas.OrgSSOConfigOut | None)
+def get_sso_config(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    return db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+
+
+@router.post("/{organization_id}/sso-config", response_model=schemas.OrgSSOConfigOut)
+def set_sso_config(
+    organization_id: int,
+    payload: schemas.OrgSSOConfigCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Validates the issuer actually resolves to a real OIDC discovery
+    document before saving -- catches a typo'd issuer URL immediately
+    at setup time, rather than only surfacing as a broken login for
+    the first employee who tries to use it."""
+    _require_admin(db, organization_id, user.id)
+
+    from app.services import oidc_sso
+    discovery = oidc_sso.discover(payload.issuer)
+    if not discovery.get("authorization_endpoint") or not discovery.get("token_endpoint") or not discovery.get("jwks_uri"):
+        raise HTTPException(status_code=400, detail="That issuer's discovery document is missing required endpoints — double check the issuer URL.")
+
+    config = db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+    if config:
+        config.provider_name = payload.provider_name
+        config.issuer = payload.issuer
+        config.client_id = payload.client_id
+        config.client_secret = payload.client_secret
+        config.allowed_email_domain = payload.allowed_email_domain
+        config.enabled = True
+    else:
+        config = models.OrgSSOConfig(
+            organization_id=organization_id, provider_name=payload.provider_name,
+            issuer=payload.issuer, client_id=payload.client_id, client_secret=payload.client_secret,
+            allowed_email_domain=payload.allowed_email_domain,
+        )
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+@router.delete("/{organization_id}/sso-config")
+def delete_sso_config(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    config = db.query(models.OrgSSOConfig).filter_by(organization_id=organization_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="No SSO configuration to remove.")
+    db.delete(config)
+    db.commit()
+    return {"deleted": True}
+
+
 # --- Ghost Onboarder: what employees have been asking ---
 
 @router.get("/{organization_id}/qa-logs", response_model=list[schemas.OrgQALogOut])
