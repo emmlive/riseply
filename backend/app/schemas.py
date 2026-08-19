@@ -645,3 +645,44 @@ class SavedResumeOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Org Buddy admin analytics ---
+
+class ChecklistItemStats(BaseModel):
+    item_id: int
+    title: str
+    total_assigned: int
+    total_completed: int
+    completion_rate: float
+
+
+class LessonQuizStats(BaseModel):
+    lesson_id: int
+    title: str
+    quiz_question: str
+    total_attempts: int
+    correct_count: int
+    correct_rate: float
+
+
+class QAGapStats(BaseModel):
+    question: str
+    count: int
+
+
+class DepartmentStats(BaseModel):
+    department_id: Optional[int]
+    department_name: str
+    total_employees: int
+    completed_onboarding: int
+    completion_rate: float
+
+
+class OrgAnalyticsOut(BaseModel):
+    total_employees: int
+    avg_days_to_complete_onboarding: Optional[float]
+    checklist_items: list[ChecklistItemStats]
+    lesson_quizzes: list[LessonQuizStats]
+    qa_gaps: list[QAGapStats]
+    departments: list[DepartmentStats]

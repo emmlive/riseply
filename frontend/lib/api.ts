@@ -192,6 +192,45 @@ export interface OrgUsageStats {
   avg_messages_per_employee: number;
 }
 
+export interface ChecklistItemStats {
+  item_id: number;
+  title: string;
+  total_assigned: number;
+  total_completed: number;
+  completion_rate: number;
+}
+
+export interface LessonQuizStats {
+  lesson_id: number;
+  title: string;
+  quiz_question: string;
+  total_attempts: number;
+  correct_count: number;
+  correct_rate: number;
+}
+
+export interface QAGapStats {
+  question: string;
+  count: number;
+}
+
+export interface DepartmentStats {
+  department_id: number | null;
+  department_name: string;
+  total_employees: number;
+  completed_onboarding: number;
+  completion_rate: number;
+}
+
+export interface OrgAnalytics {
+  total_employees: number;
+  avg_days_to_complete_onboarding: number | null;
+  checklist_items: ChecklistItemStats[];
+  lesson_quizzes: LessonQuizStats[];
+  qa_gaps: QAGapStats[];
+  departments: DepartmentStats[];
+}
+
 export interface OrgRosterEntry {
   id: number;
   email: string;

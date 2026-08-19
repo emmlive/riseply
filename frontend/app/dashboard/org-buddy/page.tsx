@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, Organization, OrgContent, OrgUsageStats, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import { api, downloadFile, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -116,6 +116,7 @@ export default function OrgBuddyPage() {
 function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organization[]; onSwitch: (o: Organization) => void }) {
   const [content, setContent] = useState<OrgContent[]>([]);
   const [stats, setStats] = useState<OrgUsageStats | null>(null);
+  const [analytics, setAnalytics] = useState<OrgAnalytics | null>(null);
   const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [contacts, setContacts] = useState<OrgContact[]>([]);
@@ -170,6 +171,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     // surface as an error toast, and the cards themselves stay hidden
     // rather than rendering an empty shell.
     api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats).catch(() => {});
+    api<OrgAnalytics>(`/orgs/${org.id}/analytics`).then(setAnalytics).catch(() => {});
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
     api<OrgContact[]>(`/orgs/${org.id}/contacts`).then(setContacts);
@@ -580,6 +582,99 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <div className="value">{stats.avg_messages_per_employee}</div>
             <div className="label">Avg. messages / employee</div>
           </div>
+        </div>
+      )}
+
+      {analytics && (
+        <div className="card">
+          <div className="card-row">
+            <h3 style={{ marginTop: 0 }}>Onboarding analytics</h3>
+            <a
+              href="#"
+              className="btn btn-ghost btn-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                downloadFile(`/orgs/${org.id}/analytics/export.csv`, `riseply_org_${org.id}_analytics.csv`);
+              }}
+            >
+              Download CSV report
+            </a>
+          </div>
+
+          <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
+            Aggregate only — same principle as everywhere else in Org Buddy: this shows counts and
+            rates, never which specific employee said or did what.
+          </p>
+
+          {analytics.avg_days_to_complete_onboarding !== null && (
+            <p style={{ margin: "0 0 12px" }}>
+              Employees who've finished onboarding took an average of{" "}
+              <strong>{analytics.avg_days_to_complete_onboarding} days</strong> to complete every applicable checklist item.
+            </p>
+          )}
+
+          {analytics.checklist_items.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Checklist completion by item</p>
+              {analytics.checklist_items.map((s) => (
+                <div key={s.item_id} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+                    <span>{s.title}</span>
+                    <span className="hint">{s.total_completed}/{s.total_assigned} · {s.completion_rate}%</span>
+                  </div>
+                  <div style={{ height: 6, background: "var(--paper)", borderRadius: 4, marginTop: 4, overflow: "hidden" }}>
+                    <div style={{ width: `${s.completion_rate}%`, height: "100%", background: "var(--accent)" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {analytics.lesson_quizzes.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Culture Bot quiz performance</p>
+              {analytics.lesson_quizzes.map((s) => (
+                <div key={s.lesson_id} style={{ marginBottom: 6, fontSize: "0.9rem" }}>
+                  <span>{s.title} — "{s.quiz_question}"</span>
+                  <span className="hint" style={{ marginLeft: 8 }}>
+                    {s.correct_count}/{s.total_attempts} correct · {s.correct_rate}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {analytics.departments.length > 1 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>By department</p>
+              {analytics.departments.map((s) => (
+                <div key={s.department_name} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", marginBottom: 4 }}>
+                  <span>{s.department_name}</span>
+                  <span className="hint">{s.completed_onboarding}/{s.total_employees} fully onboarded · {s.completion_rate}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {analytics.qa_gaps.length > 0 && (
+            <div>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Most common content gaps</p>
+              <p className="hint" style={{ marginTop: -4, marginBottom: 8 }}>
+                Questions employees asked that nothing in your uploaded content actually answered —
+                the clearest signal for what to add.
+              </p>
+              {analytics.qa_gaps.slice(0, 8).map((s) => (
+                <div key={s.question} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", marginBottom: 4 }}>
+                  <span>{s.question}</span>
+                  <span className="hint">asked {s.count}×</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {analytics.total_employees === 0 && (
+            <p className="muted">Nothing to show yet — analytics fill in once employees start joining and using the checklist/lessons.</p>
+          )}
         </div>
       )}
 
