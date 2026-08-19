@@ -1,8 +1,9 @@
 import csv
 import io
 import secrets
+from datetime import datetime
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -354,6 +355,195 @@ def org_usage_stats(
     )
 
 
+@router.get("/{organization_id}/analytics", response_model=schemas.OrgAnalyticsOut)
+def org_analytics(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Same aggregate-only privacy principle as org_usage_stats above --
+    every section here counts/rates across employees, never singles
+    one out or shows message content. Org-wide admin only (not
+    department admins) since this reports across the whole
+    organization, same scope as billing/settings."""
+    _require_admin(db, organization_id, user.id)
+
+    apps = db.query(models.Application).filter_by(organization_id=organization_id).all()
+    app_ids = [a.id for a in apps]
+    apps_by_id = {a.id: a for a in apps}
+
+    # --- Checklist completion, per item ---
+    checklist_items = db.query(models.OrgChecklistItem).filter_by(organization_id=organization_id).all()
+    completions_by_item: dict[int, set[int]] = {}
+    if app_ids:
+        for row in db.query(models.ChecklistCompletion).filter(
+            models.ChecklistCompletion.application_id.in_(app_ids)
+        ).all():
+            completions_by_item.setdefault(row.checklist_item_id, set()).add(row.application_id)
+
+    checklist_stats = []
+    for item in checklist_items:
+        # Company-wide items apply to everyone; department-scoped items
+        # only apply to that department's employees -- same layering
+        # rule used everywhere else (content, lessons, contacts).
+        assigned = [a for a in apps if item.department_id is None or a.department_id == item.department_id]
+        completed_ids = completions_by_item.get(item.id, set())
+        completed = len([a for a in assigned if a.id in completed_ids])
+        total = len(assigned)
+        checklist_stats.append(schemas.ChecklistItemStats(
+            item_id=item.id, title=item.title, total_assigned=total, total_completed=completed,
+            completion_rate=round(completed / total * 100, 1) if total else 0.0,
+        ))
+
+    # --- Lesson quiz performance -- only lessons that actually have a quiz ---
+    lessons = db.query(models.OrgLesson).filter(
+        models.OrgLesson.organization_id == organization_id,
+        models.OrgLesson.quiz_question != "",
+    ).all()
+    deliveries_by_lesson: dict[int, list] = {}
+    if app_ids:
+        for row in db.query(models.LessonDelivery).filter(
+            models.LessonDelivery.application_id.in_(app_ids),
+            models.LessonDelivery.quiz_response.isnot(None),
+        ).all():
+            deliveries_by_lesson.setdefault(row.lesson_id, []).append(row)
+
+    lesson_stats = []
+    for lesson in lessons:
+        attempts = deliveries_by_lesson.get(lesson.id, [])
+        if not attempts:
+            continue  # no signal yet -- omit rather than show a misleading 0%
+        correct = len([d for d in attempts if d.quiz_correct])
+        lesson_stats.append(schemas.LessonQuizStats(
+            lesson_id=lesson.id, title=lesson.title, quiz_question=lesson.quiz_question,
+            total_attempts=len(attempts), correct_count=correct,
+            correct_rate=round(correct / len(attempts) * 100, 1),
+        ))
+
+    # --- Ghost Onboarder gaps -- unmatched questions, grouped by exact
+    # text (a simple, honest approximation -- no NLP clustering that
+    # could group genuinely different questions together and mislead) ---
+    qa_gap_counts: dict[str, int] = {}
+    for row in db.query(models.OrgQALog.question).filter_by(
+        organization_id=organization_id, matched_content=False
+    ).all():
+        q = row.question.strip()
+        if q:
+            qa_gap_counts[q] = qa_gap_counts.get(q, 0) + 1
+    qa_gaps = sorted(
+        [schemas.QAGapStats(question=q, count=c) for q, c in qa_gap_counts.items()],
+        key=lambda x: x.count, reverse=True,
+    )[:20]
+
+    # --- Per-department completion + time-to-complete-onboarding ---
+    # An employee counts as "fully onboarded" once they've completed
+    # every checklist item that actually applies to their scope
+    # (company-wide + their own department's, if any) -- not just
+    # "some items done", and not requiring department-scoped items
+    # from OTHER departments they don't belong to.
+    items_by_dept: dict = {}
+    companywide_items = [i.id for i in checklist_items if i.department_id is None]
+    for item in checklist_items:
+        if item.department_id is not None:
+            items_by_dept.setdefault(item.department_id, []).append(item.id)
+
+    completed_items_by_app: dict[int, set[int]] = {}
+    for item_id, app_id_set in completions_by_item.items():
+        for aid in app_id_set:
+            completed_items_by_app.setdefault(aid, set()).add(item_id)
+
+    completion_dates_by_app: dict = {}
+    if app_ids:
+        for row in db.query(models.ChecklistCompletion).filter(
+            models.ChecklistCompletion.application_id.in_(app_ids)
+        ).all():
+            existing = completion_dates_by_app.get(row.application_id)
+            if existing is None or row.completed_at > existing:
+                completion_dates_by_app[row.application_id] = row.completed_at
+
+    days_to_complete: list[float] = []
+    dept_buckets: dict = {}  # department_id (or None) -> {"total": n, "completed": n}
+    for app in apps:
+        applicable = set(companywide_items) | set(items_by_dept.get(app.department_id, []))
+        completed_set = completed_items_by_app.get(app.id, set())
+        fully_onboarded = bool(applicable) and applicable.issubset(completed_set)
+
+        bucket = dept_buckets.setdefault(app.department_id, {"total": 0, "completed": 0})
+        bucket["total"] += 1
+        if fully_onboarded:
+            bucket["completed"] += 1
+            finished_at = completion_dates_by_app.get(app.id)
+            if finished_at:
+                days_to_complete.append((finished_at - app.created_at).total_seconds() / 86400)
+
+    dept_names = {d.id: d.name for d in db.query(models.Department).filter_by(organization_id=organization_id).all()}
+    department_stats = []
+    for dept_id, bucket in dept_buckets.items():
+        department_stats.append(schemas.DepartmentStats(
+            department_id=dept_id,
+            department_name=dept_names.get(dept_id, "Company-wide") if dept_id else "Company-wide",
+            total_employees=bucket["total"], completed_onboarding=bucket["completed"],
+            completion_rate=round(bucket["completed"] / bucket["total"] * 100, 1) if bucket["total"] else 0.0,
+        ))
+
+    return schemas.OrgAnalyticsOut(
+        total_employees=len(apps),
+        avg_days_to_complete_onboarding=round(sum(days_to_complete) / len(days_to_complete), 1) if days_to_complete else None,
+        checklist_items=checklist_stats,
+        lesson_quizzes=lesson_stats,
+        qa_gaps=qa_gaps,
+        departments=department_stats,
+    )
+
+
+@router.get("/{organization_id}/analytics/export.csv")
+def org_analytics_csv(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Same data as GET .../analytics, as a downloadable CSV -- for
+    putting an actual report in front of leadership rather than
+    screenshotting the dashboard."""
+    _require_admin(db, organization_id, user.id)
+    analytics = org_analytics(organization_id, db, user)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(["Riseply Org Buddy Analytics"])
+    writer.writerow(["Total employees", analytics.total_employees])
+    writer.writerow(["Avg days to complete onboarding",
+                      analytics.avg_days_to_complete_onboarding if analytics.avg_days_to_complete_onboarding is not None else "N/A"])
+    writer.writerow([])
+
+    writer.writerow(["Checklist item", "Assigned", "Completed", "Completion rate %"])
+    for s in analytics.checklist_items:
+        writer.writerow([s.title, s.total_assigned, s.total_completed, s.completion_rate])
+    writer.writerow([])
+
+    writer.writerow(["Lesson quiz", "Question", "Attempts", "Correct", "Correct rate %"])
+    for s in analytics.lesson_quizzes:
+        writer.writerow([s.title, s.quiz_question, s.total_attempts, s.correct_count, s.correct_rate])
+    writer.writerow([])
+
+    writer.writerow(["Department", "Employees", "Completed onboarding", "Completion rate %"])
+    for s in analytics.departments:
+        writer.writerow([s.department_name, s.total_employees, s.completed_onboarding, s.completion_rate])
+    writer.writerow([])
+
+    writer.writerow(["Unanswered question (Ghost Onboarder gap)", "Times asked"])
+    for s in analytics.qa_gaps:
+        writer.writerow([s.question, s.count])
+
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="riseply_org_{organization_id}_analytics.csv"'},
+    )
+
+
 # --- CSV roster upload -- pre-register expected employees so they don't
 # have to hand-type their own title/tenure when they join ---
 
@@ -482,6 +672,7 @@ def add_contact(
     contact = models.OrgHumanContact(
         organization_id=organization_id, department_id=payload.department_id,
         name=payload.name, email=payload.email, description=payload.description,
+        is_mentor=payload.is_mentor,
     )
     db.add(contact)
     db.commit()
@@ -524,6 +715,113 @@ def delete_contact(
     db.delete(contact)
     db.commit()
     return {"deleted": True}
+
+
+# --- Mentor assignment -- pairs an employee with one specific mentor
+# from the contact pool (a contact with is_mentor=True), rather than
+# just leaving them in the general list anyone can reach out to. ---
+
+@router.get("/{organization_id}/employees", response_model=list[schemas.OrgEmployeeOut])
+def list_employees(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Joined employees (not the pre-registration roster -- this is who's
+    actually signed up), with enough detail to assign a mentor to each.
+    Deliberately only name/email/department/join date/mentor status --
+    same aggregate-adjacent, no-conversation-content boundary as
+    everywhere else admin-facing in Org Buddy."""
+    _require_admin(db, organization_id, user.id)
+
+    rows = (
+        db.query(models.Application, models.User)
+        .join(models.User, models.Application.user_id == models.User.id)
+        .filter(models.Application.organization_id == organization_id)
+        .order_by(models.Application.created_at.desc())
+        .all()
+    )
+
+    dept_names = {d.id: d.name for d in db.query(models.Department).filter_by(organization_id=organization_id).all()}
+
+    app_ids = [a.id for a, _ in rows]
+    mentor_names: dict[int, str] = {}
+    if app_ids:
+        assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
+        contact_ids = [a.contact_id for a in assignments]
+        contacts_by_id = {c.id: c.name for c in db.query(models.OrgHumanContact).filter(models.OrgHumanContact.id.in_(contact_ids)).all()} if contact_ids else {}
+        for a in assignments:
+            mentor_names[a.application_id] = contacts_by_id.get(a.contact_id)
+
+    return [
+        schemas.OrgEmployeeOut(
+            application_id=app_row.id, user_email=user_row.email,
+            user_full_name=user_row.full_name or user_row.email,
+            department_id=app_row.department_id,
+            department_name=dept_names.get(app_row.department_id) if app_row.department_id else None,
+            joined_at=app_row.created_at,
+            mentor_name=mentor_names.get(app_row.id),
+        )
+        for app_row, user_row in rows
+    ]
+
+
+@router.get("/{organization_id}/mentors", response_model=list[schemas.OrgContactOut])
+def list_mentors(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The assignable mentor pool -- admin-facing (for picking who to
+    assign), scoped the same way as the general contact list."""
+    member = _require_member(db, organization_id, user.id)
+    q = db.query(models.OrgHumanContact).filter_by(organization_id=organization_id, is_mentor=True)
+    if member.role != "admin":
+        dept_id = member.department_id
+        q = q.filter(
+            (models.OrgHumanContact.department_id == None)  # noqa: E711
+            | (models.OrgHumanContact.department_id == dept_id)
+        )
+    return q.all()
+
+
+@router.post("/{organization_id}/employees/{application_id}/assign-mentor", response_model=schemas.MentorAssignmentOut)
+def assign_mentor(
+    organization_id: int,
+    application_id: int,
+    payload: schemas.MentorAssignRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    application = db.query(models.Application).filter_by(
+        id=application_id, organization_id=organization_id
+    ).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Employee not found in this organization.")
+
+    contact = db.query(models.OrgHumanContact).filter_by(
+        id=payload.contact_id, organization_id=organization_id, is_mentor=True
+    ).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="That mentor wasn't found.")
+
+    _require_scope_admin(db, organization_id, user.id, application.department_id)
+
+    existing = db.query(models.MentorAssignment).filter_by(application_id=application_id).first()
+    if existing:
+        existing.contact_id = contact.id
+        existing.assigned_at = datetime.utcnow()
+        assignment = existing
+    else:
+        assignment = models.MentorAssignment(application_id=application_id, contact_id=contact.id)
+        db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    return schemas.MentorAssignmentOut(
+        id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
+        description=contact.description, assigned_at=assignment.assigned_at,
+    )
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

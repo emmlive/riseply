@@ -216,6 +216,45 @@ export interface OrgUsageStats {
   avg_messages_per_employee: number;
 }
 
+export interface ChecklistItemStats {
+  item_id: number;
+  title: string;
+  total_assigned: number;
+  total_completed: number;
+  completion_rate: number;
+}
+
+export interface LessonQuizStats {
+  lesson_id: number;
+  title: string;
+  quiz_question: string;
+  total_attempts: number;
+  correct_count: number;
+  correct_rate: number;
+}
+
+export interface QAGapStats {
+  question: string;
+  count: number;
+}
+
+export interface DepartmentStats {
+  department_id: number | null;
+  department_name: string;
+  total_employees: number;
+  completed_onboarding: number;
+  completion_rate: number;
+}
+
+export interface OrgAnalytics {
+  total_employees: number;
+  avg_days_to_complete_onboarding: number | null;
+  checklist_items: ChecklistItemStats[];
+  lesson_quizzes: LessonQuizStats[];
+  qa_gaps: QAGapStats[];
+  departments: DepartmentStats[];
+}
+
 export interface OrgRosterEntry {
   id: number;
   email: string;
@@ -242,7 +281,34 @@ export interface OrgContact {
   email: string;
   description: string;
   department_id: number | null;
+  is_mentor: boolean;
   created_at: string;
+}
+
+export interface MentorAssignment {
+  id: number;
+  contact_id: number;
+  name: string;
+  email: string;
+  description: string;
+  assigned_at: string;
+}
+
+export interface CareerGoal {
+  id: number;
+  goal_text: string;
+  created_at: string;
+  achieved_at: string | null;
+}
+
+export interface OrgEmployee {
+  application_id: number;
+  user_email: string;
+  user_full_name: string;
+  department_id: number | null;
+  department_name: string | null;
+  joined_at: string;
+  mentor_name: string | null;
 }
 
 export interface Department {

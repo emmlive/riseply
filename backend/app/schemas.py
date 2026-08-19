@@ -343,6 +343,7 @@ class OrgContactCreate(BaseModel):
     email: EmailStr
     description: str = Field(default="", max_length=300)
     department_id: int | None = None
+    is_mentor: bool = False
 
 
 class OrgContactOut(BaseModel):
@@ -351,12 +352,47 @@ class OrgContactOut(BaseModel):
     email: str
     description: str
     department_id: int | None
+    is_mentor: bool
     created_at: datetime
 
 
 class HandoffRequestCreate(BaseModel):
     contact_id: int
     note: str = Field(min_length=1, max_length=2000)
+
+
+class MentorAssignRequest(BaseModel):
+    contact_id: int
+
+
+class MentorAssignmentOut(BaseModel):
+    id: int
+    contact_id: int
+    name: str
+    email: str
+    description: str
+    assigned_at: datetime
+
+
+class CareerGoalCreate(BaseModel):
+    goal_text: str = Field(min_length=1, max_length=500)
+
+
+class CareerGoalOut(BaseModel):
+    id: int
+    goal_text: str
+    created_at: datetime
+    achieved_at: datetime | None
+
+
+class OrgEmployeeOut(BaseModel):
+    application_id: int
+    user_email: str
+    user_full_name: str
+    department_id: int | None
+    department_name: str | None
+    joined_at: datetime
+    mentor_name: str | None
 
 
 # --- Knowledge base ---
@@ -675,3 +711,44 @@ class SavedResumeOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Org Buddy admin analytics ---
+
+class ChecklistItemStats(BaseModel):
+    item_id: int
+    title: str
+    total_assigned: int
+    total_completed: int
+    completion_rate: float
+
+
+class LessonQuizStats(BaseModel):
+    lesson_id: int
+    title: str
+    quiz_question: str
+    total_attempts: int
+    correct_count: int
+    correct_rate: float
+
+
+class QAGapStats(BaseModel):
+    question: str
+    count: int
+
+
+class DepartmentStats(BaseModel):
+    department_id: Optional[int]
+    department_name: str
+    total_employees: int
+    completed_onboarding: int
+    completion_rate: float
+
+
+class OrgAnalyticsOut(BaseModel):
+    total_employees: int
+    avg_days_to_complete_onboarding: Optional[float]
+    checklist_items: list[ChecklistItemStats]
+    lesson_quizzes: list[LessonQuizStats]
+    qa_gaps: list[QAGapStats]
+    departments: list[DepartmentStats]

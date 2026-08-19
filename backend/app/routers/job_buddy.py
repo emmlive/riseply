@@ -255,6 +255,11 @@ def send_job_buddy_message(
     db.commit()
 
     job = app_row.job
+    career_goals = [
+        g.goal_text for g in db.query(models.CareerGoal)
+        .filter_by(application_id=application_id, achieved_at=None)
+        .order_by(models.CareerGoal.created_at.desc()).all()
+    ]
     try:
         reply_text = job_buddy_service.chat_reply(
             user.resume_text,
@@ -264,9 +269,11 @@ def send_job_buddy_message(
             payload.message,
             tenure=app_row.tenure_hint or "just_started",
             org_content=_org_content_for(db, app_row),
+            career_goals=career_goals,
         )
-    except Exception:
+    except Exception as e:
         usage.decrement(db, user.id, "job_buddy_message", 1)
+        print(f"[job_buddy] Chat reply generation failed for application {application_id}: {e}")
         raise HTTPException(
             status_code=502,
             detail="Job Buddy couldn't respond right now — this attempt wasn't counted against your limit. Your message was saved; try sending again.",
@@ -433,7 +440,8 @@ def request_handoff(
                 f"Their note:\n{payload.note}"
             ),
         )
-    except Exception:
+    except Exception as e:
+        print(f"[job_buddy] Handoff email failed for application {application_id}, contact {contact.id}: {e}")
         raise HTTPException(
             status_code=502,
             detail="Couldn't send that right now — try again shortly.",
@@ -446,6 +454,91 @@ def request_handoff(
     db.add(handoff)
     db.commit()
     return {"sent": True, "contact_name": contact.name}
+
+
+# --- Mentorship: assigned mentor + persisted career goals that get
+# folded into Job Buddy's ongoing conversation, so guidance is grounded
+# in what THIS specific person said they want to work on, rather than
+# starting fresh every conversation. ---
+
+@router.get("/{application_id}/mentor", response_model=schemas.MentorAssignmentOut | None)
+def get_my_mentor(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    assignment = db.query(models.MentorAssignment).filter_by(application_id=app_row.id).first()
+    if not assignment:
+        return None
+    contact = db.query(models.OrgHumanContact).filter_by(id=assignment.contact_id).first()
+    if not contact:
+        return None
+    return schemas.MentorAssignmentOut(
+        id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
+        description=contact.description, assigned_at=assignment.assigned_at,
+    )
+
+
+@router.get("/{application_id}/career-goals", response_model=list[schemas.CareerGoalOut])
+def list_career_goals(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    return (
+        db.query(models.CareerGoal).filter_by(application_id=app_row.id)
+        .order_by(models.CareerGoal.created_at.desc()).all()
+    )
+
+
+@router.post("/{application_id}/career-goals", response_model=schemas.CareerGoalOut)
+def add_career_goal(
+    application_id: int,
+    payload: schemas.CareerGoalCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    goal = models.CareerGoal(application_id=app_row.id, goal_text=payload.goal_text)
+    db.add(goal)
+    db.commit()
+    db.refresh(goal)
+    return goal
+
+
+@router.post("/{application_id}/career-goals/{goal_id}/achieve", response_model=schemas.CareerGoalOut)
+def mark_goal_achieved(
+    application_id: int,
+    goal_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    goal = db.query(models.CareerGoal).filter_by(id=goal_id, application_id=app_row.id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+    goal.achieved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(goal)
+    return goal
+
+
+@router.delete("/{application_id}/career-goals/{goal_id}")
+def delete_career_goal(
+    application_id: int,
+    goal_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    goal = db.query(models.CareerGoal).filter_by(id=goal_id, application_id=app_row.id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+    db.delete(goal)
+    db.commit()
+    return {"deleted": True}
 
 
 # --- Onboarding checklist ---

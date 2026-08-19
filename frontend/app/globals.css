@@ -244,6 +244,32 @@ button, input, select, textarea {
 .pill-accepted { background: var(--accent-soft); color: var(--accent-hover); }
 .pill-default { background: var(--border); color: var(--ink-muted); }
 
+/* --- Avatar initials -- a real detail for the mentorship UI, not
+   decoration: turns a name into something a person can visually parse
+   at a glance in a list of employees/mentors, the same pattern most
+   considered enterprise SaaS tools use for people. --- */
+
+.avatar-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.avatar-initial-sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.8rem;
+}
+
 /* --- Misc --- */
 
 .muted { color: var(--ink-muted); }
