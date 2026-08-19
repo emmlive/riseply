@@ -263,6 +263,43 @@ def keyword_gaps(
     return schemas.KeywordGapsOut(present=result["present"], missing=result["missing"])
 
 
+@router.post("/applications/{application_id}/draft-followup", response_model=schemas.FollowupOut)
+def draft_followup(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Drafts a short follow-up message for an application that's been
+    sitting since submission with no response -- a lot of candidates
+    simply forget to follow up, and a nudge plus a drafted starting
+    point removes the actual friction (staring at a blank compose box)
+    rather than just reminding them to do something they still have to
+    figure out how to word. Metered against interview_prep, same
+    on-demand-analysis bucket as keyword gaps and cover letters."""
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if not user.resume_text.strip():
+        raise HTTPException(status_code=400, detail="Add your resume before drafting a follow-up.")
+
+    usage.check_and_increment(db, user, "interview_prep", 1)
+    try:
+        days = (datetime.utcnow() - app_row.submitted_at).days if app_row.submitted_at else None
+        message = matcher.draft_followup_message(user.resume_text, {
+            "title": job.title, "company": job.company, "description": job.description,
+        }, days_since_submitted=days)
+    except Exception as e:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        print(f"[matcher] Follow-up drafting failed for application {application_id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't draft a follow-up right now — try again shortly.")
+
+    return schemas.FollowupOut(message=message)
+
+
 @router.post("/applications/{application_id}/approve")
 def approve_application(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)

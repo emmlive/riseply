@@ -163,6 +163,10 @@ class KeywordGapsOut(BaseModel):
     present: list[str]
     missing: list[str]
 
+
+class FollowupOut(BaseModel):
+    message: str
+
     class Config:
         from_attributes = True
 

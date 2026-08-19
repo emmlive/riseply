@@ -189,6 +189,10 @@ export interface KeywordGaps {
   missing: string[];
 }
 
+export interface Followup {
+  message: string;
+}
+
 export interface OnboardingPlan {
   id: number;
   application_id: number;
