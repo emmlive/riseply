@@ -222,6 +222,20 @@ function UsersTab({ currentAdminId, role }: { currentAdminId: number; role: stri
     }
   }
 
+  async function resetUsage(id: number) {
+    if (!confirm("Reset this user's usage for the current month? This clears every action's counter (matches, tailored resumes, etc).")) return;
+    setBusyId(id);
+    setError("");
+    try {
+      await api(`/admin/users/${id}/reset-usage`, { method: "POST" });
+      await load();
+    } catch (err: any) {
+      setError(err.message || "Couldn't reset this user's usage.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function refund(id: number) {
     if (!confirm("Refund this user's most recent charge? This can't be undone.")) return;
     setBusyId(id);
@@ -280,6 +294,11 @@ function UsersTab({ currentAdminId, role }: { currentAdminId: number; role: stri
               {canAct && u.is_suspended && (
                 <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => unsuspend(u.id)}>
                   {busyId === u.id ? "Unsuspending…" : "Unsuspend"}
+                </button>
+              )}
+              {canAct && (
+                <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => resetUsage(u.id)}>
+                  {busyId === u.id ? "Resetting…" : "Reset this month's usage"}
                 </button>
               )}
               {canRefund && u.subscription_tier === "pro" && (

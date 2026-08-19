@@ -184,6 +184,15 @@ export interface InterviewPrep {
   created_at: string;
 }
 
+export interface KeywordGaps {
+  present: string[];
+  missing: string[];
+}
+
+export interface Followup {
+  message: string;
+}
+
 export interface OnboardingPlan {
   id: number;
   application_id: number;

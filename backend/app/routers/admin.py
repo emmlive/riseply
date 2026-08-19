@@ -9,7 +9,7 @@ from app.security import (
     get_current_admin, get_current_super_admin,
     require_admin_view, require_admin_action,
 )
-from app.services import admin_stats, notifier, discovery_sources
+from app.services import admin_stats, notifier, discovery_sources, usage
 from app import models, schemas
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -140,6 +140,28 @@ def unsuspend_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/users/{user_id}/reset-usage")
+def reset_user_usage(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("users")),
+):
+    """Clears every current-period usage counter (matches, tailored
+    resumes, interview preps, etc.) for one user -- for unblocking a
+    testing/demo account without permanently exempting it via
+    is_admin (which would also grant Admin panel visibility, not
+    ideal for an account used in a live customer demo), or for a
+    legitimate support case where a bug ate someone's real usage.
+    Deliberately resets ALL actions at once rather than one at a time
+    -- the practical need here is "let this account keep working," not
+    surgical per-action control."""
+    user = _get_target_user(db, user_id)
+    period = usage._current_period()
+    deleted = db.query(models.UsageLog).filter_by(user_id=user_id, period=period).delete()
+    db.commit()
+    return {"reset": True, "actions_cleared": deleted}
 
 
 @router.post("/users/{user_id}/refund")

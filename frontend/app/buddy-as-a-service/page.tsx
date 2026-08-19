@@ -189,6 +189,11 @@ export default function BuddyAsAServicePage() {
           <Link href="/signup" className="btn btn-primary">Get started</Link>
         </div>
 
+        <p className="muted" style={{ marginTop: 24, fontSize: "0.9rem" }}>
+          Looking for ongoing career support after onboarding wraps up? See{" "}
+          <Link href="/mentor-as-a-service">Mentor as a Service</Link>.
+        </p>
+
         <p className="muted" style={{ marginTop: 32, fontSize: "0.88rem" }}>
           <Link href="/">← Back home</Link>
         </p>

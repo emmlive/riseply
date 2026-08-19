@@ -78,7 +78,8 @@ export default function HomePage() {
           <Link href="/signup" className="btn btn-primary">Get started</Link>
         </div>
         <p className="muted" style={{ marginTop: 20, fontSize: "0.85rem" }}>
-          Hiring? See <Link href="/buddy-as-a-service">Buddy as a Service</Link> for your team's onboarding.
+          Hiring? See <Link href="/buddy-as-a-service">Buddy as a Service</Link> for your team's onboarding,
+          or <Link href="/mentor-as-a-service">Mentor as a Service</Link> for ongoing growth.
         </p>
         <p className="muted" style={{ marginTop: 8, fontSize: "0.8rem" }}>
           <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>
