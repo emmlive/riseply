@@ -229,6 +229,40 @@ def retailor_resume(
     return _to_out(app_row, job)
 
 
+@router.post("/applications/{application_id}/keyword-gaps", response_model=schemas.KeywordGapsOut)
+def keyword_gaps(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The concrete, actionable counterpart to a match score -- see
+    matcher.analyze_keyword_gaps()'s docstring for why this is a
+    separate on-demand call rather than baked into every score. Metered
+    against interview_prep -- same bucket as other on-demand 'AI
+    analyzes career-application material' actions (question drafting,
+    cover letters), not worth its own quota category."""
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app_row, job = row
+
+    if not user.resume_text.strip():
+        raise HTTPException(status_code=400, detail="Add your resume before checking keyword gaps.")
+
+    usage.check_and_increment(db, user, "interview_prep", 1)
+    try:
+        job_dict = {"title": job.title, "company": job.company, "description": job.description}
+        result = matcher.analyze_keyword_gaps(user.resume_text, job_dict)
+    except Exception as e:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        print(f"[matcher] Keyword gap analysis failed for application {application_id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't analyze keyword gaps right now — try again shortly.")
+
+    return schemas.KeywordGapsOut(present=result["present"], missing=result["missing"])
+
+
 @router.post("/applications/{application_id}/approve")
 def approve_application(
     application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)

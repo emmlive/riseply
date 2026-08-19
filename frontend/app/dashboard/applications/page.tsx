@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep, CompanyStats, downloadFile, formatSalary } from "@/lib/api";
+import { api, Application, InterviewPrep, KeywordGaps, CompanyStats, downloadFile, formatSalary } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -25,6 +25,7 @@ export default function ApplicationsPage() {
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [keywordGaps, setKeywordGaps] = useState<Record<number, KeywordGaps | "loading" | "none">>({});
   const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
   const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
 
@@ -122,6 +123,17 @@ export default function ApplicationsPage() {
     }
   }
 
+  async function checkKeywordGaps(id: number) {
+    setKeywordGaps((g) => ({ ...g, [id]: "loading" }));
+    try {
+      const result = await api<KeywordGaps>(`/applications/${id}/keyword-gaps`, { method: "POST" });
+      setKeywordGaps((g) => ({ ...g, [id]: result }));
+    } catch (err: any) {
+      setKeywordGaps((g) => ({ ...g, [id]: "none" }));
+      alert(err.message || "Couldn't check keyword gaps.");
+    }
+  }
+
   async function attemptAutoSubmit(id: number) {
     setBusyId(id);
     try {
@@ -178,6 +190,7 @@ export default function ApplicationsPage() {
 
       {apps.map((app) => {
         const prep = preps[app.id];
+        const gaps = keywordGaps[app.id];
         const stat = companyStats[app.job_company];
         return (
           <div key={app.id} className="card">
@@ -287,6 +300,34 @@ export default function ApplicationsPage() {
                   </Link>
                 )}
               </div>
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+              {gaps === "loading" && <p className="muted">Checking keyword gaps…</p>}
+              {(!gaps || gaps === "none") && (
+                <button className="btn btn-ghost btn-sm" onClick={() => checkKeywordGaps(app.id)}>
+                  Check keyword gaps
+                </button>
+              )}
+              {gaps && gaps !== "loading" && gaps !== "none" && (
+                <>
+                  <h3 style={{ fontSize: "0.95rem", marginBottom: 4 }}>
+                    Keyword gaps — {gaps.present.length}/{gaps.present.length + gaps.missing.length} matched
+                  </h3>
+                  <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                    Specific things this posting emphasizes, and whether your resume actually reflects each one —
+                    the concrete version of the match score above.
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {gaps.present.map((k) => (
+                      <span key={k} className="pill pill-approved">✓ {k}</span>
+                    ))}
+                    {gaps.missing.map((k) => (
+                      <span key={k} className="pill pill-rejected">✗ {k}</span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {app.status === "interviewing" && (

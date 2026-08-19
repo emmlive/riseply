@@ -158,6 +158,11 @@ class ApplicationOut(BaseModel):
     is_archived: bool = False
     archived_at: Optional[datetime] = None
 
+
+class KeywordGapsOut(BaseModel):
+    present: list[str]
+    missing: list[str]
+
     class Config:
         from_attributes = True
 
