@@ -271,6 +271,31 @@ class OrgBillingOut(BaseModel):
     overage_cost_usd: float
 
 
+class EnterpriseBillingRequestCreate(BaseModel):
+    billing_contact_name: str = Field(min_length=1, max_length=200)
+    billing_contact_email: EmailStr
+    estimated_employees: int = Field(default=0, ge=0, le=100000)
+    notes: str = Field(default="", max_length=2000)
+
+
+class EnterpriseBillingRequestOut(BaseModel):
+    id: int
+    organization_id: int
+    billing_contact_name: str
+    billing_contact_email: str
+    estimated_employees: int
+    notes: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EnterpriseBillingRequestStatusUpdate(BaseModel):
+    status: str
+
+
 class ChecklistItemCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     description: str = Field(default="", max_length=1000)

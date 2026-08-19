@@ -384,6 +384,34 @@ def delete_canned_reply(
 
 # --- Organizations (Org Buddy as a Service / "Enterprise") ---
 
+@router.get("/enterprise-billing-requests", response_model=list[schemas.EnterpriseBillingRequestOut])
+def list_all_enterprise_billing_requests(
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_view("billing")),
+):
+    """Platform-wide view across every org -- the notification email
+    sent when a request comes in can get lost; this is the durable,
+    always-checkable source of truth."""
+    return db.query(models.EnterpriseBillingRequest).order_by(models.EnterpriseBillingRequest.created_at.desc()).all()
+
+
+@router.post("/enterprise-billing-requests/{request_id}/status")
+def update_enterprise_billing_request_status(
+    request_id: int,
+    payload: schemas.EnterpriseBillingRequestStatusUpdate,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_action("billing")),
+):
+    req = db.query(models.EnterpriseBillingRequest).filter_by(id=request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    if payload.status not in ("pending", "contacted", "resolved"):
+        raise HTTPException(status_code=400, detail="Status must be pending, contacted, or resolved.")
+    req.status = payload.status
+    db.commit()
+    return {"updated": True}
+
+
 @router.get("/organizations", response_model=list[schemas.AdminOrganizationOut])
 def list_organizations(
     db: Session = Depends(get_db),

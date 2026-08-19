@@ -999,6 +999,65 @@ def org_billing(
     )
 
 
+@router.post("/{organization_id}/request-enterprise-billing", response_model=schemas.EnterpriseBillingRequestOut)
+def request_enterprise_billing(
+    organization_id: int,
+    payload: schemas.EnterpriseBillingRequestCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Deliberately just captures the request and notifies a human --
+    see the note on EnterpriseBillingRequest for why this isn't an
+    automated invoicing system."""
+    _require_admin(db, organization_id, user.id)
+    org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    request = models.EnterpriseBillingRequest(
+        organization_id=organization_id, requested_by_user_id=user.id,
+        billing_contact_name=payload.billing_contact_name,
+        billing_contact_email=payload.billing_contact_email,
+        estimated_employees=payload.estimated_employees, notes=payload.notes,
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    support_inbox = settings.support_email or settings.resend_from_email
+    try:
+        from app.services import notifier
+        notifier.send_email(
+            support_inbox,
+            f"[Riseply] Enterprise billing request — {org_row.name}",
+            (
+                f"Organization: {org_row.name} (id {organization_id})\n"
+                f"Requested by: {user.full_name or user.email} ({user.email})\n"
+                f"Billing contact: {payload.billing_contact_name} <{payload.billing_contact_email}>\n"
+                f"Estimated employees: {payload.estimated_employees}\n\n"
+                f"Notes:\n{payload.notes or '(none)'}"
+            ),
+        )
+    except Exception as e:
+        print(f"[org_buddy] Enterprise billing request notification failed for org {organization_id}: {e}")
+        # Deliberately not raised as an error -- the request is already
+        # saved and admin-visible either way; a failed notification
+        # email shouldn't make the person think their request was lost.
+
+    return request
+
+
+@router.get("/{organization_id}/enterprise-billing-requests", response_model=list[schemas.EnterpriseBillingRequestOut])
+def list_enterprise_billing_requests(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_admin(db, organization_id, user.id)
+    return (
+        db.query(models.EnterpriseBillingRequest).filter_by(organization_id=organization_id)
+        .order_by(models.EnterpriseBillingRequest.created_at.desc()).all()
+    )
+
+
 # --- Ghost Onboarder: what employees have been asking ---
 
 @router.get("/{organization_id}/qa-logs", response_model=list[schemas.OrgQALogOut])

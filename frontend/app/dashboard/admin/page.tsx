@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
-  AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply,
+  AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
 type Tab = "overview" | "users" | "organizations" | "health" | "moderation" | "support" | "admins";
@@ -425,8 +425,27 @@ function AdminsTab({ currentAdminId }: { currentAdminId: number }) {
 
 function OrganizationsTab() {
   const [orgs, setOrgs] = useState<AdminOrganization[]>([]);
+  const [billingRequests, setBillingRequests] = useState<EnterpriseBillingRequestOut[]>([]);
 
   useEffect(() => { api<AdminOrganization[]>("/admin/organizations").then(setOrgs); }, []);
+  useEffect(() => { loadBillingRequests(); }, []);
+
+  async function loadBillingRequests() {
+    try {
+      setBillingRequests(await api<EnterpriseBillingRequestOut[]>("/admin/enterprise-billing-requests"));
+    } catch {
+      // billing-scope readonly/etc. handled the same as everywhere else -- just don't show it
+    }
+  }
+
+  async function updateBillingRequestStatus(id: number, status: string) {
+    try {
+      await api(`/admin/enterprise-billing-requests/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      loadBillingRequests();
+    } catch (err: any) {
+      alert(err.message || "Couldn't update that.");
+    }
+  }
 
   // Sandbox orgs (admin pilot access) are deliberately excluded from
   // every real business metric here -- they can't be billed at all
@@ -452,6 +471,37 @@ function OrganizationsTab() {
           <div className="label">Total members</div>
         </div>
       </div>
+
+      {billingRequests.filter((r) => r.status !== "resolved").length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Enterprise billing requests</h3>
+          {billingRequests.filter((r) => r.status !== "resolved").map((req) => {
+            const org = orgs.find((o) => o.id === req.organization_id);
+            return (
+              <div key={req.id} className="points-event-row" style={{ alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {org?.name || `Org #${req.organization_id}`}
+                    <span className={`pill ${req.status === "pending" ? "pill-pending" : "pill-default"}`} style={{ marginLeft: 8 }}>
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="hint">
+                    {req.billing_contact_name} &lt;{req.billing_contact_email}&gt; · ~{req.estimated_employees} employees
+                  </div>
+                  {req.notes && <div className="hint" style={{ marginTop: 2 }}>{req.notes}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {req.status === "pending" && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => updateBillingRequestStatus(req.id, "contacted")}>Mark contacted</button>
+                  )}
+                  <button className="btn btn-ghost btn-sm" onClick={() => updateBillingRequestStatus(req.id, "resolved")}>Mark resolved</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="card">
         {realOrgs.map((org) => (

@@ -329,6 +329,27 @@ class CannedReply(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class EnterpriseBillingRequest(Base):
+    """An org admin's request to move off self-serve card billing onto
+    invoiced (NET-30 style) terms -- deliberately NOT an automated
+    invoicing system. Real payment/billing integrations built under
+    time pressure carry real financial risk if subtly wrong; capturing
+    the request and routing it to a human to set up properly (a real
+    Stripe Invoice, or whatever the actual arrangement ends up being)
+    is the honest, safe version of this feature."""
+    __tablename__ = "enterprise_billing_requests"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    requested_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    billing_contact_name = Column(String, nullable=False)
+    billing_contact_email = Column(String, nullable=False)
+    estimated_employees = Column(Integer, default=0, server_default="0")
+    notes = Column(Text, default="")
+    status = Column(String, default="pending", server_default="pending")  # pending | contacted | resolved
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class Organization(Base):
     """A company using 'Org Buddy as a Service' -- their own customized
     version of the traditional workplace onboarding-buddy practice,

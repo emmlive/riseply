@@ -119,6 +119,14 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [analytics, setAnalytics] = useState<OrgAnalytics | null>(null);
   const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
+  const [showEnterpriseBillingForm, setShowEnterpriseBillingForm] = useState(false);
+  const [ebContactName, setEbContactName] = useState("");
+  const [ebContactEmail, setEbContactEmail] = useState("");
+  const [ebEmployeeCount, setEbEmployeeCount] = useState("0");
+  const [ebNotes, setEbNotes] = useState("");
+  const [ebSending, setEbSending] = useState(false);
+  const [ebError, setEbError] = useState("");
+  const [enterpriseBillingSent, setEnterpriseBillingSent] = useState("");
   const [contacts, setContacts] = useState<OrgContact[]>([]);
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -326,6 +334,30 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       window.location.href = checkout_url;
     } catch (err: any) {
       alert(err.message || "Couldn't start checkout.");
+    }
+  }
+
+  async function submitEnterpriseBilling() {
+    if (!ebContactName.trim() || !ebContactEmail.trim()) return;
+    setEbSending(true);
+    setEbError("");
+    try {
+      await api(`/orgs/${org.id}/request-enterprise-billing`, {
+        method: "POST",
+        body: JSON.stringify({
+          billing_contact_name: ebContactName.trim(),
+          billing_contact_email: ebContactEmail.trim(),
+          estimated_employees: Number(ebEmployeeCount) || 0,
+          notes: ebNotes.trim(),
+        }),
+      });
+      setShowEnterpriseBillingForm(false);
+      setEnterpriseBillingSent("Sent — we'll follow up directly to set up invoicing.");
+      setEbContactName(""); setEbContactEmail(""); setEbEmployeeCount("0"); setEbNotes("");
+    } catch (err: any) {
+      setEbError(err.message || "Couldn't send that request.");
+    } finally {
+      setEbSending(false);
     }
   }
 
@@ -725,6 +757,49 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           )}
           {org.is_sandbox && (
             <p className="hint" style={{ marginTop: 10 }}>Sandbox orgs can't be billed.</p>
+          )}
+
+          {!org.is_sandbox && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              {enterpriseBillingSent ? (
+                <p style={{ color: "var(--accent)", margin: 0 }}>{enterpriseBillingSent}</p>
+              ) : !showEnterpriseBillingForm ? (
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowEnterpriseBillingForm(true)}>
+                  Request enterprise billing (invoiced, NET-30)
+                </button>
+              ) : (
+                <>
+                  <p className="hint" style={{ marginTop: 0, marginBottom: 10 }}>
+                    For larger teams that need invoicing instead of a card on file. We'll follow up
+                    directly to set up the actual arrangement — this isn't automatic.
+                  </p>
+                  <div className="field">
+                    <label>Billing contact name</label>
+                    <input value={ebContactName} onChange={(e) => setEbContactName(e.target.value)} placeholder="Jane Finance" />
+                  </div>
+                  <div className="field">
+                    <label>Billing contact email</label>
+                    <input value={ebContactEmail} onChange={(e) => setEbContactEmail(e.target.value)} placeholder="jane@company.com" />
+                  </div>
+                  <div className="field">
+                    <label>Estimated employees</label>
+                    <input type="number" min={0} value={ebEmployeeCount} onChange={(e) => setEbEmployeeCount(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label>Notes (optional)</label>
+                    <textarea rows={2} value={ebNotes} onChange={(e) => setEbNotes(e.target.value)} placeholder="Anything we should know — fiscal year timing, procurement process, etc." />
+                  </div>
+                  {ebError && <p className="error-text">{ebError}</p>}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={submitEnterpriseBilling}
+                            disabled={ebSending || !ebContactName.trim() || !ebContactEmail.trim()}>
+                      {ebSending ? "Sending…" : "Send request"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowEnterpriseBillingForm(false)}>Cancel</button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}

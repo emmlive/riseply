@@ -431,6 +431,17 @@ export interface CannedReply {
   created_at: string;
 }
 
+export interface EnterpriseBillingRequestOut {
+  id: number;
+  organization_id: number;
+  billing_contact_name: string;
+  billing_contact_email: string;
+  estimated_employees: number;
+  notes: string;
+  status: string;
+  created_at: string;
+}
+
 export interface AdminOrganization {
   id: number;
   name: string;
