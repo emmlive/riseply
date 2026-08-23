@@ -222,6 +222,21 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict], ignore
     """Scores one job against every active search profile, returns the best:
     {"profile_name": str, "score": int, "reason": str, "meets_threshold": bool}
 
+    "Best" prefers ANY candidate that clears its own profile's
+    min_match_score over one that doesn't, even if that candidate's raw
+    score is lower -- picking purely by raw score was a real bug for
+    anyone with more than one active profile at different thresholds.
+    Concretely: Profile A (min_match_score=90) scores a job 82, Profile
+    B (min_match_score=70) scores the same job 75. Raw-score-only
+    picked Profile A (higher score, 82 > 75) and reported
+    meets_threshold=False, silently discarding the fact that Profile B
+    -- a real, active, user-configured profile -- would have accepted
+    this exact job. The person never sees that; it just looks like a
+    near-miss instead of a real match. Only when NO active profile
+    accepts does raw score decide, which is what makes "closest this
+    run" show something sensible instead of always the strictest
+    profile's opinion.
+
     ignore_location=True is used only by run_matching_for_user()'s
     location-fallback pass (see its docstring) -- exclude_companies
     still applies even then, since that's an explicit "never show me
@@ -242,7 +257,14 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict], ignore
             "reason": result["reason"],
             "meets_threshold": result["score"] >= profile.get("min_match_score", 70),
         }
-        if best is None or candidate["score"] > best["score"]:
+        if best is None:
+            best = candidate
+        elif candidate["meets_threshold"] and not best["meets_threshold"]:
+            # A profile that actually accepts this job always beats one
+            # that doesn't, regardless of raw score.
+            best = candidate
+        elif candidate["meets_threshold"] == best["meets_threshold"] and candidate["score"] > best["score"]:
+            # Both accept, or both reject -- among equals, higher score wins.
             best = candidate
 
     return best or {"profile_name": None, "score": 0,

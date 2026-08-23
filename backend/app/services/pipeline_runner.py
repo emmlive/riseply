@@ -403,7 +403,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
 
     queued = []
     near_miss_candidates = []  # (score, {title, company, url, score, reason, matched_profile})
-    NEAR_MISS_CAP = 3
+    NEAR_MISS_CAP = 6
     limit_hit = False
 
     for job_row in unseen_jobs:
