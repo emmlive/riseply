@@ -30,7 +30,14 @@ jobs:
   trigger-matching:
     runs-on: ubuntu-latest
     steps:
-      - name: Call the scheduled-run endpoint
+      - name: Start the scheduled-run batch
+        # /internal/scheduled-run now returns 202 immediately and does the
+        # actual discovery+matching work in a background task on the
+        # server -- it used to run inline and block this curl call for as
+        # long as the batch took (potentially many minutes, one Claude API
+        # call per unseen job per user), which meant this step's success
+        # depended on a single HTTP connection staying open that whole
+        # time. Grab the run_id here; the next step polls for completion.
         run: |
           response=$(curl -s -w "\n%{http_code}" -X POST \
             "${{ secrets.BACKEND_URL }}/internal/scheduled-run" \
@@ -38,10 +45,46 @@ jobs:
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
           echo "$body"
-          if [ "$http_code" -ne 200 ]; then
-            echo "Scheduled run failed with HTTP $http_code"
+          if [ "$http_code" -ne 202 ]; then
+            echo "Starting scheduled run failed with HTTP $http_code"
             exit 1
           fi
+          run_id=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])")
+          echo "run_id=$run_id" >> "$GITHUB_ENV"
+
+      - name: Wait for the scheduled-run batch to finish
+        # Polls rather than holding one long connection open, since a
+        # short-lived request every 15s is far less exposed to any
+        # single proxy/connection timeout along the way than one curl
+        # call held open for the whole batch. 80 attempts * 15s = 20
+        # minutes -- generous for a free-tier backend, adjust if your
+        # user base grows enough to need longer.
+        run: |
+          for i in $(seq 1 80); do
+            response=$(curl -s -w "\n%{http_code}" \
+              "${{ secrets.BACKEND_URL }}/internal/scheduled-run/${run_id}" \
+              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+            if [ "$http_code" -ne 200 ]; then
+              echo "Status check failed with HTTP $http_code"
+              echo "$body"
+              exit 1
+            fi
+            status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            if [ "$status" = "success" ]; then
+              echo "$body"
+              exit 0
+            fi
+            if [ "$status" = "failed" ]; then
+              echo "Scheduled run failed:"
+              echo "$body"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for the scheduled run to finish after 20 minutes"
+          exit 1
 
       - name: Send daily digest emails
         # Runs right after matching, in the same job, so digests reflect

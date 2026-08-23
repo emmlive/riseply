@@ -853,6 +853,36 @@ class NearMissResult(Base):
     job = relationship("Job")
 
 
+class ScheduledRunLog(Base):
+    """Tracks a single execution of a backend-heavy scheduled job
+    (currently just /internal/scheduled-run's discovery+matching batch)
+    that's kicked off via FastAPI's BackgroundTasks rather than run
+    inline in the request/response cycle.
+
+    Exists because moving that work to a background task means the
+    triggering request (a single GitHub Actions curl call) can no
+    longer tell success from failure just from its own HTTP response --
+    it gets back a 202 the instant the task is *queued*, not when it's
+    *done*. This table is what the external scheduler polls via
+    GET /internal/scheduled-run/{id} to find out how it actually went,
+    and what a human can check after the fact without digging through
+    Render logs.
+
+    run_type distinguishes which job this is, in case another
+    long-running job (besides scheduled matching) ever needs the same
+    background+poll pattern -- one table, not one per job type.
+    """
+    __tablename__ = "scheduled_run_logs"
+
+    id = Column(Integer, primary_key=True)
+    run_type = Column(String, nullable=False)  # "scheduled_run" (room to grow)
+    status = Column(String, nullable=False, default="running", server_default="running")  # running | success | failed
+    result_json = Column(Text, nullable=True)  # JSON summary, set on success
+    error = Column(Text, nullable=True)  # str(exception), set on failure
+    started_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    finished_at = Column(DateTime, nullable=True)
+
+
 class FailureLog(Base):
     """Logged whenever a metered Claude API call fails (i.e. whenever
     usage.decrement() is called to refund a failed attempt). This is a

@@ -95,6 +95,96 @@ def _select_keyword_rotation(keywords: list[str], max_per_run: int) -> list[str]
     return [keywords_sorted[(offset + i) % n] for i in range(max_per_run)]
 
 
+def run_scheduled_matching_batch(db: Session) -> dict:
+    """Discovery once, then matching for every user who has a resume
+    and at least one active search profile. This is the actual batch
+    logic behind POST /internal/scheduled-run -- pulled out into its
+    own function (rather than living inline in the router) so it can
+    be called from a background task with a session the caller
+    controls the lifetime of, same reasoning as this module's docstring
+    at the top of the file: one code path, not two that can drift.
+
+    Deliberately synchronous/sequential internally (no concurrency) --
+    see run_matching_for_user's docstring on why an uncapped run can
+    mean many sequential Claude API calls per user; that's expected to
+    take a while for a real user base, which is exactly why the caller
+    (POST /internal/scheduled-run) runs this via BackgroundTasks rather
+    than blocking the triggering request on it."""
+    discovery_result = run_discovery(db)
+
+    users = db.query(models.User).filter(models.User.resume_text.isnot(None)).all()
+    per_user_results = {}
+    for user in users:
+        if not user.resume_text or not user.resume_text.strip():
+            continue
+        has_active_profile = db.query(models.SearchProfile).filter_by(
+            user_id=user.id, active=True
+        ).first()
+        if not has_active_profile:
+            continue
+
+        try:
+            result = run_matching_for_user(db, user)
+            per_user_results[user.email] = {
+                "queued": len(result["queued_application_ids"]),
+                "usage_limit_reached": result["usage_limit_reached"],
+            }
+        except Exception as e:
+            # One user's failure (e.g. a transient DB issue mid-loop)
+            # shouldn't stop the rest of the batch from running.
+            per_user_results[user.email] = {"error": str(e)}
+
+    return {
+        "discovery": discovery_result,
+        "users_processed": len(per_user_results),
+        "results": per_user_results,
+    }
+
+
+def run_scheduled_matching_background(run_log_id: int) -> None:
+    """BackgroundTasks entry point for POST /internal/scheduled-run.
+
+    Opens its own DB session rather than reusing the request's --
+    FastAPI's Depends(get_db) session is closed as soon as the request
+    context ends, which happens right after the response is sent (i.e.
+    almost immediately, since the whole point of this function is to
+    keep running after that). Using a closed session here would raise
+    on the first query.
+
+    Every exception is caught here on purpose: this runs with no HTTP
+    client waiting on the other end to receive an error response, so an
+    uncaught exception would just vanish into the server logs with the
+    ScheduledRunLog row stuck at status="running" forever. Catching and
+    recording it is what lets the external poller (and a human checking
+    later) tell 'still running', 'failed', and 'genuinely done' apart.
+    """
+    import json as _json
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is None:
+            return  # shouldn't happen; nothing sensible to update
+
+        result = run_scheduled_matching_batch(db)
+
+        log.status = "success"
+        log.result_json = _json.dumps(result)
+        log.finished_at = datetime.utcnow()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is not None:
+            log.status = "failed"
+            log.error = str(e)
+            log.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
 def run_discovery(db: Session) -> dict:
     """Pulls fresh postings into the shared job pool.
 
