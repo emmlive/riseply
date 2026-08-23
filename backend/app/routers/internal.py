@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+import json
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,8 +12,16 @@ from app.services import pipeline_runner
 router = APIRouter(prefix="/internal", tags=["internal"])
 
 
+def _check_cron_secret(x_cron_secret: str, unconfigured_detail: str) -> None:
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail=unconfigured_detail)
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+
+
 @router.post("/scheduled-run")
 def scheduled_run(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_cron_secret: str = Header(default=""),
 ):
@@ -21,40 +32,53 @@ def scheduled_run(
 
     Protected by a shared secret rather than a login, since there's no
     user to log in as for a background job. Blank CRON_SECRET disables
-    the endpoint entirely (503) rather than defaulting to open."""
-    if not settings.cron_secret:
-        raise HTTPException(status_code=503, detail="Scheduled matching isn't configured (CRON_SECRET unset).")
-    if x_cron_secret != settings.cron_secret:
-        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    the endpoint entirely (503) rather than defaulting to open.
 
-    discovery_result = pipeline_runner.run_discovery(db)
+    Returns 202 immediately with a run_id rather than blocking until
+    the batch finishes. The actual discovery+matching work (one Claude
+    API call per unseen job per user, uncapped for this scheduled path
+    -- see run_matching_for_user's docstring) can legitimately take a
+    long time for a real user base, and used to run inline in this
+    request -- which meant the triggering GitHub Actions curl call sat
+    on a single open connection for as long as that took, at the mercy
+    of any proxy/timeout along the way. Poll GET /internal/scheduled-run/
+    {run_id} (same header) for status."""
+    _check_cron_secret(x_cron_secret, "Scheduled matching isn't configured (CRON_SECRET unset).")
 
-    users = db.query(models.User).filter(models.User.resume_text.isnot(None)).all()
-    per_user_results = {}
-    for user in users:
-        if not user.resume_text or not user.resume_text.strip():
-            continue
-        has_active_profile = db.query(models.SearchProfile).filter_by(
-            user_id=user.id, active=True
-        ).first()
-        if not has_active_profile:
-            continue
+    log = models.ScheduledRunLog(run_type="scheduled_run", status="running")
+    db.add(log)
+    db.commit()
+    db.refresh(log)
 
-        try:
-            result = pipeline_runner.run_matching_for_user(db, user)
-            per_user_results[user.email] = {
-                "queued": len(result["queued_application_ids"]),
-                "usage_limit_reached": result["usage_limit_reached"],
-            }
-        except Exception as e:
-            # One user's failure (e.g. a transient DB issue mid-loop)
-            # shouldn't stop the rest of the batch from running.
-            per_user_results[user.email] = {"error": str(e)}
+    background_tasks.add_task(pipeline_runner.run_scheduled_matching_background, log.id)
+
+    return JSONResponse(status_code=202, content={"status": "started", "run_id": log.id})
+
+
+@router.get("/scheduled-run/{run_id}")
+def scheduled_run_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Polled by the external scheduler after POST /internal/scheduled-run
+    returns 202, to find out when the background batch actually
+    finishes and whether it succeeded. Same secret gate as the other
+    /internal/* endpoints -- this exposes per-user email addresses and
+    match counts in result_json, not something to leave open."""
+    _check_cron_secret(x_cron_secret, "Scheduled matching isn't configured (CRON_SECRET unset).")
+
+    log = db.get(models.ScheduledRunLog, run_id)
+    if log is None:
+        raise HTTPException(status_code=404, detail="No run with that id.")
 
     return {
-        "discovery": discovery_result,
-        "users_processed": len(per_user_results),
-        "results": per_user_results,
+        "run_id": log.id,
+        "status": log.status,
+        "result": json.loads(log.result_json) if log.result_json else None,
+        "error": log.error,
+        "started_at": log.started_at.isoformat() if log.started_at else None,
+        "finished_at": log.finished_at.isoformat() if log.finished_at else None,
     }
 
 
