@@ -56,11 +56,18 @@ jobs:
         # Polls rather than holding one long connection open, since a
         # short-lived request every 15s is far less exposed to any
         # single proxy/connection timeout along the way than one curl
-        # call held open for the whole batch. 80 attempts * 15s = 20
-        # minutes -- generous for a free-tier backend, adjust if your
-        # user base grows enough to need longer.
+        # call held open for the whole batch. 240 attempts * 15s = 60
+        # minutes. Widened from the original 20 -- with days of failed
+        # cron runs behind this one, the very first successful run has
+        # to work through however large a backlog of unseen jobs built
+        # up in the meantime, one real Claude API call per job per
+        # user, which is meaningfully slower than the fast-failing 400s
+        # that hit this same limit during the billing outage. If your
+        # user base grows enough that even 60 minutes isn't enough,
+        # the better long-term fix is capping max_jobs per scheduled
+        # run rather than raising this further.
         run: |
-          for i in $(seq 1 80); do
+          for i in $(seq 1 240); do
             response=$(curl -s -w "\n%{http_code}" \
               "${{ secrets.BACKEND_URL }}/internal/scheduled-run/${run_id}" \
               -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
@@ -83,7 +90,7 @@ jobs:
             fi
             sleep 15
           done
-          echo "Timed out waiting for the scheduled run to finish after 20 minutes"
+          echo "Timed out waiting for the scheduled run to finish after 60 minutes"
           exit 1
 
       - name: Send daily digest emails
