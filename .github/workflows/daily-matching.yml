@@ -66,6 +66,16 @@ jobs:
         # user base grows enough that even 60 minutes isn't enough,
         # the better long-term fix is capping max_jobs per scheduled
         # run rather than raising this further.
+        #
+        # A non-200 (or a 200 with a non-JSON body -- e.g. Render's own
+        # branded HTML error page during a mid-batch auto-restart, which
+        # has happened when the batch itself pushed memory past the
+        # instance's limit) is treated as a TRANSIENT hiccup and
+        # retried, not an immediate failure. The old version exited on
+        # the very first bad response, which turned a Render restart
+        # that resolves itself in under a minute into a hard failure of
+        # the whole day's run. Only exhausting all 240 attempts, or the
+        # backend explicitly reporting status="failed", ends this early.
         run: |
           for i in $(seq 1 240); do
             response=$(curl -s -w "\n%{http_code}" \
@@ -73,12 +83,20 @@ jobs:
               -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
             http_code=$(echo "$response" | tail -n1)
             body=$(echo "$response" | sed '$d')
+
             if [ "$http_code" -ne 200 ]; then
-              echo "Status check failed with HTTP $http_code"
-              echo "$body"
-              exit 1
+              echo "Status check got HTTP $http_code (attempt $i/240) -- treating as transient, will retry"
+              sleep 15
+              continue
             fi
-            status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+
+            status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status', ''))" 2>/dev/null) || status=""
+            if [ -z "$status" ]; then
+              echo "Status check returned 200 but body wasn't valid JSON (attempt $i/240) -- treating as transient, will retry"
+              sleep 15
+              continue
+            fi
+
             if [ "$status" = "success" ]; then
               echo "$body"
               exit 0
