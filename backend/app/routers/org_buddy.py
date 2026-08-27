@@ -776,12 +776,14 @@ def list_employees(
 
     app_ids = [a.id for a, _ in rows]
     mentor_names: dict[int, str] = {}
+    mentor_assignment_ids: dict[int, int] = {}
     if app_ids:
         assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
         contact_ids = [a.contact_id for a in assignments]
         contacts_by_id = {c.id: c.name for c in db.query(models.OrgHumanContact).filter(models.OrgHumanContact.id.in_(contact_ids)).all()} if contact_ids else {}
         for a in assignments:
             mentor_names[a.application_id] = contacts_by_id.get(a.contact_id)
+            mentor_assignment_ids[a.application_id] = a.id
 
     return [
         schemas.OrgEmployeeOut(
@@ -791,6 +793,7 @@ def list_employees(
             department_name=dept_names.get(app_row.department_id) if app_row.department_id else None,
             joined_at=app_row.created_at,
             mentor_name=mentor_names.get(app_row.id),
+            mentor_assignment_id=mentor_assignment_ids.get(app_row.id),
         )
         for app_row, user_row in rows
     ]

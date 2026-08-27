@@ -487,6 +487,7 @@ class OrgEmployeeOut(BaseModel):
     department_name: str | None
     joined_at: datetime
     mentor_name: str | None
+    mentor_assignment_id: int | None
 
 
 # --- Knowledge base ---
