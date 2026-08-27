@@ -90,15 +90,26 @@ def culture_bot_run(
     """Meant to be called by an external scheduler once a day, same
     pattern and same CRON_SECRET as /internal/scheduled-run above --
     see README's 'Culture Bot lessons' section for setup. Sends any
-    org onboarding lessons due today by email, and any quiz reminders
-    due a week after a wrong answer."""
+    org onboarding lessons due today by email, any quiz reminders due
+    a week after a wrong answer, and mentorship check-in nudges for
+    pairings that have gone quiet.
+
+    Mentorship reminders run here rather than getting their own
+    endpoint/workflow: both this and culture bot lessons are
+    org-onboarding-context daily emails, both are fast (no per-job
+    Claude scoring loop the way scheduled-run has), and this endpoint
+    already has a proven-reliable daily cron trigger -- no reason to
+    stand up parallel infrastructure for something that fits the
+    existing one."""
     if not settings.cron_secret:
         raise HTTPException(status_code=503, detail="Culture Bot isn't configured (CRON_SECRET unset).")
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
 
-    from app.services import culture_bot
-    return culture_bot.run_deliveries(db)
+    from app.services import culture_bot, mentor_reminders
+    result = culture_bot.run_deliveries(db)
+    result.update(mentor_reminders.run_mentorship_reminders(db))
+    return result
 
 
 @router.post("/send-digests")
