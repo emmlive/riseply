@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
@@ -407,6 +407,7 @@ class OrgContactCreate(BaseModel):
     description: str = Field(default="", max_length=300)
     department_id: int | None = None
     is_mentor: bool = False
+    mentor_bio: str = Field(default="", max_length=3000)
 
 
 class OrgContactOut(BaseModel):
@@ -416,6 +417,7 @@ class OrgContactOut(BaseModel):
     description: str
     department_id: int | None
     is_mentor: bool
+    mentor_bio: str
     created_at: datetime
 
 
@@ -437,6 +439,35 @@ class MentorAssignmentOut(BaseModel):
     assigned_at: datetime
 
 
+class SuggestedMentorOut(BaseModel):
+    contact_id: int
+    name: str
+    email: str
+    mentor_bio: str
+    score: int
+    reason: str
+
+
+class MentorMeetingLogCreate(BaseModel):
+    meeting_date: date
+    notes: str = Field(default="", max_length=2000)
+
+
+class MentorMeetingFeedbackCreate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    feedback_note: str = Field(default="", max_length=1000)
+
+
+class MentorMeetingLogOut(BaseModel):
+    id: int
+    mentor_assignment_id: int
+    meeting_date: date
+    notes: str
+    rating: int | None
+    feedback_note: str | None
+    created_at: datetime
+
+
 class CareerGoalCreate(BaseModel):
     goal_text: str = Field(min_length=1, max_length=500)
 
@@ -456,6 +487,7 @@ class OrgEmployeeOut(BaseModel):
     department_name: str | None
     joined_at: datetime
     mentor_name: str | None
+    mentor_assignment_id: int | None
 
 
 # --- Knowledge base ---
@@ -823,6 +855,17 @@ class DepartmentStats(BaseModel):
     completion_rate: float
 
 
+class MentorshipStats(BaseModel):
+    """Aggregate-only, same privacy boundary as everything else in
+    OrgAnalyticsOut -- counts and averages across pairings, never a
+    per-pairing breakdown or any meeting note/feedback text."""
+    total_pairings: int
+    employees_with_mentor_pct: float
+    total_meetings_logged: int
+    avg_meetings_per_pairing: float
+    avg_feedback_rating: Optional[float]  # None if no ratings submitted yet
+
+
 class OrgAnalyticsOut(BaseModel):
     total_employees: int
     avg_days_to_complete_onboarding: Optional[float]
@@ -830,3 +873,4 @@ class OrgAnalyticsOut(BaseModel):
     lesson_quizzes: list[LessonQuizStats]
     qa_gaps: list[QAGapStats]
     departments: list[DepartmentStats]
+    mentorship: MentorshipStats

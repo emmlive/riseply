@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -143,10 +143,21 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [contactDesc, setContactDesc] = useState("");
   const [contactDept, setContactDept] = useState<string>("");
   const [contactIsMentor, setContactIsMentor] = useState(false);
+  const [contactMentorBio, setContactMentorBio] = useState("");
   const [addingContact, setAddingContact] = useState(false);
   const [contactError, setContactError] = useState("");
   const [employees, setEmployees] = useState<OrgEmployee[]>([]);
   const [assigningEmployeeId, setAssigningEmployeeId] = useState<number | null>(null);
+  // AI mentor suggestions -- keyed by application_id so multiple
+  // employees' suggestion panels can be open independently.
+  const [suggestingFor, setSuggestingFor] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<Record<number, SuggestedMentor[]>>({});
+  // Meeting log panel -- keyed by mentor_assignment_id, same reasoning.
+  const [meetingLogOpenFor, setMeetingLogOpenFor] = useState<number | null>(null);
+  const [meetings, setMeetings] = useState<Record<number, MentorMeetingLog[]>>({});
+  const [newMeetingDate, setNewMeetingDate] = useState("");
+  const [newMeetingNotes, setNewMeetingNotes] = useState("");
+  const [loggingMeeting, setLoggingMeeting] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [deptName, setDeptName] = useState("");
   const [addingDept, setAddingDept] = useState(false);
@@ -424,10 +435,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         body: JSON.stringify({
           name: contactName, email: contactEmail, description: contactDesc,
           department_id: contactDept ? Number(contactDept) : null,
-          is_mentor: contactIsMentor,
+          is_mentor: contactIsMentor, mentor_bio: contactMentorBio,
         }),
       });
-      setContactName(""); setContactEmail(""); setContactDesc(""); setContactIsMentor(false);
+      setContactName(""); setContactEmail(""); setContactDesc(""); setContactIsMentor(false); setContactMentorBio("");
       load();
     } catch (err: any) {
       setContactError(err.message || "Couldn't add that contact.");
@@ -447,6 +458,54 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       alert(err.message || "Couldn't assign that mentor.");
     } finally {
       setAssigningEmployeeId(null);
+    }
+  }
+
+  async function loadSuggestedMentors(applicationId: number) {
+    if (suggestingFor === applicationId) {
+      setSuggestingFor(null);  // toggle closed if already open
+      return;
+    }
+    setSuggestingFor(applicationId);
+    try {
+      const ranked = await api<SuggestedMentor[]>(`/orgs/${org.id}/employees/${applicationId}/suggested-mentors`);
+      setSuggestions((prev) => ({ ...prev, [applicationId]: ranked }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't get mentor suggestions.");
+      setSuggestingFor(null);
+    }
+  }
+
+  async function loadMeetings(assignmentId: number) {
+    if (meetingLogOpenFor === assignmentId) {
+      setMeetingLogOpenFor(null);
+      return;
+    }
+    setMeetingLogOpenFor(assignmentId);
+    setNewMeetingDate(""); setNewMeetingNotes("");
+    try {
+      const rows = await api<MentorMeetingLog[]>(`/orgs/${org.id}/mentor-assignments/${assignmentId}/meetings`);
+      setMeetings((prev) => ({ ...prev, [assignmentId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't load meeting history.");
+    }
+  }
+
+  async function logMeeting(assignmentId: number) {
+    if (!newMeetingDate) return;
+    setLoggingMeeting(true);
+    try {
+      await api(`/orgs/${org.id}/mentor-assignments/${assignmentId}/meetings`, {
+        method: "POST",
+        body: JSON.stringify({ meeting_date: newMeetingDate, notes: newMeetingNotes }),
+      });
+      setNewMeetingDate(""); setNewMeetingNotes("");
+      const rows = await api<MentorMeetingLog[]>(`/orgs/${org.id}/mentor-assignments/${assignmentId}/meetings`);
+      setMeetings((prev) => ({ ...prev, [assignmentId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't log that meeting.");
+    } finally {
+      setLoggingMeeting(false);
     }
   }
 
@@ -777,6 +836,21 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             </div>
           )}
 
+          {analytics.mentorship.total_pairings > 0 && (
+            <div>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Mentorship program</p>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: "0.9rem" }}>
+                <div><strong>{analytics.mentorship.total_pairings}</strong> <span className="hint">pairings</span></div>
+                <div><strong>{analytics.mentorship.employees_with_mentor_pct}%</strong> <span className="hint">of employees have a mentor</span></div>
+                <div><strong>{analytics.mentorship.total_meetings_logged}</strong> <span className="hint">meetings logged</span></div>
+                <div><strong>{analytics.mentorship.avg_meetings_per_pairing}</strong> <span className="hint">avg meetings/pairing</span></div>
+                {analytics.mentorship.avg_feedback_rating !== null && (
+                  <div><strong>{analytics.mentorship.avg_feedback_rating}/5</strong> <span className="hint">avg feedback rating</span></div>
+                )}
+              </div>
+            </div>
+          )}
+
           {analytics.total_employees === 0 && (
             <p className="muted">Nothing to show yet — analytics fill in once employees start joining and using the checklist/lessons.</p>
           )}
@@ -1033,6 +1107,20 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
               Available as a mentor — can be assigned 1:1 to specific employees below
             </label>
           </div>
+          {contactIsMentor && (
+            <div className="field">
+              <label>Mentor background</label>
+              <textarea
+                value={contactMentorBio}
+                onChange={(e) => setContactMentorBio(e.target.value)}
+                placeholder="e.g. 10 years in ICU nursing, previously mentored 3 new grads, strong at helping people navigate ambiguity"
+                rows={3}
+              />
+              <p className="hint" style={{ marginTop: 4 }}>
+                This is what AI-assisted mentor suggestions match against — the more specific, the better the suggestions.
+              </p>
+            </div>
+          )}
           {departments.length > 0 && (
             <div className="field">
               <label>Scope</label>
@@ -1056,7 +1144,8 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
           Pair a specific employee with one mentor from the pool above. Assigned mentors show up
           on the employee's Job Buddy page with a direct "Request an intro" — not just left in
-          the general contact list.
+          the general contact list. Use "Suggest mentors (AI)" for a data-informed starting point
+          based on the employee's resume and stated career goal — you still make the final call.
         </p>
 
         {employees.length === 0 ? (
@@ -1064,33 +1153,108 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         ) : (
           employees.map((e) => {
             const mentorPool = contacts.filter((c) => c.is_mentor && (c.department_id === null || c.department_id === e.department_id));
+            const ranked = suggestions[e.application_id];
+            const employeeMeetings = e.mentor_assignment_id ? meetings[e.mentor_assignment_id] : undefined;
             return (
-              <div key={e.application_id} className="points-event-row">
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className="avatar-initial avatar-initial-sm">{e.user_full_name.charAt(0).toUpperCase()}</span>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{e.user_full_name}</div>
-                    <div className="hint">
-                      {e.user_email}{e.department_name && ` · ${e.department_name}`}
+              <div key={e.application_id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid var(--border, #eee)" }}>
+                <div className="points-event-row" style={{ borderBottom: "none", paddingBottom: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="avatar-initial avatar-initial-sm">{e.user_full_name.charAt(0).toUpperCase()}</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{e.user_full_name}</div>
+                      <div className="hint">
+                        {e.user_email}{e.department_name && ` · ${e.department_name}`}
+                      </div>
                     </div>
                   </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {e.mentor_name && <span className="pill pill-approved">{e.mentor_name}</span>}
+                    {mentorPool.length > 0 ? (
+                      <>
+                        <button className="btn btn-ghost btn-sm" onClick={() => loadSuggestedMentors(e.application_id)}>
+                          {suggestingFor === e.application_id ? "Hide suggestions" : "Suggest mentors (AI)"}
+                        </button>
+                        <select
+                          value=""
+                          disabled={assigningEmployeeId === e.application_id}
+                          onChange={(ev) => { if (ev.target.value) assignMentor(e.application_id, Number(ev.target.value)); }}
+                          style={{ width: 180 }}
+                        >
+                          <option value="">{e.mentor_name ? "Reassign…" : "Assign a mentor…"}</option>
+                          {mentorPool.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                      </>
+                    ) : (
+                      <span className="hint">No eligible mentors yet</span>
+                    )}
+                    {e.mentor_assignment_id && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => loadMeetings(e.mentor_assignment_id!)}>
+                        {meetingLogOpenFor === e.mentor_assignment_id ? "Hide meetings" : "Meetings"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {e.mentor_name && <span className="pill pill-approved">{e.mentor_name}</span>}
-                  {mentorPool.length > 0 ? (
-                    <select
-                      value=""
-                      disabled={assigningEmployeeId === e.application_id}
-                      onChange={(ev) => { if (ev.target.value) assignMentor(e.application_id, Number(ev.target.value)); }}
-                      style={{ width: 180 }}
-                    >
-                      <option value="">{e.mentor_name ? "Reassign…" : "Assign a mentor…"}</option>
-                      {mentorPool.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                  ) : (
-                    <span className="hint">No eligible mentors yet</span>
-                  )}
-                </div>
+
+                {suggestingFor === e.application_id && (
+                  <div style={{ marginTop: 10, marginLeft: 42 }}>
+                    {ranked === undefined ? (
+                      <p className="hint">Scoring candidates…</p>
+                    ) : ranked.length === 0 ? (
+                      <p className="hint">No mentor scored well enough to suggest — try assigning manually from the list above.</p>
+                    ) : (
+                      ranked.map((s) => (
+                        <div key={s.contact_id} className="points-event-row" style={{ padding: "8px 0" }}>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{s.name} <span className="pill" style={{ marginLeft: 6 }}>{s.score}% fit</span></div>
+                            <div className="hint">{s.reason}</div>
+                          </div>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={assigningEmployeeId === e.application_id}
+                            onClick={() => assignMentor(e.application_id, s.contact_id)}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {e.mentor_assignment_id && meetingLogOpenFor === e.mentor_assignment_id && (
+                  <div style={{ marginTop: 10, marginLeft: 42 }}>
+                    {employeeMeetings === undefined ? (
+                      <p className="hint">Loading meeting history…</p>
+                    ) : employeeMeetings.length === 0 ? (
+                      <p className="hint">No meetings logged yet.</p>
+                    ) : (
+                      employeeMeetings.map((m) => (
+                        <div key={m.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                          <div style={{ fontWeight: 600 }}>{m.meeting_date}{m.rating && ` · ${"★".repeat(m.rating)}${"☆".repeat(5 - m.rating)}`}</div>
+                          {m.notes && <div className="hint">{m.notes}</div>}
+                          {m.feedback_note && <div className="hint">Feedback: {m.feedback_note}</div>}
+                        </div>
+                      ))
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label>Date</label>
+                        <input type="date" value={newMeetingDate} onChange={(ev) => setNewMeetingDate(ev.target.value)} />
+                      </div>
+                      <div className="field" style={{ marginBottom: 0, flex: 1 }}>
+                        <label>Notes (optional)</label>
+                        <input value={newMeetingNotes} onChange={(ev) => setNewMeetingNotes(ev.target.value)} placeholder="What did you cover?" />
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={loggingMeeting || !newMeetingDate}
+                        onClick={() => logMeeting(e.mentor_assignment_id!)}
+                      >
+                        {loggingMeeting ? "Logging…" : "Log meeting"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

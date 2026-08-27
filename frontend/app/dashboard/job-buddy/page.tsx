@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal } from "@/lib/api";
+import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -166,6 +166,15 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState("");
   const [mentor, setMentor] = useState<MentorAssignment | null>(null);
+  const [mentorMeetings, setMentorMeetings] = useState<MentorMeetingLog[]>([]);
+  const [showMentorMeetings, setShowMentorMeetings] = useState(false);
+  const [newMeetingDate, setNewMeetingDate] = useState("");
+  const [newMeetingNotes, setNewMeetingNotes] = useState("");
+  const [loggingMeeting, setLoggingMeeting] = useState(false);
+  const [feedbackDraftFor, setFeedbackDraftFor] = useState<number | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackNote, setFeedbackNote] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [goals, setGoals] = useState<CareerGoal[]>([]);
   const [newGoal, setNewGoal] = useState("");
   const [addingGoal, setAddingGoal] = useState(false);
@@ -250,6 +259,65 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     if (!mentor) return;
     setHandoffContactId(mentor.contact_id);
     setShowHandoffForm(true);
+  }
+
+  async function toggleMentorMeetings() {
+    if (!mentor || !app?.organization_id) return;
+    if (showMentorMeetings) {
+      setShowMentorMeetings(false);
+      return;
+    }
+    setShowMentorMeetings(true);
+    try {
+      const rows = await api<MentorMeetingLog[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/meetings`);
+      setMentorMeetings(rows);
+    } catch {
+      // quietly leave the list empty rather than blocking the rest of the page
+    }
+  }
+
+  async function logMentorMeeting() {
+    if (!mentor || !app?.organization_id || !newMeetingDate) return;
+    setLoggingMeeting(true);
+    try {
+      await api(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/meetings`, {
+        method: "POST",
+        body: JSON.stringify({ meeting_date: newMeetingDate, notes: newMeetingNotes }),
+      });
+      setNewMeetingDate(""); setNewMeetingNotes("");
+      const rows = await api<MentorMeetingLog[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/meetings`);
+      setMentorMeetings(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't log that meeting.");
+    } finally {
+      setLoggingMeeting(false);
+    }
+  }
+
+  function openFeedbackDraft(meetingId: number) {
+    setFeedbackDraftFor(meetingId);
+    setFeedbackRating(5);
+    setFeedbackNote("");
+  }
+
+  async function submitMeetingFeedback(meetingId: number) {
+    if (!app?.organization_id) return;
+    setSubmittingFeedback(true);
+    try {
+      await api(`/orgs/${app.organization_id}/mentor-meetings/${meetingId}/feedback`, {
+        method: "POST",
+        body: JSON.stringify({ rating: feedbackRating, feedback_note: feedbackNote }),
+      });
+      setFeedbackDraftFor(null);
+      if (mentor) {
+        const rows = await api<MentorMeetingLog[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/meetings`);
+        setMentorMeetings(rows);
+      }
+    } catch (err: any) {
+      alert(err.message || "Couldn't submit feedback.");
+    } finally {
+      setSubmittingFeedback(false);
+    }
   }
 
   async function addGoal() {
@@ -527,7 +595,63 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
               <p className="hint" style={{ marginTop: 12, marginBottom: 10 }}>
                 Assigned to help you specifically, beyond what Job Buddy can do directly.
               </p>
-              <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
+                <button className="btn btn-ghost btn-sm" onClick={toggleMentorMeetings}>
+                  {showMentorMeetings ? "Hide meetings" : "Log a meeting"}
+                </button>
+              </div>
+
+              {showMentorMeetings && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #eee)" }}>
+                  {mentorMeetings.length === 0 ? (
+                    <p className="hint" style={{ marginTop: 0 }}>No meetings logged yet.</p>
+                  ) : (
+                    mentorMeetings.map((m) => (
+                      <div key={m.id} style={{ marginBottom: 10, fontSize: "0.9rem" }}>
+                        <div style={{ fontWeight: 600 }}>{m.meeting_date}</div>
+                        {m.notes && <div className="hint">{m.notes}</div>}
+                        {m.rating ? (
+                          <div className="hint">Your rating: {"★".repeat(m.rating)}{"☆".repeat(5 - m.rating)}</div>
+                        ) : feedbackDraftFor === m.id ? (
+                          <div style={{ marginTop: 6 }}>
+                            <div className="field" style={{ marginBottom: 6 }}>
+                              <label>How'd it go? (1-5)</label>
+                              <select value={feedbackRating} onChange={(e) => setFeedbackRating(Number(e.target.value))}>
+                                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                            </div>
+                            <div className="field" style={{ marginBottom: 6 }}>
+                              <label>Notes (optional)</label>
+                              <input value={feedbackNote} onChange={(e) => setFeedbackNote(e.target.value)} placeholder="Anything you'd want to remember" />
+                            </div>
+                            <button className="btn btn-primary btn-sm" disabled={submittingFeedback} onClick={() => submitMeetingFeedback(m.id)}>
+                              {submittingFeedback ? "Saving…" : "Submit feedback"}
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-ghost btn-sm" onClick={() => openFeedbackDraft(m.id)} style={{ padding: "2px 8px", fontSize: "0.85rem" }}>
+                            Rate this meeting
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label>Date</label>
+                      <input type="date" value={newMeetingDate} onChange={(e) => setNewMeetingDate(e.target.value)} />
+                    </div>
+                    <div className="field" style={{ marginBottom: 0, flex: 1 }}>
+                      <label>Notes (optional)</label>
+                      <input value={newMeetingNotes} onChange={(e) => setNewMeetingNotes(e.target.value)} placeholder="What did you cover?" />
+                    </div>
+                    <button className="btn btn-primary btn-sm" disabled={loggingMeeting || !newMeetingDate} onClick={logMentorMeeting}>
+                      {loggingMeeting ? "Logging…" : "Log"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -486,6 +486,26 @@ def org_analytics(
             completion_rate=round(bucket["completed"] / bucket["total"] * 100, 1) if bucket["total"] else 0.0,
         ))
 
+    # --- Mentorship program health ---
+    # Aggregate-only: counts and an average rating, never which
+    # employee said what -- same boundary as every other section here.
+    assignments = db.query(models.MentorAssignment).filter(
+        models.MentorAssignment.application_id.in_(app_ids)
+    ).all() if app_ids else []
+    assignment_ids = [a.id for a in assignments]
+    meetings = db.query(models.MentorMeetingLog).filter(
+        models.MentorMeetingLog.mentor_assignment_id.in_(assignment_ids)
+    ).all() if assignment_ids else []
+    ratings = [m.rating for m in meetings if m.rating is not None]
+
+    mentorship_stats = schemas.MentorshipStats(
+        total_pairings=len(assignments),
+        employees_with_mentor_pct=round(len(assignments) / len(apps) * 100, 1) if apps else 0.0,
+        total_meetings_logged=len(meetings),
+        avg_meetings_per_pairing=round(len(meetings) / len(assignments), 1) if assignments else 0.0,
+        avg_feedback_rating=round(sum(ratings) / len(ratings), 1) if ratings else None,
+    )
+
     return schemas.OrgAnalyticsOut(
         total_employees=len(apps),
         avg_days_to_complete_onboarding=round(sum(days_to_complete) / len(days_to_complete), 1) if days_to_complete else None,
@@ -493,6 +513,7 @@ def org_analytics(
         lesson_quizzes=lesson_stats,
         qa_gaps=qa_gaps,
         departments=department_stats,
+        mentorship=mentorship_stats,
     )
 
 
@@ -535,6 +556,15 @@ def org_analytics_csv(
     writer.writerow(["Unanswered question (Ghost Onboarder gap)", "Times asked"])
     for s in analytics.qa_gaps:
         writer.writerow([s.question, s.count])
+    writer.writerow([])
+
+    m = analytics.mentorship
+    writer.writerow(["Mentorship program"])
+    writer.writerow(["Total pairings", m.total_pairings])
+    writer.writerow(["Employees with a mentor assigned (%)", m.employees_with_mentor_pct])
+    writer.writerow(["Total meetings logged", m.total_meetings_logged])
+    writer.writerow(["Avg meetings per pairing", m.avg_meetings_per_pairing])
+    writer.writerow(["Avg feedback rating (1-5)", m.avg_feedback_rating if m.avg_feedback_rating is not None else "N/A"])
 
     output.seek(0)
     return Response(
@@ -672,7 +702,7 @@ def add_contact(
     contact = models.OrgHumanContact(
         organization_id=organization_id, department_id=payload.department_id,
         name=payload.name, email=payload.email, description=payload.description,
-        is_mentor=payload.is_mentor,
+        is_mentor=payload.is_mentor, mentor_bio=payload.mentor_bio,
     )
     db.add(contact)
     db.commit()
@@ -746,12 +776,14 @@ def list_employees(
 
     app_ids = [a.id for a, _ in rows]
     mentor_names: dict[int, str] = {}
+    mentor_assignment_ids: dict[int, int] = {}
     if app_ids:
         assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
         contact_ids = [a.contact_id for a in assignments]
         contacts_by_id = {c.id: c.name for c in db.query(models.OrgHumanContact).filter(models.OrgHumanContact.id.in_(contact_ids)).all()} if contact_ids else {}
         for a in assignments:
             mentor_names[a.application_id] = contacts_by_id.get(a.contact_id)
+            mentor_assignment_ids[a.application_id] = a.id
 
     return [
         schemas.OrgEmployeeOut(
@@ -761,6 +793,7 @@ def list_employees(
             department_name=dept_names.get(app_row.department_id) if app_row.department_id else None,
             joined_at=app_row.created_at,
             mentor_name=mentor_names.get(app_row.id),
+            mentor_assignment_id=mentor_assignment_ids.get(app_row.id),
         )
         for app_row, user_row in rows
     ]
@@ -822,6 +855,167 @@ def assign_mentor(
         id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
         description=contact.description, assigned_at=assignment.assigned_at,
     )
+
+
+@router.get("/{organization_id}/employees/{application_id}/suggested-mentors", response_model=list[schemas.SuggestedMentorOut])
+def suggested_mentors(
+    organization_id: int,
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """AI-assisted ranking of the mentor pool for one specific employee,
+    scored against their resume + stated career goals. Advisory only --
+    assign_mentor above is completely unchanged and still requires an
+    admin to actually pick someone; this just gives them a
+    data-informed starting point instead of a bare list of names.
+
+    Computed on demand rather than in a background batch: the mentor
+    pool for a single org is small (a handful to a few dozen people,
+    not thousands of job postings), so a few sequential Claude calls
+    here comfortably finish within a normal request/response cycle --
+    unlike the job-matching pipeline, this doesn't need the
+    background-task treatment that scheduled-run required."""
+    application = db.query(models.Application).filter_by(
+        id=application_id, organization_id=organization_id
+    ).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Employee not found in this organization.")
+
+    _require_scope_admin(db, organization_id, user.id, application.department_id)
+
+    employee = db.query(models.User).filter_by(id=application.user_id).first()
+    goal_rows = (
+        db.query(models.CareerGoal)
+        .filter_by(application_id=application_id, achieved_at=None)
+        .order_by(models.CareerGoal.created_at.desc())
+        .all()
+    )
+    goal_text = goal_rows[0].goal_text if goal_rows else ""
+
+    mentors = db.query(models.OrgHumanContact).filter_by(
+        organization_id=organization_id, is_mentor=True
+    ).all()
+    if not mentors:
+        return []
+
+    from app.services import mentor_matcher
+    ranked = mentor_matcher.suggest_mentors(employee.resume_text or "", goal_text, mentors)
+    return [schemas.SuggestedMentorOut(**r) for r in ranked]
+
+
+# --- Mentor meeting logs (participation record + optional employee feedback) ---
+
+def _require_mentor_pairing_access(db: Session, organization_id: int, user_id: int, assignment: models.MentorAssignment):
+    """Either the org admin overseeing the pairing's department, the
+    employee themselves, or the assigned mentor may log/view meetings
+    for a pairing -- narrower than the general admin-only pattern most
+    of this file uses, since the two participants in the pairing need
+    to be able to log their own meetings without needing admin rights."""
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    if application and application.user_id == user_id:
+        return  # the employee themselves
+    contact = db.query(models.OrgHumanContact).filter_by(id=assignment.contact_id).first()
+    if contact:
+        mentor_user = db.query(models.User).filter_by(email=contact.email).first()
+        if mentor_user and mentor_user.id == user_id:
+            return  # the assigned mentor
+    _require_scope_admin(db, organization_id, user_id, application.department_id if application else None)
+
+
+@router.post("/{organization_id}/mentor-assignments/{assignment_id}/meetings", response_model=schemas.MentorMeetingLogOut)
+def log_mentor_meeting(
+    organization_id: int,
+    assignment_id: int,
+    payload: schemas.MentorMeetingLogCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    log = models.MentorMeetingLog(
+        mentor_assignment_id=assignment_id, logged_by_user_id=user.id,
+        meeting_date=payload.meeting_date, notes=payload.notes,
+    )
+    db.add(log)
+    # A logged meeting is a live signal the pairing is active -- resets
+    # the reminder guard the same way any check-in resets a "we haven't
+    # heard from you" nudge, so mentor_reminders.py doesn't nag a pair
+    # that just met.
+    assignment.reminder_last_sent_at = None
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+@router.get("/{organization_id}/mentor-assignments/{assignment_id}/meetings", response_model=list[schemas.MentorMeetingLogOut])
+def list_mentor_meetings(
+    organization_id: int,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    return (
+        db.query(models.MentorMeetingLog)
+        .filter_by(mentor_assignment_id=assignment_id)
+        .order_by(models.MentorMeetingLog.meeting_date.desc())
+        .all()
+    )
+
+
+@router.post("/{organization_id}/mentor-meetings/{meeting_id}/feedback", response_model=schemas.MentorMeetingLogOut)
+def submit_meeting_feedback(
+    organization_id: int,
+    meeting_id: int,
+    payload: schemas.MentorMeetingFeedbackCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Employee-only (not the mentor, not the admin) -- feedback on a
+    meeting is the employee's own assessment of how it went for them,
+    same as how CareerGoal is employee-owned."""
+    meeting = db.query(models.MentorMeetingLog).join(
+        models.MentorAssignment, models.MentorMeetingLog.mentor_assignment_id == models.MentorAssignment.id
+    ).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorMeetingLog.id == meeting_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found.")
+
+    application = db.query(models.Application).join(
+        models.MentorAssignment, models.MentorAssignment.application_id == models.Application.id
+    ).filter(models.MentorAssignment.id == meeting.mentor_assignment_id).first()
+    if not application or application.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the employee in this pairing can submit feedback on their own meeting.")
+
+    meeting.rating = payload.rating
+    meeting.feedback_note = payload.feedback_note
+    db.commit()
+    db.refresh(meeting)
+    return meeting
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

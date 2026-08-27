@@ -586,6 +586,16 @@ class OrgHumanContact(Base):
     # gets explicitly 1:1 assigned to individual employees via
     # MentorAssignment below, rather than just being suggested broadly.
     is_mentor = Column(Boolean, default=False, server_default="false")
+    # Free-text expertise/background, e.g. "10 years in backend infra,
+    # previously mentored 3 new grads" -- only meaningful when
+    # is_mentor=True. This is the signal mentor_matcher.py scores
+    # against; without it there's nothing for AI-assisted matching to
+    # compare an employee's resume/goals to beyond a bare job title.
+    # Kept as free text rather than structured skill tags since a
+    # mentor writing "I'm good at helping people navigate ambiguity"
+    # is more useful signal than picking from a fixed tag list, and is
+    # less setup effort per mentor for the admin who enters it.
+    mentor_bio = Column(Text, default="", server_default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
@@ -606,6 +616,43 @@ class MentorAssignment(Base):
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
     contact_id = Column(Integer, ForeignKey("org_human_contacts.id"), nullable=False)
     assigned_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    # reminder_last_sent_at tracks the mentorship check-in nudge
+    # (see mentor_reminders.py), separate from any other reminder
+    # system in the app -- guards against re-notifying every single
+    # day once a pairing has gone quiet, the same guard pattern
+    # ChecklistItem/LessonDelivery reminders already use elsewhere.
+    reminder_last_sent_at = Column(DateTime, nullable=True)
+
+
+class MentorMeetingLog(Base):
+    """One logged meeting between a mentor and mentee, tied to the
+    MentorAssignment (not directly to the employee or mentor) since a
+    log entry only makes sense in the context of a specific pairing --
+    if the mentor is ever reassigned, old logs stay attached to the
+    original pairing they actually happened under, not silently
+    reattributed to whoever replaces that mentor.
+
+    rating/feedback_note are OPTIONAL and employee-submitted after the
+    fact -- a mentor logging that a meeting happened doesn't require
+    the employee to have rated it, and the two are recorded separately
+    so a missing rating doesn't block the meeting record itself from
+    counting toward participation stats.
+
+    Aggregated into org_analytics as counts/averages only, never
+    surfaced per-entry to admins -- same privacy boundary as chat
+    content and CareerGoal: what was discussed is the pair's own
+    business, only that meetings are happening (and roughly how
+    they're rated) is fair game for program-health reporting."""
+    __tablename__ = "mentor_meeting_logs"
+
+    id = Column(Integer, primary_key=True)
+    mentor_assignment_id = Column(Integer, ForeignKey("mentor_assignments.id"), nullable=False)
+    logged_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    meeting_date = Column(Date, nullable=False)
+    notes = Column(Text, default="", server_default="")
+    rating = Column(Integer, nullable=True)  # 1-5, optional, employee-submitted
+    feedback_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
 class CareerGoal(Base):

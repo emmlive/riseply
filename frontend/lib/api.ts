@@ -255,6 +255,14 @@ export interface DepartmentStats {
   completion_rate: number;
 }
 
+export interface MentorshipStats {
+  total_pairings: number;
+  employees_with_mentor_pct: number;
+  total_meetings_logged: number;
+  avg_meetings_per_pairing: number;
+  avg_feedback_rating: number | null;
+}
+
 export interface OrgAnalytics {
   total_employees: number;
   avg_days_to_complete_onboarding: number | null;
@@ -262,6 +270,7 @@ export interface OrgAnalytics {
   lesson_quizzes: LessonQuizStats[];
   qa_gaps: QAGapStats[];
   departments: DepartmentStats[];
+  mentorship: MentorshipStats;
 }
 
 export interface OrgRosterEntry {
@@ -291,6 +300,26 @@ export interface OrgContact {
   description: string;
   department_id: number | null;
   is_mentor: boolean;
+  mentor_bio: string;
+  created_at: string;
+}
+
+export interface SuggestedMentor {
+  contact_id: number;
+  name: string;
+  email: string;
+  mentor_bio: string;
+  score: number;
+  reason: string;
+}
+
+export interface MentorMeetingLog {
+  id: number;
+  mentor_assignment_id: number;
+  meeting_date: string;
+  notes: string;
+  rating: number | null;
+  feedback_note: string | null;
   created_at: string;
 }
 
@@ -318,6 +347,7 @@ export interface OrgEmployee {
   department_name: string | null;
   joined_at: string;
   mentor_name: string | null;
+  mentor_assignment_id: number | null;
 }
 
 export interface Department {
