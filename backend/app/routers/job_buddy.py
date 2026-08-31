@@ -477,6 +477,7 @@ def get_my_mentor(
     return schemas.MentorAssignmentOut(
         id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
         description=contact.description, assigned_at=assignment.assigned_at,
+        ended_at=assignment.ended_at, end_reason=assignment.end_reason,
     )
 
 

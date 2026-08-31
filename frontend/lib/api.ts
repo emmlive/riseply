@@ -262,6 +262,8 @@ export interface MentorshipStats {
   total_meetings_logged: number;
   avg_meetings_per_pairing: number;
   avg_feedback_rating: number | null;
+  pairings_ended: number;
+  would_recommend_mentor_pct: number | null;
 }
 
 export interface OrgAnalytics {
@@ -331,6 +333,17 @@ export interface MentorAssignment {
   email: string;
   description: string;
   assigned_at: string;
+  ended_at: string | null;
+  end_reason: string;
+}
+
+export interface MentorRetrospective {
+  id: number;
+  mentor_assignment_id: number;
+  what_worked: string;
+  what_didnt_work: string;
+  would_recommend_mentor: boolean | null;
+  created_at: string;
 }
 
 export interface CareerGoal {
@@ -349,6 +362,7 @@ export interface OrgEmployee {
   joined_at: string;
   mentor_name: string | null;
   mentor_assignment_id: number | null;
+  mentor_ended_at: string | null;
 }
 
 export interface Department {

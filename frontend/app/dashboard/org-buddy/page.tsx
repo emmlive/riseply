@@ -158,6 +158,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
+  const [endingPairingId, setEndingPairingId] = useState<number | null>(null);
   // PDF report section selection -- all on by default, matching what
   // the CSV export always includes; the PDF is the "pick and choose"
   // option next to it, not a replacement.
@@ -524,6 +525,22 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       alert(err.message || "Couldn't log that meeting.");
     } finally {
       setLoggingMeeting(false);
+    }
+  }
+
+  async function endPairing(assignmentId: number) {
+    const reason = prompt("Why is this pairing ending? (e.g. Completed, Reassigning, Employee departed) — optional");
+    if (reason === null) return;  // user cancelled
+    setEndingPairingId(assignmentId);
+    try {
+      await api(`/orgs/${org.id}/mentor-assignments/${assignmentId}/end`, {
+        method: "POST", body: JSON.stringify({ reason }),
+      });
+      load();
+    } catch (err: any) {
+      alert(err.message || "Couldn't end that pairing.");
+    } finally {
+      setEndingPairingId(null);
     }
   }
 
@@ -907,6 +924,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                 {analytics.mentorship.avg_feedback_rating !== null && (
                   <div><strong>{analytics.mentorship.avg_feedback_rating}/5</strong> <span className="hint">avg feedback rating</span></div>
                 )}
+                <div><strong>{analytics.mentorship.pairings_ended}</strong> <span className="hint">pairings ended</span></div>
+                {analytics.mentorship.would_recommend_mentor_pct !== null && (
+                  <div><strong>{analytics.mentorship.would_recommend_mentor_pct}%</strong> <span className="hint">would recommend their mentor</span></div>
+                )}
               </div>
             </div>
           )}
@@ -1251,6 +1272,19 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                       <button className="btn btn-ghost btn-sm" onClick={() => loadMeetings(e.mentor_assignment_id!)}>
                         {meetingLogOpenFor === e.mentor_assignment_id ? "Hide meetings" : "Meetings"}
                       </button>
+                    )}
+                    {e.mentor_assignment_id && (
+                      e.mentor_ended_at ? (
+                        <span className="pill" style={{ fontSize: "0.75rem" }}>Ended</span>
+                      ) : (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={endingPairingId === e.mentor_assignment_id}
+                          onClick={() => endPairing(e.mentor_assignment_id!)}
+                        >
+                          {endingPairingId === e.mentor_assignment_id ? "Ending…" : "End pairing"}
+                        </button>
+                      )
                     )}
                   </div>
                 </div>

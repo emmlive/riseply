@@ -616,7 +616,21 @@ class MentorAssignment(Base):
     the general pool anyone can reach out to. 'Request an intro' from
     an assigned mentor uses the exact same HandoffRequest flow already
     built for the general contact list (a note the employee wrote,
-    never their chat history)."""
+    never their chat history).
+
+    One row per application (see the unique constraint) -- reassigning
+    to a different mentor UPDATES this same row's contact_id rather
+    than creating a new one (see assign_mentor in routers/org_buddy.py).
+    That means ended_at/end_reason reflect the CURRENT pairing's
+    status, not a full history of every past mentor this employee has
+    had; assign_mentor resets ended_at to None on reassignment so a
+    fresh pairing always starts active. A MentorRetrospective from a
+    prior, since-reassigned pairing stays in the database (linked by
+    mentor_assignment_id) but is no longer meaningfully "about" the
+    current contact_id -- acceptable today only because the analytics
+    this feeds are org-wide aggregates, not a per-mentor performance
+    breakdown; that would need this table restructured to preserve
+    full history first."""
     __tablename__ = "mentor_assignments"
     __table_args__ = (UniqueConstraint("application_id", name="uq_application_mentor"),)
 
@@ -630,6 +644,41 @@ class MentorAssignment(Base):
     # day once a pairing has gone quiet, the same guard pattern
     # ChecklistItem/LessonDelivery reminders already use elsewhere.
     reminder_last_sent_at = Column(DateTime, nullable=True)
+    # Set by an admin via POST .../end -- gates whether a retrospective
+    # can be submitted (see MentorRetrospective below). Deliberately
+    # NOT auto-set by anything (e.g. inactivity) -- ending a real
+    # relationship should be a deliberate action, not an inferred one.
+    ended_at = Column(DateTime, nullable=True)
+    end_reason = Column(String, default="", server_default="")
+
+
+class MentorRetrospective(Base):
+    """One employee's end-of-pairing reflection: what worked, what
+    didn't, and whether they'd recommend this mentor to others. Only
+    submittable once the pairing has been marked ended (see
+    ended_at above) -- a retrospective is inherently about a
+    CONCLUDED relationship, not an ongoing one.
+
+    Employee-submitted only (not the mentor) -- same reasoning as
+    MentorMeetingLog.feedback_note being employee-owned: this is the
+    employee's own honest assessment, and we want candor over the
+    mentor being able to see or react to it.
+
+    what_worked/what_didnt_work are intentionally private -- visible
+    only to the employee who wrote them, never to the admin or the
+    mentor -- same privacy boundary as meeting feedback_note. Only
+    would_recommend_mentor (a plain boolean) rolls up into aggregate
+    analytics, the same "counts and rates, never the actual words"
+    principle used everywhere else in Org Buddy's reporting."""
+    __tablename__ = "mentor_retrospectives"
+    __table_args__ = (UniqueConstraint("mentor_assignment_id", name="uq_mentor_assignment_retrospective"),)
+
+    id = Column(Integer, primary_key=True)
+    mentor_assignment_id = Column(Integer, ForeignKey("mentor_assignments.id"), nullable=False)
+    what_worked = Column(Text, default="", server_default="")
+    what_didnt_work = Column(Text, default="", server_default="")
+    would_recommend_mentor = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
 class MentorMeetingLog(Base):

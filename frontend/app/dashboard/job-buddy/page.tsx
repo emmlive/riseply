@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -175,6 +175,12 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackNote, setFeedbackNote] = useState("");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [retrospective, setRetrospective] = useState<MentorRetrospective | null>(null);
+  const [retroLoaded, setRetroLoaded] = useState(false);
+  const [retroWhatWorked, setRetroWhatWorked] = useState("");
+  const [retroWhatDidntWork, setRetroWhatDidntWork] = useState("");
+  const [retroWouldRecommend, setRetroWouldRecommend] = useState<boolean | null>(null);
+  const [submittingRetro, setSubmittingRetro] = useState(false);
   const [goals, setGoals] = useState<CareerGoal[]>([]);
   const [newGoal, setNewGoal] = useState("");
   const [addingGoal, setAddingGoal] = useState(false);
@@ -205,6 +211,41 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (mentor?.ended_at && app?.organization_id && !retroLoaded) {
+      api<MentorRetrospective | null>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/retrospective`)
+        .then((r) => {
+          setRetrospective(r);
+          if (r) {
+            setRetroWhatWorked(r.what_worked);
+            setRetroWhatDidntWork(r.what_didnt_work);
+            setRetroWouldRecommend(r.would_recommend_mentor);
+          }
+          setRetroLoaded(true);
+        })
+        .catch(() => setRetroLoaded(true));
+    }
+  }, [mentor, app, retroLoaded]);
+
+  async function submitRetrospective() {
+    if (!mentor || !app?.organization_id) return;
+    setSubmittingRetro(true);
+    try {
+      const r = await api<MentorRetrospective>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/retrospective`, {
+        method: "POST",
+        body: JSON.stringify({
+          what_worked: retroWhatWorked, what_didnt_work: retroWhatDidntWork,
+          would_recommend_mentor: retroWouldRecommend,
+        }),
+      });
+      setRetrospective(r);
+    } catch (err: any) {
+      alert(err.message || "Couldn't submit your retrospective.");
+    } finally {
+      setSubmittingRetro(false);
+    }
+  }
 
   async function generatePlan() {
     setPlan("loading");
@@ -595,12 +636,73 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
               <p className="hint" style={{ marginTop: 12, marginBottom: 10 }}>
                 Assigned to help you specifically, beyond what Job Buddy can do directly.
               </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
-                <button className="btn btn-ghost btn-sm" onClick={toggleMentorMeetings}>
-                  {showMentorMeetings ? "Hide meetings" : "Log a meeting"}
-                </button>
-              </div>
+              {mentor.ended_at ? (
+                <p className="hint" style={{ marginBottom: 10 }}>
+                  This mentorship has ended{mentor.end_reason ? ` (${mentor.end_reason})` : ""}.
+                </p>
+              ) : (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
+                  <button className="btn btn-ghost btn-sm" onClick={toggleMentorMeetings}>
+                    {showMentorMeetings ? "Hide meetings" : "Log a meeting"}
+                  </button>
+                </div>
+              )}
+
+              {mentor.ended_at && (
+                <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid var(--border, #eee)" }}>
+                  {!retroLoaded ? (
+                    <p className="hint" style={{ marginTop: 0 }}>Loading…</p>
+                  ) : retrospective ? (
+                    <div>
+                      <p style={{ fontWeight: 600, marginBottom: 6 }}>Your retrospective</p>
+                      {retrospective.what_worked && (
+                        <p className="hint" style={{ marginBottom: 4 }}><strong>What worked:</strong> {retrospective.what_worked}</p>
+                      )}
+                      {retrospective.what_didnt_work && (
+                        <p className="hint" style={{ marginBottom: 4 }}><strong>What didn't work:</strong> {retrospective.what_didnt_work}</p>
+                      )}
+                      {retrospective.would_recommend_mentor !== null && (
+                        <p className="hint" style={{ marginBottom: 0 }}>
+                          {retrospective.would_recommend_mentor ? "You'd recommend this mentor to others." : "You wouldn't recommend this mentor to others."}
+                        </p>
+                      )}
+                      <p className="hint" style={{ marginTop: 6, fontSize: "0.8rem" }}>
+                        This stays private — only you can see it, and it's never shown to your mentor or admin.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p style={{ fontWeight: 600, marginBottom: 6 }}>Share a quick retrospective</p>
+                      <p className="hint" style={{ marginTop: 0, marginBottom: 10 }}>
+                        This stays completely private to you — never shown to your mentor or an admin.
+                      </p>
+                      <div className="field">
+                        <label>What worked well?</label>
+                        <textarea rows={2} value={retroWhatWorked} onChange={(e) => setRetroWhatWorked(e.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label>What didn't work as well?</label>
+                        <textarea rows={2} value={retroWhatDidntWork} onChange={(e) => setRetroWhatDidntWork(e.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label>Would you recommend this mentor to others?</label>
+                        <select
+                          value={retroWouldRecommend === null ? "" : retroWouldRecommend ? "yes" : "no"}
+                          onChange={(e) => setRetroWouldRecommend(e.target.value === "" ? null : e.target.value === "yes")}
+                        >
+                          <option value="">Prefer not to say</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <button className="btn btn-primary btn-sm" disabled={submittingRetro} onClick={submitRetrospective}>
+                        {submittingRetro ? "Submitting…" : "Submit retrospective"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {showMentorMeetings && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #eee)" }}>

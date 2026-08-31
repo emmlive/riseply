@@ -522,12 +522,20 @@ def org_analytics(
     ).all() if assignment_ids else []
     ratings = [m.rating for m in meetings if m.rating is not None]
 
+    pairings_ended = sum(1 for a in assignments if a.ended_at is not None)
+    retrospectives = db.query(models.MentorRetrospective).filter(
+        models.MentorRetrospective.mentor_assignment_id.in_(assignment_ids)
+    ).all() if assignment_ids else []
+    recommend_answers = [r.would_recommend_mentor for r in retrospectives if r.would_recommend_mentor is not None]
+
     mentorship_stats = schemas.MentorshipStats(
         total_pairings=len(assignments),
         employees_with_mentor_pct=round(len(assignments) / len(apps) * 100, 1) if apps else 0.0,
         total_meetings_logged=len(meetings),
         avg_meetings_per_pairing=round(len(meetings) / len(assignments), 1) if assignments else 0.0,
         avg_feedback_rating=round(sum(ratings) / len(ratings), 1) if ratings else None,
+        pairings_ended=pairings_ended,
+        would_recommend_mentor_pct=round(sum(recommend_answers) / len(recommend_answers) * 100, 1) if recommend_answers else None,
     )
 
     return schemas.OrgAnalyticsOut(
@@ -628,6 +636,8 @@ def org_analytics_csv(
     writer.writerow(["Total meetings logged", m.total_meetings_logged])
     writer.writerow(["Avg meetings per pairing", m.avg_meetings_per_pairing])
     writer.writerow(["Avg feedback rating (1-5)", m.avg_feedback_rating if m.avg_feedback_rating is not None else "N/A"])
+    writer.writerow(["Pairings ended", m.pairings_ended])
+    writer.writerow(["Would recommend mentor (%)", m.would_recommend_mentor_pct if m.would_recommend_mentor_pct is not None else "N/A"])
 
     output.seek(0)
     return Response(
@@ -840,6 +850,7 @@ def list_employees(
     app_ids = [a.id for a, _ in rows]
     mentor_names: dict[int, str] = {}
     mentor_assignment_ids: dict[int, int] = {}
+    mentor_ended_ats: dict[int, object] = {}
     if app_ids:
         assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
         contact_ids = [a.contact_id for a in assignments]
@@ -847,6 +858,7 @@ def list_employees(
         for a in assignments:
             mentor_names[a.application_id] = contacts_by_id.get(a.contact_id)
             mentor_assignment_ids[a.application_id] = a.id
+            mentor_ended_ats[a.application_id] = a.ended_at
 
     return [
         schemas.OrgEmployeeOut(
@@ -857,6 +869,7 @@ def list_employees(
             joined_at=app_row.created_at,
             mentor_name=mentor_names.get(app_row.id),
             mentor_assignment_id=mentor_assignment_ids.get(app_row.id),
+            mentor_ended_at=mentor_ended_ats.get(app_row.id),
         )
         for app_row, user_row in rows
     ]
@@ -907,6 +920,13 @@ def assign_mentor(
     if existing:
         existing.contact_id = contact.id
         existing.assigned_at = datetime.utcnow()
+        # A reassignment starts a fresh, active pairing -- clear any
+        # prior "ended" state from a previous mentor's tenure on this
+        # same row rather than leaving a new pairing looking already
+        # concluded (see MentorAssignment's docstring for why this row
+        # gets reused rather than a new one being created).
+        existing.ended_at = None
+        existing.end_reason = ""
         assignment = existing
     else:
         assignment = models.MentorAssignment(application_id=application_id, contact_id=contact.id)
@@ -917,6 +937,7 @@ def assign_mentor(
     return schemas.MentorAssignmentOut(
         id=assignment.id, contact_id=contact.id, name=contact.name, email=contact.email,
         description=contact.description, assigned_at=assignment.assigned_at,
+        ended_at=assignment.ended_at, end_reason=assignment.end_reason,
     )
 
 
@@ -965,6 +986,120 @@ def suggested_mentors(
     from app.services import mentor_matcher
     ranked = mentor_matcher.suggest_mentors(employee.resume_text or "", goal_text, mentors)
     return [schemas.SuggestedMentorOut(**r) for r in ranked]
+
+
+@router.post("/{organization_id}/mentor-assignments/{assignment_id}/end", response_model=schemas.MentorAssignmentOut)
+def end_mentor_assignment(
+    organization_id: int,
+    assignment_id: int,
+    payload: schemas.MentorAssignmentEndRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin-only, deliberately -- ending a pairing is a program-
+    management decision (the employee finished onboarding, is moving
+    teams, etc.), not something either participant triggers
+    unilaterally. This is what unlocks the employee's ability to
+    submit a retrospective (see below) -- a retrospective is
+    inherently about a CONCLUDED relationship."""
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    _require_scope_admin(db, organization_id, user.id, application.department_id if application else None)
+
+    assignment.ended_at = datetime.utcnow()
+    assignment.end_reason = payload.reason
+    db.commit()
+    db.refresh(assignment)
+
+    contact = db.query(models.OrgHumanContact).filter_by(id=assignment.contact_id).first()
+    return schemas.MentorAssignmentOut(
+        id=assignment.id, contact_id=assignment.contact_id,
+        name=contact.name if contact else "", email=contact.email if contact else "",
+        description=contact.description if contact else "",
+        assigned_at=assignment.assigned_at, ended_at=assignment.ended_at, end_reason=assignment.end_reason,
+    )
+
+
+@router.post("/{organization_id}/mentor-assignments/{assignment_id}/retrospective", response_model=schemas.MentorRetrospectiveOut)
+def submit_mentor_retrospective(
+    organization_id: int,
+    assignment_id: int,
+    payload: schemas.MentorRetrospectiveCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Employee-only (not the mentor, not an admin) -- same reasoning
+    as meeting feedback: this is the employee's own honest reflection,
+    and keeping it employee-owned is what makes candor possible. Only
+    submittable once the pairing is marked ended -- see
+    end_mentor_assignment above. One retrospective per assignment
+    (enforced by the unique constraint on the model); resubmitting
+    updates the existing one rather than erroring, since a person
+    revising their own reflection after more thought is normal, not
+    something to block."""
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    if not application or application.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the employee in this pairing can submit a retrospective.")
+
+    if assignment.ended_at is None:
+        raise HTTPException(status_code=400, detail="This pairing hasn't been marked ended yet -- ask your admin to close it out first.")
+
+    retro = db.query(models.MentorRetrospective).filter_by(mentor_assignment_id=assignment_id).first()
+    if retro is None:
+        retro = models.MentorRetrospective(mentor_assignment_id=assignment_id)
+        db.add(retro)
+
+    retro.what_worked = payload.what_worked
+    retro.what_didnt_work = payload.what_didnt_work
+    retro.would_recommend_mentor = payload.would_recommend_mentor
+    db.commit()
+    db.refresh(retro)
+    return retro
+
+
+@router.get("/{organization_id}/mentor-assignments/{assignment_id}/retrospective", response_model=schemas.MentorRetrospectiveOut | None)
+def get_mentor_retrospective(
+    organization_id: int,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Employee-only, same as submitting -- an admin or the mentor
+    cannot read this even though they CAN see the meeting log's
+    aggregate rating elsewhere; retrospective text is a step more
+    candid than a 1-5 meeting rating and gets a correspondingly
+    stricter privacy boundary."""
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    if not application or application.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the employee in this pairing can view their retrospective.")
+
+    return db.query(models.MentorRetrospective).filter_by(mentor_assignment_id=assignment_id).first()
 
 
 # --- Mentor meeting logs (participation record + optional employee feedback) ---
