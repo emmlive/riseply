@@ -983,6 +983,54 @@ def list_mentor_meetings(
     )
 
 
+@router.get("/{organization_id}/mentor-assignments/{assignment_id}/meetings/export")
+def export_mentor_meetings_pdf(
+    organization_id: int,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Downloadable/printable PDF of a pairing's meeting history --
+    same access rule as list_mentor_meetings (employee, their assigned
+    mentor, or an admin scoped to the employee's department), since
+    this is just a different rendering of the same data, not a new
+    disclosure boundary."""
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    employee = db.query(models.User).filter_by(id=application.user_id).first() if application else None
+    contact = db.query(models.OrgHumanContact).filter_by(id=assignment.contact_id).first()
+
+    meetings = (
+        db.query(models.MentorMeetingLog)
+        .filter_by(mentor_assignment_id=assignment_id)
+        .order_by(models.MentorMeetingLog.meeting_date.desc())
+        .all()
+    )
+
+    from app.services import mentor_export
+    pdf_bytes = mentor_export.generate_meeting_history_pdf(
+        employee_name=(employee.full_name or employee.email) if employee else "Employee",
+        mentor_name=contact.name if contact else "Mentor",
+        meetings=meetings,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="mentorship_meetings_{assignment_id}.pdf"'},
+    )
+
+
 @router.post("/{organization_id}/mentor-meetings/{meeting_id}/feedback", response_model=schemas.MentorMeetingLogOut)
 def submit_meeting_feedback(
     organization_id: int,

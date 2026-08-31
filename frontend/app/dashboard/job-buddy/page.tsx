@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -636,6 +636,18 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                         )}
                       </div>
                     ))
+                  )}
+                  {mentorMeetings.length > 0 && mentor && app?.organization_id && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginBottom: 8 }}
+                      onClick={() => downloadFile(
+                        `/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/meetings/export`,
+                        `mentorship_meetings_${mentor.id}.pdf`,
+                      )}
+                    >
+                      Download PDF
+                    </button>
                   )}
                   <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
                     <div className="field" style={{ marginBottom: 0 }}>

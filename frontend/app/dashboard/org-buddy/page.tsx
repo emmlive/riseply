@@ -1228,13 +1228,25 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                     ) : employeeMeetings.length === 0 ? (
                       <p className="hint">No meetings logged yet.</p>
                     ) : (
-                      employeeMeetings.map((m) => (
-                        <div key={m.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)" }}>
-                          <div style={{ fontWeight: 600 }}>{m.meeting_date}{m.rating && ` · ${"★".repeat(m.rating)}${"☆".repeat(5 - m.rating)}`}</div>
-                          {m.notes && <div className="hint">{m.notes}</div>}
-                          {m.feedback_note && <div className="hint">Feedback: {m.feedback_note}</div>}
-                        </div>
-                      ))
+                      <>
+                        {employeeMeetings.map((m) => (
+                          <div key={m.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                            <div style={{ fontWeight: 600 }}>{m.meeting_date}{m.rating && ` · ${"★".repeat(m.rating)}${"☆".repeat(5 - m.rating)}`}</div>
+                            {m.notes && <div className="hint">{m.notes}</div>}
+                            {m.feedback_note && <div className="hint">Feedback: {m.feedback_note}</div>}
+                          </div>
+                        ))}
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 8 }}
+                          onClick={() => downloadFile(
+                            `/orgs/${org.id}/mentor-assignments/${e.mentor_assignment_id}/meetings/export`,
+                            `mentorship_meetings_${e.mentor_assignment_id}.pdf`,
+                          )}
+                        >
+                          Download PDF
+                        </button>
+                      </>
                     )}
                     <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
                       <div className="field" style={{ marginBottom: 0 }}>
