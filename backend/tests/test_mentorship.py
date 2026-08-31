@@ -437,3 +437,126 @@ def test_no_reminder_when_recent_meeting_logged(db):
     sent_to = {call.args[0] for call in mock_send.call_args_list}
     assert employee.email not in sent_to
     assert contact.email not in sent_to
+
+
+# --- PDF export ---
+
+def test_export_meetings_pdf_returns_valid_pdf(db):
+    admin = _make_user(db, "admin11@acme.com", resume_text="")
+    org = _make_org(db, "OrgL")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "emp13@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    db.add(models.MentorMeetingLog(
+        mentor_assignment_id=assignment.id, logged_by_user_id=admin.id,
+        meeting_date=date.today(), notes="Covered onboarding progress", rating=4,
+    ))
+    db.commit()
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/meetings/export")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_export_meetings_pdf_works_with_zero_meetings(db):
+    admin = _make_user(db, "admin12@acme.com")
+    org = _make_org(db, "OrgM")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "emp14@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/meetings/export")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_export_meetings_pdf_requires_pairing_access(db):
+    outsider = _make_user(db, "outsider2@x.com")
+    org = _make_org(db, "OrgN")
+    employee = _make_user(db, "emp15@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(outsider)
+    resp = client.get(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/meetings/export")
+    assert resp.status_code == 403
+
+
+def test_export_meetings_pdf_404_for_unknown_assignment(db):
+    admin = _make_user(db, "admin13@acme.com")
+    org = _make_org(db, "OrgO")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/mentor-assignments/999999/meetings/export")
+    assert resp.status_code == 404
+
+
+# --- Customizable analytics PDF report ---
+
+def test_analytics_pdf_full_report_default_sections(db):
+    admin = _make_user(db, "admin14@acme.com")
+    org = _make_org(db, "OrgP")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "emp16@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_single_section_selection(db):
+    admin = _make_user(db, "admin15@acme.com")
+    org = _make_org(db, "OrgQ")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf?sections=mentorship")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_ignores_invalid_section_names(db):
+    admin = _make_user(db, "admin16@acme.com")
+    org = _make_org(db, "OrgR")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf?sections=mentorship,not_a_real_section,")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_requires_admin(db):
+    non_admin = _make_user(db, "notadmin@x.com")
+    org = _make_org(db, "OrgS")
+
+    _login_as(non_admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf")
+    assert resp.status_code == 403
