@@ -266,6 +266,7 @@ class OrgContentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
     department_id: int | None = None
     media_url: str = Field(default="", max_length=2000)
+    category: str = Field(default="General", max_length=50)
 
 
 class OrgContentOut(BaseModel):
@@ -274,6 +275,7 @@ class OrgContentOut(BaseModel):
     content: str
     department_id: int | None
     media_url: str = ""
+    category: str = "General"
     created_at: datetime
 
 

@@ -534,6 +534,14 @@ class OrganizationBuddyContent(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     title = Column(String, default="")
     content = Column(Text, default="")
+    # Free-text-ish but constrained to a known set at the API layer
+    # (see CONTENT_CATEGORIES in routers/org_buddy.py) -- lets an admin
+    # label what a piece of content is FOR (e.g. "Mentoring Resource",
+    # "Wellbeing") without needing a separate table. Purely
+    # organizational/display -- doesn't change how content is folded
+    # into the onboarding assistant's context, which still uses
+    # everything regardless of category.
+    category = Column(String, default="General", server_default="General")
     # Optional link to an already-hosted image/video/document -- see
     # security note on this field's twin in OrgLesson below; validated
     # identically (http/https only, enforced server-side in
