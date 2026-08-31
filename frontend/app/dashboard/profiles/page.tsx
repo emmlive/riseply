@@ -19,6 +19,30 @@ export default function ProfilesPage() {
   const [profiles, setProfiles] = useState<SearchProfile[]>([]);
   const [editing, setEditing] = useState<SearchProfile | (typeof EMPTY) | null>(null);
   const [error, setError] = useState("");
+  // Raw text for each comma-separated field, kept SEPARATE from the
+  // parsed array in `editing`. The input's displayed value comes from
+  // here, never from editing.titles.join(", ") etc. -- deriving the
+  // displayed value straight from the array meant typing a trailing
+  // "," or a space got silently discarded every keystroke: splitList
+  // trims and drops empty entries, so "Chicago," briefly became the
+  // array ["Chicago"], which then re-rendered the input back down to
+  // "Chicago" -- the comma (or a bare trailing space) never had a
+  // chance to persist, so it looked like those keys just didn't work.
+  // Parsing into the actual array still happens on every change (see
+  // each input's onChange below), just without feeding back into what
+  // the input visibly shows until the user's done typing that token.
+  const [titlesText, setTitlesText] = useState("");
+  const [locationsText, setLocationsText] = useState("");
+  const [seniorityText, setSeniorityText] = useState("");
+  const [excludeCompaniesText, setExcludeCompaniesText] = useState("");
+
+  function startEditing(p: SearchProfile | (typeof EMPTY)) {
+    setEditing(p);
+    setTitlesText(p.titles.join(", "));
+    setLocationsText(p.locations.join(", "));
+    setSeniorityText(p.seniority.join(", "));
+    setExcludeCompaniesText(p.exclude_companies.join(", "));
+  }
 
   async function load() {
     setProfiles(await api<SearchProfile[]>("/profiles"));
@@ -52,7 +76,7 @@ export default function ProfilesPage() {
     <div>
       <div className="topbar">
         <h1>Search profiles</h1>
-        <button className="btn btn-primary" onClick={() => setEditing({ ...EMPTY })}>
+        <button className="btn btn-primary" onClick={() => startEditing({ ...EMPTY })}>
           + New profile
         </button>
       </div>
@@ -82,7 +106,7 @@ export default function ProfilesPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(p)}>Edit</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => startEditing(p)}>Edit</button>
               <button className="btn btn-danger-ghost btn-sm" onClick={() => remove(p.id)}>Delete</button>
             </div>
           </div>
@@ -102,8 +126,8 @@ export default function ProfilesPage() {
 
           <div className="field">
             <label>Job titles to match (comma-separated)</label>
-            <input value={editing.titles.join(", ")}
-                   onChange={(e) => setEditing({ ...editing, titles: splitList(e.target.value) })}
+            <input value={titlesText}
+                   onChange={(e) => { setTitlesText(e.target.value); setEditing({ ...editing, titles: splitList(e.target.value) }); }}
                    placeholder="AI Security Engineer, ML Security Engineer" />
             <p className="hint">
               Doesn't need to be an exact title match — matching is done by an AI reading the
@@ -113,8 +137,8 @@ export default function ProfilesPage() {
 
           <div className="field">
             <label>Locations (comma-separated, blank = anywhere)</label>
-            <input value={editing.locations.join(", ")}
-                   onChange={(e) => setEditing({ ...editing, locations: splitList(e.target.value) })}
+            <input value={locationsText}
+                   onChange={(e) => { setLocationsText(e.target.value); setEditing({ ...editing, locations: splitList(e.target.value) }); }}
                    placeholder="Remote" />
             <p className="hint">
               This filters strictly — a job outside every location listed here won't match,
@@ -125,8 +149,8 @@ export default function ProfilesPage() {
 
           <div className="field">
             <label>Seniority (comma-separated)</label>
-            <input value={editing.seniority.join(", ")}
-                   onChange={(e) => setEditing({ ...editing, seniority: splitList(e.target.value) })}
+            <input value={seniorityText}
+                   onChange={(e) => { setSeniorityText(e.target.value); setEditing({ ...editing, seniority: splitList(e.target.value) }); }}
                    placeholder="Mid, Senior" />
           </div>
 
@@ -144,8 +168,8 @@ export default function ProfilesPage() {
 
           <div className="field">
             <label>Exclude companies (comma-separated)</label>
-            <input value={editing.exclude_companies.join(", ")}
-                   onChange={(e) => setEditing({ ...editing, exclude_companies: splitList(e.target.value) })} />
+            <input value={excludeCompaniesText}
+                   onChange={(e) => { setExcludeCompaniesText(e.target.value); setEditing({ ...editing, exclude_companies: splitList(e.target.value) }); }} />
           </div>
 
           <div className="field">
