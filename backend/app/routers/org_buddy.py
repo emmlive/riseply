@@ -253,6 +253,29 @@ def list_departments(
 
 # --- Custom onboarding content (company-wide or department-specific) ---
 
+# Deliberately a small, fixed set rather than free text -- keeps
+# filtering/display consistent and avoids "Wellbeing", "wellbeing",
+# "Well-being" all existing as different categories in the same org.
+# "General" is the default for content that isn't any of the more
+# specific ones, not a value an admin has to explicitly choose.
+CONTENT_CATEGORIES = ["General", "Policy", "Training Guide", "Mentoring Resource", "Wellbeing"]
+
+
+def _validate_category(category: str) -> str:
+    if category not in CONTENT_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"category must be one of: {', '.join(CONTENT_CATEGORIES)}")
+    return category
+
+
+@router.get("/content/categories")
+def get_content_categories():
+    """Static list, but served from the API rather than hardcoded
+    separately in the frontend -- one source of truth for what's
+    valid, so adding a category later doesn't require remembering to
+    update it in two places."""
+    return CONTENT_CATEGORIES
+
+
 @router.post("/{organization_id}/content", response_model=schemas.OrgContentOut)
 def add_org_content(
     organization_id: int,
@@ -265,6 +288,7 @@ def add_org_content(
         organization_id=organization_id, department_id=payload.department_id,
         title=payload.title, content=payload.content,
         media_url=_validate_media_url(payload.media_url),
+        category=_validate_category(payload.category),
     )
     db.add(content)
     db.commit()

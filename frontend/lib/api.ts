@@ -215,6 +215,7 @@ export interface OrgContent {
   content: string;
   department_id: number | null;
   media_url: string;
+  category: string;
   created_at: string;
 }
 
@@ -619,3 +620,27 @@ export async function downloadFile(path: string, fallbackFilename: string) {
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+// Meeting agenda templates -- a small, fixed set of conversation
+// starters an admin or employee can pull into the notes field before
+// logging a meeting, then edit freely. Shared here (rather than
+// duplicated in org-buddy/page.tsx and job-buddy/page.tsx separately)
+// so both surfaces always offer the exact same set.
+export const MEETING_AGENDA_TEMPLATES: { label: string; text: string }[] = [
+  {
+    label: "First meeting",
+    text: "Getting to know each other — background, current role, what brought each of us here. What does the mentee hope to get out of this pairing? Set expectations for how often we'll meet.",
+  },
+  {
+    label: "Career check-in",
+    text: "Progress on stated career goals since last check-in. What's working, what's stuck. Any specific skills or experiences worth prioritizing next.",
+  },
+  {
+    label: "Skill-building discussion",
+    text: "A specific skill or challenge the mentee wants to work through. Concrete next step or resource to try before the next meeting.",
+  },
+  {
+    label: "General check-in",
+    text: "How things have been going generally. Anything the mentee wants to raise that doesn't fit the other categories.",
+  },
+];

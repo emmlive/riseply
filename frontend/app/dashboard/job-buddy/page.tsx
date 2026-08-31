@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -649,12 +649,26 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                       Download PDF
                     </button>
                   )}
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                     <div className="field" style={{ marginBottom: 0 }}>
                       <label>Date</label>
                       <input type="date" value={newMeetingDate} onChange={(e) => setNewMeetingDate(e.target.value)} />
                     </div>
-                    <div className="field" style={{ marginBottom: 0, flex: 1 }}>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label>Use a template</label>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const tpl = MEETING_AGENDA_TEMPLATES.find((t) => t.label === e.target.value);
+                          if (tpl) setNewMeetingNotes(tpl.text);
+                        }}
+                        style={{ width: 160 }}
+                      >
+                        <option value="">Pick a template…</option>
+                        {MEETING_AGENDA_TEMPLATES.map((t) => <option key={t.label} value={t.label}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 180 }}>
                       <label>Notes (optional)</label>
                       <input value={newMeetingNotes} onChange={(e) => setNewMeetingNotes(e.target.value)} placeholder="What did you cover?" />
                     </div>

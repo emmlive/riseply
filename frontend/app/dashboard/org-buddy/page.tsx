@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog, MEETING_AGENDA_TEMPLATES } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -179,6 +179,8 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [logoError, setLogoError] = useState("");
   const [contentDept, setContentDept] = useState<string>("");
   const [contentMediaUrl, setContentMediaUrl] = useState("");
+  const [contentCategory, setContentCategory] = useState("General");
+  const [contentCategories, setContentCategories] = useState<string[]>(["General"]);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [checklistDept, setChecklistDept] = useState<string>("");
@@ -230,6 +232,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   }
 
   useEffect(() => { load(); setLogoUrl(org.logo_url); }, [org.id, qaFilter]);
+  useEffect(() => {
+    api<string[]>("/orgs/content/categories").then(setContentCategories).catch(() => {});
+  }, []);
 
   async function addContent() {
     setAdding(true);
@@ -241,9 +246,10 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           title, content: body,
           department_id: contentDept ? Number(contentDept) : null,
           media_url: contentMediaUrl.trim(),
+          category: contentCategory,
         }),
       });
-      setTitle(""); setBody(""); setContentMediaUrl("");
+      setTitle(""); setBody(""); setContentMediaUrl(""); setContentCategory("General");
       load();
     } catch (err: any) {
       setError(err.message || "Couldn't add that content.");
@@ -1302,12 +1308,26 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                         </button>
                       </>
                     )}
-                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                       <div className="field" style={{ marginBottom: 0 }}>
                         <label>Date</label>
                         <input type="date" value={newMeetingDate} onChange={(ev) => setNewMeetingDate(ev.target.value)} />
                       </div>
-                      <div className="field" style={{ marginBottom: 0, flex: 1 }}>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label>Use a template</label>
+                        <select
+                          value=""
+                          onChange={(ev) => {
+                            const tpl = MEETING_AGENDA_TEMPLATES.find((t) => t.label === ev.target.value);
+                            if (tpl) setNewMeetingNotes(tpl.text);
+                          }}
+                          style={{ width: 170 }}
+                        >
+                          <option value="">Pick a template…</option>
+                          {MEETING_AGENDA_TEMPLATES.map((t) => <option key={t.label} value={t.label}>{t.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 200 }}>
                         <label>Notes (optional)</label>
                         <input value={newMeetingNotes} onChange={(ev) => setNewMeetingNotes(ev.target.value)} placeholder="What did you cover?" />
                       </div>
@@ -1339,6 +1359,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
               <div>
                 <div style={{ fontWeight: 600 }}>
                   {c.title}
+                  {c.category && c.category !== "General" && (
+                    <span className="pill" style={{ marginLeft: 8, fontSize: "0.75rem" }}>{c.category}</span>
+                  )}
                   {c.department_id && (
                     <span className="hint" style={{ marginLeft: 8 }}>
                       ({departments.find((d) => d.id === c.department_id)?.name || "Department"})
@@ -1370,6 +1393,16 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             <p className="hint">
               YouTube, Vimeo, and Loom links embed as a video automatically. Image links (.jpg/.png/.gif/.webp)
               show inline. Anything else — a Drive doc, a PDF — shows as a link employees can open.
+            </p>
+          </div>
+          <div className="field">
+            <label>Category</label>
+            <select value={contentCategory} onChange={(e) => setContentCategory(e.target.value)}>
+              {contentCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <p className="hint">
+              Helps organize what a piece of content is for — e.g. tag mentoring conversation
+              guides or wellbeing resources so they're easy to find later.
             </p>
           </div>
           {departments.length > 0 && (
