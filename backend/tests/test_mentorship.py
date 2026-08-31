@@ -509,3 +509,54 @@ def test_export_meetings_pdf_404_for_unknown_assignment(db):
     _login_as(admin)
     resp = client.get(f"/orgs/{org.id}/mentor-assignments/999999/meetings/export")
     assert resp.status_code == 404
+
+
+# --- Customizable analytics PDF report ---
+
+def test_analytics_pdf_full_report_default_sections(db):
+    admin = _make_user(db, "admin14@acme.com")
+    org = _make_org(db, "OrgP")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "emp16@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_single_section_selection(db):
+    admin = _make_user(db, "admin15@acme.com")
+    org = _make_org(db, "OrgQ")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf?sections=mentorship")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_ignores_invalid_section_names(db):
+    admin = _make_user(db, "admin16@acme.com")
+    org = _make_org(db, "OrgR")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf?sections=mentorship,not_a_real_section,")
+    assert resp.status_code == 200
+    assert resp.content[:4] == b"%PDF"
+
+
+def test_analytics_pdf_requires_admin(db):
+    non_admin = _make_user(db, "notadmin@x.com")
+    org = _make_org(db, "OrgS")
+
+    _login_as(non_admin)
+    resp = client.get(f"/orgs/{org.id}/analytics/export.pdf")
+    assert resp.status_code == 403

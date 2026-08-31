@@ -517,6 +517,45 @@ def org_analytics(
     )
 
 
+@router.get("/{organization_id}/analytics/export.pdf")
+def org_analytics_pdf(
+    organization_id: int,
+    sections: str = "checklist,lessons,qa_gaps,departments,mentorship",
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """A customizable report, not just the always-everything CSV above:
+    the admin picks which sections to include via the `sections` query
+    param (comma-separated, e.g. 'mentorship,departments'), and gets a
+    formatted PDF with just those. Same underlying analytics query as
+    the JSON/CSV endpoints -- this only changes what's rendered and
+    how, not what's computed.
+
+    Unrecognized section names are silently dropped rather than
+    erroring -- a stale bookmarked URL or a frontend/backend version
+    mismatch on section names shouldn't break report generation,
+    it should just mean that section doesn't appear."""
+    _require_admin(db, organization_id, user.id)
+    analytics = org_analytics(organization_id, db, user)
+
+    requested = {s.strip() for s in sections.split(",") if s.strip()}
+    from app.services.analytics_export import VALID_SECTIONS
+    selected = requested & VALID_SECTIONS
+
+    org_row = db.query(models.Organization).filter_by(id=organization_id).first()
+
+    from app.services import analytics_export
+    pdf_bytes = analytics_export.generate_analytics_pdf(
+        org_name=org_row.name if org_row else "Organization", analytics=analytics, sections=selected,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="riseply_org_{organization_id}_report.pdf"'},
+    )
+
+
 @router.get("/{organization_id}/analytics/export.csv")
 def org_analytics_csv(
     organization_id: int,

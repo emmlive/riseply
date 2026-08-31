@@ -158,6 +158,18 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
+  // PDF report section selection -- all on by default, matching what
+  // the CSV export always includes; the PDF is the "pick and choose"
+  // option next to it, not a replacement.
+  const REPORT_SECTIONS: { key: string; label: string }[] = [
+    { key: "checklist", label: "Checklist completion" },
+    { key: "lessons", label: "Lesson quiz performance" },
+    { key: "qa_gaps", label: "Content gaps" },
+    { key: "departments", label: "By department" },
+    { key: "mentorship", label: "Mentorship program" },
+  ];
+  const [reportSections, setReportSections] = useState<Set<string>>(new Set(REPORT_SECTIONS.map((s) => s.key)));
+  const [showReportPicker, setShowReportPicker] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [deptName, setDeptName] = useState("");
   const [addingDept, setAddingDept] = useState(false);
@@ -753,17 +765,59 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
         <div className="card">
           <div className="card-row">
             <h3 style={{ marginTop: 0 }}>Onboarding analytics</h3>
-            <a
-              href="#"
-              className="btn btn-ghost btn-sm"
-              onClick={(e) => {
-                e.preventDefault();
-                downloadFile(`/orgs/${org.id}/analytics/export.csv`, `riseply_org_${org.id}_analytics.csv`);
-              }}
-            >
-              Download CSV report
-            </a>
+            <div style={{ display: "flex", gap: 8 }}>
+              <a
+                href="#"
+                className="btn btn-ghost btn-sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  downloadFile(`/orgs/${org.id}/analytics/export.csv`, `riseply_org_${org.id}_analytics.csv`);
+                }}
+              >
+                Download CSV report
+              </a>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowReportPicker((v) => !v)}>
+                {showReportPicker ? "Hide report options" : "Download PDF report…"}
+              </button>
+            </div>
           </div>
+
+          {showReportPicker && (
+            <div style={{ margin: "0 0 12px", padding: 10, border: "1px solid var(--border, #eee)", borderRadius: 6 }}>
+              <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                Choose what to include in the PDF report:
+              </p>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
+                {REPORT_SECTIONS.map((s) => (
+                  <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", fontWeight: 400 }}>
+                    <input
+                      type="checkbox"
+                      style={{ width: "auto" }}
+                      checked={reportSections.has(s.key)}
+                      onChange={(e) => {
+                        setReportSections((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(s.key); else next.delete(s.key);
+                          return next;
+                        });
+                      }}
+                    />
+                    {s.label}
+                  </label>
+                ))}
+              </div>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={reportSections.size === 0}
+                onClick={() => downloadFile(
+                  `/orgs/${org.id}/analytics/export.pdf?sections=${Array.from(reportSections).join(",")}`,
+                  `riseply_org_${org.id}_report.pdf`,
+                )}
+              >
+                Download PDF
+              </button>
+            </div>
+          )}
 
           <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
             Aggregate only — same principle as everywhere else in Org Buddy: this shows counts and
