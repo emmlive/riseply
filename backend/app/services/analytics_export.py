@@ -102,6 +102,8 @@ def generate_analytics_pdf(org_name: str, analytics, sections: set) -> bytes:
             ["Total meetings logged", str(m.total_meetings_logged)],
             ["Avg meetings per pairing", str(m.avg_meetings_per_pairing)],
             ["Avg feedback rating", f"{m.avg_feedback_rating}/5" if m.avg_feedback_rating is not None else "N/A"],
+            ["Pairings ended", str(m.pairings_ended)],
+            ["Would recommend mentor", f"{m.would_recommend_mentor_pct}%" if m.would_recommend_mentor_pct is not None else "N/A"],
         ]
         elements.append(_section_table(["Metric", "Value"], rows, [4.5 * inch, 1.8 * inch], cell_style))
 

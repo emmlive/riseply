@@ -560,3 +560,191 @@ def test_analytics_pdf_requires_admin(db):
     _login_as(non_admin)
     resp = client.get(f"/orgs/{org.id}/analytics/export.pdf")
     assert resp.status_code == 403
+
+
+# --- End-of-pairing retrospective ---
+# Org names here deliberately avoid the "Org<letter>" pattern used
+# above (and "OrgX/Y/Z"/"Zenith Health" from test_content_categories.py)
+# -- see the join_code collision this exact naming scheme caused
+# earlier (name[:4].upper() truncation). Using clearly first-4-char-
+# distinct words instead of risking another collision as this file
+# keeps growing.
+
+def test_end_mentor_assignment_requires_admin(db):
+    admin = _make_user(db, "radmin1@acme.com")
+    org = _make_org(db, "Tango Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp1@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(employee)
+    resp = client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+    assert resp.status_code == 403
+
+    _login_as(admin)
+    resp = client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+    assert resp.status_code == 200
+    assert resp.json()["ended_at"] is not None
+    assert resp.json()["end_reason"] == "completed"
+
+
+def test_end_mentor_assignment_404_for_unknown(db):
+    admin = _make_user(db, "radmin2@acme.com")
+    org = _make_org(db, "Uniform Health")
+    _make_member(db, org.id, admin.id, role="admin")
+
+    _login_as(admin)
+    resp = client.post(f"/orgs/{org.id}/mentor-assignments/999999/end", json={"reason": "completed"})
+    assert resp.status_code == 404
+
+
+def test_retrospective_blocked_until_pairing_ended(db):
+    admin = _make_user(db, "radmin3@acme.com")
+    org = _make_org(db, "Victor Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp3@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(employee)
+    resp = client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "Good advice", "what_didnt_work": "", "would_recommend_mentor": True},
+    )
+    assert resp.status_code == 400
+
+
+def test_retrospective_submit_and_get_employee_only(db):
+    admin = _make_user(db, "radmin4@acme.com")
+    org = _make_org(db, "Whiskey Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp4@acme.com")
+    other_user = _make_user(db, "outsider3@x.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+
+    # Non-employee (admin, mentor, or outsider) cannot submit
+    _login_as(other_user)
+    resp = client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "x", "what_didnt_work": "y", "would_recommend_mentor": True},
+    )
+    assert resp.status_code == 403
+
+    # Employee can submit and read back their own
+    _login_as(employee)
+    resp = client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "Great career advice", "what_didnt_work": "Scheduling was tricky", "would_recommend_mentor": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["what_worked"] == "Great career advice"
+
+    get_resp = client.get(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["would_recommend_mentor"] is True
+
+    # Non-employee cannot read it either -- stricter than meeting feedback
+    _login_as(admin)
+    get_resp2 = client.get(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective")
+    assert get_resp2.status_code == 403
+
+
+def test_retrospective_resubmission_updates_rather_than_duplicates(db):
+    admin = _make_user(db, "radmin5@acme.com")
+    org = _make_org(db, "Xray Clinic Group")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp5@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+
+    _login_as(employee)
+    client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "First draft", "what_didnt_work": "", "would_recommend_mentor": False},
+    )
+    resp = client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "Revised thoughts", "what_didnt_work": "", "would_recommend_mentor": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["what_worked"] == "Revised thoughts"
+    assert resp.json()["would_recommend_mentor"] is True
+
+    count = db.query(models.MentorRetrospective).filter_by(mentor_assignment_id=assignment.id).count()
+    assert count == 1  # updated in place, not duplicated
+
+
+def test_reassignment_resets_ended_state(db):
+    admin = _make_user(db, "radmin6@acme.com")
+    org = _make_org(db, "Yankee Wellness")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp6@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact_a = _make_mentor_contact(db, org.id, "Mentor A", "bio a")
+    contact_b = _make_mentor_contact(db, org.id, "Mentor B", "bio b")
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact_a.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+    db.refresh(assignment)
+    assert assignment.ended_at is not None
+
+    resp = client.post(f"/orgs/{org.id}/employees/{app_row.id}/assign-mentor", json={"contact_id": contact_b.id})
+    assert resp.status_code == 200
+    assert resp.json()["ended_at"] is None
+    assert resp.json()["end_reason"] == ""
+
+
+def test_analytics_reflects_pairings_ended_and_recommend_pct(db):
+    admin = _make_user(db, "radmin7@acme.com")
+    org = _make_org(db, "Zulu Care Network")
+    _make_member(db, org.id, admin.id, role="admin")
+    employee = _make_user(db, "remp7@acme.com")
+    app_row = _make_application(db, employee.id, org.id)
+    contact = _make_mentor_contact(db, org.id)
+    assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id)
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/mentor-assignments/{assignment.id}/end", json={"reason": "completed"})
+
+    _login_as(employee)
+    client.post(
+        f"/orgs/{org.id}/mentor-assignments/{assignment.id}/retrospective",
+        json={"what_worked": "Everything", "what_didnt_work": "", "would_recommend_mentor": True},
+    )
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics")
+    m = resp.json()["mentorship"]
+    assert m["pairings_ended"] == 1
+    assert m["would_recommend_mentor_pct"] == 100.0

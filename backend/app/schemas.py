@@ -439,6 +439,27 @@ class MentorAssignmentOut(BaseModel):
     email: str
     description: str
     assigned_at: datetime
+    ended_at: datetime | None
+    end_reason: str
+
+
+class MentorAssignmentEndRequest(BaseModel):
+    reason: str = Field(default="", max_length=200)
+
+
+class MentorRetrospectiveCreate(BaseModel):
+    what_worked: str = Field(default="", max_length=3000)
+    what_didnt_work: str = Field(default="", max_length=3000)
+    would_recommend_mentor: bool | None = None
+
+
+class MentorRetrospectiveOut(BaseModel):
+    id: int
+    mentor_assignment_id: int
+    what_worked: str
+    what_didnt_work: str
+    would_recommend_mentor: bool | None
+    created_at: datetime
 
 
 class SuggestedMentorOut(BaseModel):
@@ -490,6 +511,7 @@ class OrgEmployeeOut(BaseModel):
     joined_at: datetime
     mentor_name: str | None
     mentor_assignment_id: int | None
+    mentor_ended_at: datetime | None
 
 
 # --- Knowledge base ---
@@ -866,6 +888,8 @@ class MentorshipStats(BaseModel):
     total_meetings_logged: int
     avg_meetings_per_pairing: float
     avg_feedback_rating: Optional[float]  # None if no ratings submitted yet
+    pairings_ended: int
+    would_recommend_mentor_pct: Optional[float]  # None if no retrospectives submitted yet
 
 
 class OrgAnalyticsOut(BaseModel):
