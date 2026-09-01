@@ -1,7 +1,8 @@
 import json
 import os
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, not_, exists
 
@@ -19,10 +20,55 @@ router = APIRouter(tags=["pipeline"])
 # --- Discovery (shared job pool, not per-user) ---
 
 @router.post("/pipeline/discover")
-def discover(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Pulls fresh postings into the shared job pool. Any logged-in user can
-    trigger this — it's idempotent (duplicate postings are skipped)."""
-    return pipeline_runner.run_discovery(db)
+def discover(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Any logged-in user can trigger this -- it's idempotent
+    (duplicate postings are skipped) and not scoped to just this user
+    (the job pool is shared).
+
+    Returns 202 immediately with a run_id and runs the actual work via
+    BackgroundTasks, rather than blocking the request on it. This
+    used to run inline -- run_discovery makes dozens of sequential
+    external HTTP calls (Greenhouse per-company, Lever, RSS, RemoteOK,
+    Arbeitnow, Adzuna, USAJobs), which held the "Find new matches"
+    button's request open long enough to exceed the platform's
+    timeout, producing a 502 the browser reported as a CORS failure.
+    Poll GET /pipeline/discover/{run_id} for completion."""
+    log = models.ScheduledRunLog(run_type="interactive_discover", status="running")
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    background_tasks.add_task(pipeline_runner.run_discovery_background, log.id)
+
+    return JSONResponse(status_code=202, content={"status": "started", "run_id": log.id})
+
+
+@router.get("/pipeline/discover/{run_id}")
+def discover_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Polled by the dashboard after POST /pipeline/discover returns
+    202. Not scoped to the requesting user's own run specifically
+    (discovery isn't per-user data, and there's nothing sensitive in
+    the result -- just counts of jobs pulled per source) -- any
+    logged-in user checking any valid run_id is fine, same trust level
+    as being able to trigger a new discovery run in the first place."""
+    log = db.query(models.ScheduledRunLog).filter_by(id=run_id, run_type="interactive_discover").first()
+    if log is None:
+        raise HTTPException(status_code=404, detail="No discovery run with that id.")
+
+    return {
+        "run_id": log.id,
+        "status": log.status,
+        "result": json.loads(log.result_json) if log.result_json else None,
+        "error": log.error,
+    }
 
 
 # --- Matching + tailoring for the current user ---
