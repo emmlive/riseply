@@ -186,6 +186,49 @@ def run_scheduled_matching_background(run_log_id: int) -> None:
         db.close()
 
 
+def run_discovery_background(run_log_id: int) -> None:
+    """BackgroundTasks entry point for POST /pipeline/discover.
+
+    Same pattern and same reasoning as run_scheduled_matching_background
+    below (opens its own DB session rather than reusing the request's,
+    since that session closes as soon as the response is sent -- which
+    happens almost immediately once this task is merely QUEUED, not
+    once it's actually done). Needed here for a very concrete reason:
+    run_discovery makes dozens of sequential external HTTP calls
+    (Greenhouse per-company, Lever, RSS, RemoteOK, Arbeitnow, Adzuna,
+    USAJobs) -- calling it synchronously from the interactive "Find new
+    matches" button held a single request open long enough to exceed
+    the platform's timeout, producing a 502 that the browser reported
+    as a CORS failure (Render's own timeout page doesn't carry the CORS
+    headers FastAPI's middleware would have added to an actual
+    response -- the CORS error was a symptom, not the real bug)."""
+    import json as _json
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is None:
+            return  # shouldn't happen; nothing sensible to update
+
+        result = run_discovery(db)
+
+        log.status = "success"
+        log.result_json = _json.dumps(result)
+        log.finished_at = datetime.utcnow()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is not None:
+            log.status = "failed"
+            log.error = str(e)
+            log.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
 def run_discovery(db: Session) -> dict:
     """Pulls fresh postings into the shared job pool.
 

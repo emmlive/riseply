@@ -958,23 +958,33 @@ class NearMissResult(Base):
 
 
 class ScheduledRunLog(Base):
-    """Tracks a single execution of a backend-heavy scheduled job
-    (currently just /internal/scheduled-run's discovery+matching batch)
-    that's kicked off via FastAPI's BackgroundTasks rather than run
-    inline in the request/response cycle.
+    """Tracks a single execution of a backend-heavy job (the
+    /internal/scheduled-run discovery+matching batch, and now also the
+    interactive "Find new matches" button's discovery step -- see
+    run_type below) that's kicked off via FastAPI's BackgroundTasks
+    rather than run inline in the request/response cycle.
 
     Exists because moving that work to a background task means the
-    triggering request (a single GitHub Actions curl call) can no
-    longer tell success from failure just from its own HTTP response --
-    it gets back a 202 the instant the task is *queued*, not when it's
-    *done*. This table is what the external scheduler polls via
-    GET /internal/scheduled-run/{id} to find out how it actually went,
-    and what a human can check after the fact without digging through
-    Render logs.
+    triggering request can no longer tell success from failure just
+    from its own HTTP response -- it gets back a 202 the instant the
+    task is *queued*, not when it's *done*. This table is what a
+    poller (GitHub Actions for the scheduled run, the dashboard's own
+    browser JS for interactive discovery) checks via
+    GET .../{id} to find out how it actually went, and what a human
+    can check after the fact without digging through Render logs.
 
-    run_type distinguishes which job this is, in case another
-    long-running job (besides scheduled matching) ever needs the same
-    background+poll pattern -- one table, not one per job type.
+    run_type distinguishes which job this is: "scheduled_run" for the
+    nightly batch, "interactive_discover" for a single user's "Find
+    new matches" click triggering discovery. One table, not one per
+    job type -- the interactive case needed this exact same
+    background+poll treatment for the same underlying reason: run_
+    discovery makes dozens of sequential external HTTP calls
+    (Greenhouse per-company, Lever, RSS, RemoteOK, Arbeitnow, Adzuna,
+    USAJobs), easily exceeding the platform's request timeout when run
+    inline -- which is what caused a real production 502 (misleadingly
+    reported by the browser as a CORS failure, since Render's own
+    timeout/error page doesn't carry the CORS headers FastAPI's own
+    middleware would have added to a real response).
     """
     __tablename__ = "scheduled_run_logs"
 
