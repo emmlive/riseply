@@ -259,6 +259,22 @@ export default function ApplicationsPage() {
                       </button>
                     </span>
                   )}
+                  {!app.has_tailored_resume_data && !app.tailored_resume_path && (
+                    // Original tailoring never happened at all for this
+                    // application -- e.g. it hit the monthly tailoring
+                    // limit, or a transient API error, at match time (see
+                    // pipeline_runner.py, which sets app.notes to a
+                    // message literally saying "you can retry from the
+                    // dashboard later" in this exact case). Without this
+                    // branch there was NO button at all here -- the retry
+                    // the notes text promised didn't actually exist
+                    // anywhere in the UI, which is what "the tailored
+                    // resume feature isn't visible or accessible" was
+                    // actually describing.
+                    <button className="btn btn-ghost btn-sm" disabled={busyId === app.id} onClick={() => retailor(app.id)}>
+                      {busyId === app.id ? "Tailoring…" : "Tailor resume"}
+                    </button>
+                  )}
                 </div>
                 {app.tailoring_rationale && (
                   <div className="brief" style={{ marginTop: 10 }}>
