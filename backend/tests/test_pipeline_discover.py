@@ -24,6 +24,7 @@ exercising the real auth system.
 """
 import os
 import tempfile
+from datetime import datetime, timedelta
 
 _tmp_dir = tempfile.mkdtemp(prefix="riseply_discover_test_")
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
@@ -148,3 +149,76 @@ def test_discover_status_scoped_away_from_scheduled_run_type(db):
 
     resp = client.get(f"/pipeline/discover/{scheduled_log.id}")
     assert resp.status_code == 404
+
+
+# --- Overlapping-discovery guard ---
+# Added after a real memory-limit restart in production, plausibly
+# worsened by discovery no longer blocking the "Find new matches"
+# button -- nothing previously stopped several concurrent clicks (or a
+# click landing near the nightly cron's own run) from stacking
+# multiple memory-heavy discovery passes on top of each other at once.
+
+def test_second_click_reuses_recent_running_discovery(db, monkeypatch):
+    """A second POST while one is already running (and recent) should
+    NOT start a second background pass -- it should just hand back the
+    existing run_id."""
+    user = _make_user(db)
+    _login_as(user)
+
+    call_count = [0]
+
+    def fake_discovery(db):
+        call_count[0] += 1
+        return {"jobs_added": 1}
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", fake_discovery)
+
+    # First click: starts a run, and since TestClient runs
+    # BackgroundTasks in-process before returning, this first call has
+    # already completed and marked itself "success" by the time it
+    # returns -- so to actually exercise the "still running" guard, we
+    # manufacture a recent running row directly rather than relying on
+    # timing a real background task to still be mid-flight.
+    log = models.ScheduledRunLog(run_type="interactive_discover", status="running", started_at=datetime.utcnow())
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    assert resp.json()["run_id"] == log.id
+    assert call_count[0] == 0  # no new background discovery was started
+
+
+def test_stale_running_discovery_does_not_block_a_new_one(db, monkeypatch):
+    """A "running" row older than the staleness cutoff (e.g. because
+    its process got killed by an OOM restart mid-run, and nothing ever
+    got the chance to mark it "failed") must NOT permanently block
+    every future discovery attempt."""
+    user = _make_user(db)
+    _login_as(user)
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", lambda db: {"jobs_added": 1})
+
+    stale_log = models.ScheduledRunLog(
+        run_type="interactive_discover", status="running",
+        started_at=datetime.utcnow() - timedelta(minutes=30),
+    )
+    db.add(stale_log)
+    db.commit()
+    db.refresh(stale_log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    assert resp.json()["run_id"] != stale_log.id  # a genuinely new run started
+
+
+def test_no_running_discovery_starts_a_fresh_one(db, monkeypatch):
+    user = _make_user(db)
+    _login_as(user)
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", lambda db: {"jobs_added": 1})
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    assert isinstance(resp.json()["run_id"], int)
