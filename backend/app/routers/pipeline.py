@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -19,6 +19,9 @@ router = APIRouter(tags=["pipeline"])
 
 # --- Discovery (shared job pool, not per-user) ---
 
+DISCOVERY_STALE_AFTER_MINUTES = 10  # see docstring below for why this exists
+
+
 @router.post("/pipeline/discover")
 def discover(
     background_tasks: BackgroundTasks,
@@ -36,7 +39,36 @@ def discover(
     Arbeitnow, Adzuna, USAJobs), which held the "Find new matches"
     button's request open long enough to exceed the platform's
     timeout, producing a 502 the browser reported as a CORS failure.
-    Poll GET /pipeline/discover/{run_id} for completion."""
+    Poll GET /pipeline/discover/{run_id} for completion.
+
+    Reuses an already-running discovery pass instead of starting a new
+    one, if one was started recently. BackgroundTasks moved discovery
+    off the request/response timeout budget, but it did nothing about
+    MEMORY -- a background task still runs in this same process, with
+    this same memory budget. Now that "Find new matches" no longer
+    blocks the UI while discovery runs, nothing previously stopped
+    several users clicking around the same time (or a click landing
+    near the nightly cron's own discovery run) from stacking multiple
+    memory-heavy passes on top of each other concurrently, which is a
+    real, plausible contributor to this service's memory-limit
+    restarts. One pass in flight is enough; a second click just rides
+    along with it.
+
+    The staleness cutoff matters specifically because of what causes
+    those same restarts: if a discovery run's process gets killed
+    mid-run by an OOM restart, nothing ever gets the chance to mark its
+    log row "failed" -- it would sit at "running" forever, and without
+    this cutoff, that single stuck row would permanently block every
+    future discovery attempt from ever starting again."""
+    cutoff = datetime.utcnow() - timedelta(minutes=DISCOVERY_STALE_AFTER_MINUTES)
+    already_running = db.query(models.ScheduledRunLog).filter(
+        models.ScheduledRunLog.run_type == "interactive_discover",
+        models.ScheduledRunLog.status == "running",
+        models.ScheduledRunLog.started_at >= cutoff,
+    ).first()
+    if already_running is not None:
+        return JSONResponse(status_code=202, content={"status": "started", "run_id": already_running.id})
+
     log = models.ScheduledRunLog(run_type="interactive_discover", status="running")
     db.add(log)
     db.commit()
