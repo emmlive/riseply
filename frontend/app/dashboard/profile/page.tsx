@@ -189,6 +189,13 @@ export default function ProfilePage() {
               which of the matches you already get notified about, not which ones show up at all.
               Leave at 0 to get notified about everything that clears your profile's own bar.
             </p>
+            {form.notification_min_score >= 90 && (
+              <p className="error-text">
+                ⚠️ Matches are AI-scored, and genuinely perfect fits are rare — a threshold this
+                high can mean you rarely or never get notified, even when real matches were found
+                and are waiting for you in the Applications tab.
+              </p>
+            )}
           </div>
         )}
 
