@@ -6,6 +6,7 @@ EXACT same code path. Two implementations of this would drift apart the
 first time either one got a bugfix.
 """
 import json
+import re
 from datetime import datetime, timedelta
 from sqlalchemy import not_
 from sqlalchemy.orm import Session
@@ -399,6 +400,33 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     hit_job_cap = False
     if max_jobs is not None and len(unseen_jobs) > max_jobs:
         hit_job_cap = True
+        # Prioritize jobs whose title has some keyword overlap with what
+        # any active profile is actually looking for, before falling
+        # back to pure recency for the rest of the capped budget.
+        # Without this, a capped interactive search could burn its
+        # entire budget scoring jobs from a completely unrelated
+        # category just because they happen to be the most recently
+        # discovered postings in the whole shared, cross-industry job
+        # pool -- the LLM (score_job/best_profile_match, called below)
+        # still does the actual relevance judgment; this only changes
+        # which jobs get a CHANCE to be scored when the budget can't
+        # cover every unseen job. The uncapped nightly batch
+        # (max_jobs=None) doesn't need this -- it works through every
+        # unseen job eventually regardless of order.
+        keyword_terms = set()
+        for p in profiles:
+            for term in p["titles"] + p["keywords_required"]:
+                keyword_terms.update(w for w in re.split(r"[\s\-/]+", term.lower()) if len(w) >= 2)
+
+        if keyword_terms:
+            def _title_is_relevant(job_row) -> bool:
+                title_words = set(re.split(r"[\s\-/]+", job_row.title.lower()))
+                return not title_words.isdisjoint(keyword_terms)
+
+            relevant = [j for j in unseen_jobs if _title_is_relevant(j)]
+            rest = [j for j in unseen_jobs if not _title_is_relevant(j)]
+            unseen_jobs = relevant + rest  # each half keeps its original recency order
+
         unseen_jobs = unseen_jobs[:max_jobs]
 
     queued = []

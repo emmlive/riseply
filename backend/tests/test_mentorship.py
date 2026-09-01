@@ -16,6 +16,7 @@ elsewhere), and a real token adds setup noise without adding coverage.
 """
 import os
 import tempfile
+import uuid
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
@@ -58,12 +59,14 @@ def _make_member(db, org_id, user_id, role="admin", department_id=None):
     return member
 
 
-_job_counter = [0]
-
-
 def _make_job(db):
-    _job_counter[0] += 1
-    job = models.Job(source="test", external_id=str(_job_counter[0]), company="Acme", title="Nurse", location="Remote")
+    # uuid4 rather than an incrementing counter -- see
+    # test_matching_candidate_priority.py's _make_job for why: Job's
+    # (source, external_id) uniqueness is global across the whole
+    # shared test database, and this file's own counter starting at 1
+    # with source="test" collided against that file's identically-
+    # patterned counter the moment both files' tests ran together.
+    job = models.Job(source="test", external_id=uuid.uuid4().hex, company="Acme", title="Nurse", location="Remote")
     db.add(job)
     db.commit()
     db.refresh(job)

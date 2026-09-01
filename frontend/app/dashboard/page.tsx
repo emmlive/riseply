@@ -21,26 +21,39 @@ export default function OverviewPage() {
   );
 
   async function load() {
-    try {
-      const [u, apps, r, me, profiles, persistedNearMisses] = await Promise.all([
-        api<Usage>("/usage"),
-        api<Application[]>("/applications?status=pending_approval"),
-        api<RiseIndexMe>("/rise-index/me"),
-        api<User>("/me"),
-        api<SearchProfile[]>("/profiles"),
-        // Loads whatever near-misses were persisted from the LAST
-        // "Find new matches" run -- without this, a page refresh would
-        // show an empty "Closest this run" card even though a real
-        // record of it exists now (see models.NearMissResult). Only
-        // used to seed initial state; a fresh POST /pipeline/match
-        // click still updates nearMisses directly via its own response
-        // in runPipeline() below, same as before.
-        api<NearMiss[]>("/pipeline/near-misses"),
-      ]);
-      setUsage(u);
-      setPending(apps);
-      setRise(r);
-      setHasResume(!!me.resume_text.trim());
+    // Promise.allSettled rather than Promise.all -- if literally ANY
+    // one of these six calls fails (a transient error, or something
+    // genuinely wrong with just one piece of this user's data), the
+    // old all-or-nothing Promise.all meant the ENTIRE dashboard
+    // silently rendered nothing: no usage, no pending applications, no
+    // near-misses, nothing -- with the outer catch block only actually
+    // handling 401s (see its comment) and swallowing every other
+    // failure without so much as a console log. A single flaky
+    // endpoint could make the whole dashboard look broken/empty for a
+    // user with no indication why. Each piece now loads independently;
+    // one failure degrades gracefully instead of taking everything else
+    // down with it.
+    const [uR, appsR, rR, meR, profilesR, nearMissesR] = await Promise.allSettled([
+      api<Usage>("/usage"),
+      api<Application[]>("/applications?status=pending_approval"),
+      api<RiseIndexMe>("/rise-index/me"),
+      api<User>("/me"),
+      api<SearchProfile[]>("/profiles"),
+      // Loads whatever near-misses were persisted from the LAST
+      // "Find new matches" run -- without this, a page refresh would
+      // show an empty "Closest this run" card even though a real
+      // record of it exists now (see models.NearMissResult). Only
+      // used to seed initial state; a fresh POST /pipeline/match
+      // click still updates nearMisses directly via its own response
+      // in runPipeline() below, same as before.
+      api<NearMiss[]>("/pipeline/near-misses"),
+    ]);
+
+    if (uR.status === "fulfilled") setUsage(uR.value);
+    if (appsR.status === "fulfilled") setPending(appsR.value);
+    if (rR.status === "fulfilled") setRise(rR.value);
+    if (meR.status === "fulfilled") {
+      setHasResume(!!meR.value.resume_text.trim());
       // used_welcome_search (not usage.matches_used) is the right signal
       // here specifically because the welcome search deliberately does
       // NOT increment matches_used (see routers/pipeline.py's
@@ -48,12 +61,23 @@ export default function OverviewPage() {
       // false after someone's very first, deepest search of all.
       // used_welcome_search flips true exactly once, on that first
       // click, welcome or not, and stays true forever after.
-      setHasSearchedBefore(me.used_welcome_search);
-      setProfileCount(profiles.length);
-      setUserName((me.full_name || "").split(" ")[0]);
-      setNearMisses(persistedNearMisses);
-    } catch {
-      // handled globally by api() redirecting to /login on 401
+      setHasSearchedBefore(meR.value.used_welcome_search);
+      setUserName((meR.value.full_name || "").split(" ")[0]);
+    }
+    if (profilesR.status === "fulfilled") setProfileCount(profilesR.value.length);
+    if (nearMissesR.status === "fulfilled") setNearMisses(nearMissesR.value);
+
+    const results = [uR, appsR, rR, meR, profilesR, nearMissesR];
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      console.error("Dashboard: some data failed to load", failures.map((f: any) => f.reason?.message || f.reason));
+    }
+    // Only surface a visible error if EVERYTHING failed (e.g. a real
+    // network outage) -- a single endpoint failing degrades quietly
+    // (that section just doesn't populate) rather than alarming the
+    // person over one piece of a mostly-working page.
+    if (failures.length === results.length) {
+      setError("Couldn't load your dashboard right now — try refreshing the page.");
     }
   }
 
