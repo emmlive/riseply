@@ -164,6 +164,14 @@ export default function ProfilesPage() {
               fits. 50-60% is a reasonable starting point — if you're getting nothing, this is
               usually the first thing to lower, especially combined with a narrow location list.
             </p>
+            {editing.min_match_score >= 90 && (
+              <p className="error-text">
+                ⚠️ Matches are AI-scored, and genuinely perfect fits are rare — a threshold this
+                high can mean few or no real matches ever clear it, even when good jobs exist.
+                You'll mostly just see "Closest this run" near-misses instead of real
+                applications.
+              </p>
+            )}
           </div>
 
           <div className="field">
