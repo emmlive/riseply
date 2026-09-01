@@ -90,35 +90,27 @@ export default function OverviewPage() {
     load();
   }, []);
 
-  async function waitForDiscovery(runId: number): Promise<void> {
-    // Polls rather than the old single blocking POST -- discovery
-    // makes dozens of sequential external HTTP calls (Greenhouse per-
-    // company, Lever, RSS, RemoteOK, Arbeitnow, Adzuna, USAJobs) and
-    // could exceed the platform's request timeout when held open in
-    // one connection, producing a 502 that showed up in the browser as
-    // a CORS failure (the real cause, not actually a CORS problem --
-    // Render's own timeout page doesn't carry the CORS headers a real
-    // FastAPI response would have). 40 attempts * 3s = 2 minutes,
-    // generous for a single discovery pass across all sources.
-    for (let attempt = 0; attempt < 40; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      const status = await api<{ status: string; error: string | null }>(`/pipeline/discover/${runId}`);
-      if (status.status === "success") return;
-      if (status.status === "failed") {
-        throw new Error(status.error || "Couldn't refresh job listings — try again in a moment.");
-      }
-    }
-    throw new Error("Refreshing job listings is taking longer than expected — try again in a moment.");
-  }
-
   async function runPipeline() {
     setRunning(true);
     setError("");
     setMessage("");
     setNearMisses([]);
     try {
-      const started = await api<{ status: string; run_id: number }>("/pipeline/discover", { method: "POST" });
-      await waitForDiscovery(started.run_id);
+      // Kick off a background discovery refresh but DON'T wait for it
+      // to finish -- the job pool is shared across every user, not
+      // scoped to this one click, so matching can proceed immediately
+      // against whatever's already in the pool from prior discovery
+      // runs (the nightly cron, other users' clicks) rather than
+      // blocking this click on a fresh pass across 7+ external sources
+      // completing first. That pass can genuinely take longer than
+      // someone should have to wait on a button; it enriches the pool
+      // for NEXT time; it was never strictly required before THIS
+      // time's matching can run. Best-effort -- if even starting it
+      // fails, matching against the existing pool still works fine, so
+      // nothing here should block the click or surface an error for
+      // what's just a background refresh.
+      api("/pipeline/discover", { method: "POST" }).catch(() => {});
+
       const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number }>(
         "/pipeline/match",
         { method: "POST" }
