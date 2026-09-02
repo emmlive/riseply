@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     # actually redirected from.
     oauth_frontend_base_url: str = "http://localhost:3000"
 
+    # --- Calendar sync (Microsoft Graph / Google Calendar) ---
+    # Deliberately separate from the OAuth settings above: login OAuth
+    # exchanges a code once, reads the person's identity, and discards
+    # the token -- it never needs to be reusable. Calendar access needs
+    # a token that's usable again days or weeks later to create/cancel
+    # events, so it gets persisted (encrypted -- see
+    # services/calendar_encryption.py) rather than thrown away.
+    # Same Microsoft Graph app registration as login can be reused here
+    # by adding the Calendars.ReadWrite scope to its consent -- this
+    # doesn't require a second app registration in Azure, just a
+    # broader scope requested at connect time.
+    calendar_token_encryption_key: str = ""
+
     anthropic_api_key: str = ""
 
     # --- Job discovery: Adzuna (general, all-industries keyword search) ---

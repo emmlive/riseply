@@ -14,14 +14,9 @@ matcher.best_profile_match is mocked throughout -- these tests are
 about WHICH jobs get selected for scoring and in what order, not
 about the LLM's actual judgment of any one job.
 """
-import os
-import tempfile
 import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
-
-_tmp_dir = tempfile.mkdtemp(prefix="riseply_matching_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
 
 import json
 import pytest

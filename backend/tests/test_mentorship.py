@@ -14,15 +14,9 @@ rather than exercising real JWT auth -- these tests are about the
 mentorship logic, not the auth system (which has its own tests
 elsewhere), and a real token adds setup noise without adding coverage.
 """
-import os
-import tempfile
 import uuid
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
-
-_tmp_dir = tempfile.mkdtemp(prefix="riseply_mentor_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
-os.environ["CRON_SECRET"] = "test-secret-value"
 
 import pytest
 from fastapi.testclient import TestClient

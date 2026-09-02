@@ -19,12 +19,6 @@ would be too late: the already-cached modules wouldn't see the change.
 For the "secret unconfigured" case, settings.cron_secret is
 monkeypatched directly on the live singleton instead of via env var.
 """
-import os
-import tempfile
-
-_tmp_dir = tempfile.mkdtemp(prefix="riseply_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
-os.environ["CRON_SECRET"] = "test-secret-value"
 
 import pytest
 from fastapi.testclient import TestClient
