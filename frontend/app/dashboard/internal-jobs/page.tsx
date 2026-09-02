@@ -160,7 +160,10 @@ function InternalJobsDashboard({ org }: { org: Organization }) {
       )}
 
       {postings.length === 0 ? (
-        <p className="muted">No internal postings yet.</p>
+        <div className="empty-state">
+          No internal postings yet — once you post one, employees will see it right on their
+          Job Buddy page and can apply with the resume already on file.
+        </div>
       ) : (
         postings.map((p) => (
           <div key={p.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border, #eee)" }}>

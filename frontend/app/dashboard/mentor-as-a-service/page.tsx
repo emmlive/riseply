@@ -301,7 +301,10 @@ function MentorshipDashboard({ org }: { org: Organization }) {
         </p>
 
         {employees.length === 0 ? (
-          <p className="muted">No employees have joined yet.</p>
+          <div className="empty-state">
+            No employees have joined yet — once they do, they'll show up here ready to be
+            paired with a mentor.
+          </div>
         ) : (
           employees.map((e) => {
             const mentorPool = contacts.filter((c) => c.is_mentor && (c.department_id === null || c.department_id === e.department_id));
@@ -581,7 +584,10 @@ function MentorshipDashboard({ org }: { org: Organization }) {
         )}
 
         {relationships.length === 0 ? (
-          <p className="muted">No group or reciprocal relationships yet.</p>
+          <div className="empty-state">
+            No group or reciprocal relationships yet — use "New group" or "New peer pair" above
+            to build one from your current employees.
+          </div>
         ) : (
           relationships.map((r) => (
             <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
