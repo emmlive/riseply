@@ -34,6 +34,20 @@ class OAuthCallbackRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+
+
+class CalendarConnectionOut(BaseModel):
+    provider: str
+    connected_at: datetime
+
+
+class CalendarConnectUrlOut(BaseModel):
+    url: str
+    state: str
+
+
+class CalendarCallbackRequest(BaseModel):
+    code: str = Field(min_length=1)
     token_type: str = "bearer"
 
 

@@ -607,6 +607,66 @@ class OrgHumanContact(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class CalendarConnection(Base):
+    """A person's consent to let Riseply create calendar events on
+    their behalf. Deliberately separate from login OAuth (see
+    services/oauth.py) -- login exchanges a code once, reads identity,
+    and discards the token; it never needs to be reusable later.
+    Calendar access needs a token usable again days or weeks later to
+    create/cancel events, so it's persisted here, encrypted (see
+    services/calendar_encryption.py) rather than the plaintext
+    infra-level-only protection everything else in this codebase
+    currently relies on -- a real, reusable credential to someone's
+    actual calendar warrants the stricter treatment.
+
+    One person could in principle connect both providers; each gets
+    its own row (see the unique constraint, scoped per-provider not
+    globally per-user)."""
+    __tablename__ = "calendar_connections"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_calendar_provider"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    provider = Column(String, nullable=False)  # "microsoft" | "google"
+    access_token = Column(Text, nullable=False)   # encrypted at rest
+    refresh_token = Column(Text, nullable=False)  # encrypted at rest
+    expires_at = Column(DateTime, nullable=False)
+    connected_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class MentorMeetingSchedule(Base):
+    """An UPCOMING mentor-mentee meeting -- distinct from
+    MentorMeetingLog, which is always retrospective (a record of
+    something that already happened). Kept as its own table rather
+    than overloading MentorMeetingLog with a dual past/future meaning:
+    the two have genuinely different required fields (a schedule needs
+    a time and duration; a log needs notes/a rating) and different
+    lifecycles (a schedule can be cancelled; a log, once written,
+    generally shouldn't be retroactively un-happened).
+
+    When the scheduled time passes, the UI prompts whoever scheduled
+    it to log how it went, pre-filling MentorMeetingLog's form with
+    this row's date -- deliberately NOT auto-created as a log, since a
+    meeting could get cancelled or rescheduled and auto-logging it as
+    if it definitely happened would create a false record."""
+    __tablename__ = "mentor_meeting_schedules"
+
+    id = Column(Integer, primary_key=True)
+    mentor_assignment_id = Column(Integer, ForeignKey("mentor_assignments.id"), nullable=False)
+    scheduled_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    scheduled_at = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, default=30, server_default="30")
+    # Set only if a calendar connection existed at creation time and
+    # the provider's event-creation call actually succeeded -- a
+    # schedule is still valid and useful even with neither field set
+    # (no connected calendar just means no auto-sent invite, not that
+    # the meeting itself failed to get scheduled).
+    calendar_event_id = Column(String, nullable=True)
+    calendar_provider = Column(String, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class MentorAssignment(Base):
     """Pairs one employee (via their org-linked Application) with one
     mentor (an OrgHumanContact row with is_mentor=True). Deliberately

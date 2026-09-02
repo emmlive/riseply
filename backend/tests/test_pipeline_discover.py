@@ -22,12 +22,7 @@ get_current_user is overridden via dependency_overrides, same pattern
 as test_mentorship.py -- this is about the async/polling behavior, not
 exercising the real auth system.
 """
-import os
-import tempfile
 from datetime import datetime, timedelta
-
-_tmp_dir = tempfile.mkdtemp(prefix="riseply_discover_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
 
 import pytest
 from fastapi.testclient import TestClient

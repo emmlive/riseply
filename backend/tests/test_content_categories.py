@@ -7,12 +7,6 @@ separate file since this is a distinct feature area (content library,
 not mentorship specifically), even though the underlying app/db setup
 is identical.
 """
-import os
-import tempfile
-
-_tmp_dir = tempfile.mkdtemp(prefix="riseply_content_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_dir}/test.db"
-os.environ["CRON_SECRET"] = "test-secret-value"
 
 import pytest
 from fastapi.testclient import TestClient
