@@ -663,6 +663,15 @@ class MentorMeetingSchedule(Base):
     # the meeting itself failed to get scheduled).
     calendar_event_id = Column(String, nullable=True)
     calendar_provider = Column(String, nullable=True)
+    # Whose CalendarConnection actually created the event -- needed at
+    # cancellation time to know which token to use. Not necessarily
+    # scheduled_by_user_id: if the person scheduling doesn't have a
+    # calendar connected but the OTHER party in the pairing does, the
+    # event is created on THEIR calendar instead (Graph's /me/events
+    # still invites the scheduler as an attendee either way) rather
+    # than skipping the invite entirely just because the scheduler
+    # personally isn't connected.
+    calendar_connection_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     cancelled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 

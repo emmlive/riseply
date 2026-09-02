@@ -326,6 +326,21 @@ export interface MentorMeetingLog {
   created_at: string;
 }
 
+export interface MentorMeetingSchedule {
+  id: number;
+  mentor_assignment_id: number;
+  scheduled_at: string;
+  duration_minutes: number;
+  calendar_event_created: boolean;
+  cancelled_at: string | null;
+  created_at: string;
+}
+
+export interface CalendarConnection {
+  provider: string;
+  connected_at: string;
+}
+
 export interface MentorAssignment {
   id: number;
   contact_id: number;

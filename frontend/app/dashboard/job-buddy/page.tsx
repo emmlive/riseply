@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -168,6 +168,11 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [mentor, setMentor] = useState<MentorAssignment | null>(null);
   const [mentorMeetings, setMentorMeetings] = useState<MentorMeetingLog[]>([]);
   const [showMentorMeetings, setShowMentorMeetings] = useState(false);
+  const [showMentorSchedule, setShowMentorSchedule] = useState(false);
+  const [mentorSchedules, setMentorSchedules] = useState<MentorMeetingSchedule[]>([]);
+  const [newScheduleAt, setNewScheduleAt] = useState("");
+  const [newScheduleDuration, setNewScheduleDuration] = useState(30);
+  const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
@@ -314,6 +319,53 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       setMentorMeetings(rows);
     } catch {
       // quietly leave the list empty rather than blocking the rest of the page
+    }
+  }
+
+  async function toggleMentorSchedule() {
+    if (!mentor || !app?.organization_id) return;
+    if (showMentorSchedule) {
+      setShowMentorSchedule(false);
+      return;
+    }
+    setShowMentorSchedule(true);
+    setNewScheduleAt(""); setNewScheduleDuration(30);
+    try {
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/schedule`);
+      setMentorSchedules(rows);
+    } catch {
+      // quietly leave the list empty rather than blocking the rest of the page
+    }
+  }
+
+  async function scheduleMentorMeeting() {
+    if (!mentor || !app?.organization_id || !newScheduleAt) return;
+    setSchedulingMeeting(true);
+    try {
+      const iso = new Date(newScheduleAt).toISOString();
+      await api(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/schedule`, {
+        method: "POST",
+        body: JSON.stringify({ scheduled_at: iso, duration_minutes: newScheduleDuration }),
+      });
+      setNewScheduleAt("");
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/schedule`);
+      setMentorSchedules(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't schedule that meeting.");
+    } finally {
+      setSchedulingMeeting(false);
+    }
+  }
+
+  async function cancelMentorSchedule(scheduleId: number) {
+    if (!mentor || !app?.organization_id) return;
+    if (!confirm("Cancel this scheduled meeting?")) return;
+    try {
+      await api(`/orgs/${app.organization_id}/mentor-meeting-schedules/${scheduleId}`, { method: "DELETE" });
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${app.organization_id}/mentor-assignments/${mentor.id}/schedule`);
+      setMentorSchedules(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't cancel that meeting.");
     }
   }
 
@@ -641,11 +693,52 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                   This mentorship has ended{mentor.end_reason ? ` (${mentor.end_reason})` : ""}.
                 </p>
               ) : (
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button className="btn btn-primary btn-sm" onClick={openHandoffToMentor}>Request an intro</button>
                   <button className="btn btn-ghost btn-sm" onClick={toggleMentorMeetings}>
                     {showMentorMeetings ? "Hide meetings" : "Log a meeting"}
                   </button>
+                  <button className="btn btn-ghost btn-sm" onClick={toggleMentorSchedule}>
+                    {showMentorSchedule ? "Hide schedule" : "Schedule a meeting"}
+                  </button>
+                </div>
+              )}
+
+              {showMentorSchedule && !mentor.ended_at && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #eee)" }}>
+                  {mentorSchedules.length === 0 ? (
+                    <p className="hint" style={{ marginTop: 0 }}>Nothing scheduled yet.</p>
+                  ) : (
+                    mentorSchedules.map((s) => (
+                      <div key={s.id} style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                            {new Date(s.scheduled_at).toLocaleString()} · {s.duration_minutes} min
+                          </div>
+                          <div className="hint">{s.calendar_event_created ? "✓ Calendar invite sent" : "No calendar invite yet"}</div>
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => cancelMentorSchedule(s.id)}>Cancel</button>
+                      </div>
+                    ))
+                  )}
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label>Date &amp; time</label>
+                      <input type="datetime-local" value={newScheduleAt} onChange={(e) => setNewScheduleAt(e.target.value)} />
+                    </div>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label>Duration</label>
+                      <select value={newScheduleDuration} onChange={(e) => setNewScheduleDuration(Number(e.target.value))}>
+                        <option value={15}>15 min</option>
+                        <option value={30}>30 min</option>
+                        <option value={45}>45 min</option>
+                        <option value={60}>60 min</option>
+                      </select>
+                    </div>
+                    <button className="btn btn-primary btn-sm" disabled={schedulingMeeting || !newScheduleAt} onClick={scheduleMentorMeeting}>
+                      {schedulingMeeting ? "Scheduling…" : "Schedule"}
+                    </button>
+                  </div>
                 </div>
               )}
 

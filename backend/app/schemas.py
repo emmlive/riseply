@@ -505,6 +505,21 @@ class MentorMeetingLogOut(BaseModel):
     created_at: datetime
 
 
+class MentorMeetingScheduleCreate(BaseModel):
+    scheduled_at: datetime
+    duration_minutes: int = Field(default=30, ge=5, le=480)
+
+
+class MentorMeetingScheduleOut(BaseModel):
+    id: int
+    mentor_assignment_id: int
+    scheduled_at: datetime
+    duration_minutes: int
+    calendar_event_created: bool  # True if a real invite went out, false if just saved
+    cancelled_at: datetime | None
+    created_at: datetime
+
+
 class CareerGoalCreate(BaseModel):
     goal_text: str = Field(min_length=1, max_length=500)
 
