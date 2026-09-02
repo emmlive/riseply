@@ -12,6 +12,7 @@ from app.config import settings
 from app.security import get_current_user
 from app import models, schemas
 from app.services import calendar_oauth
+from app.services import mentorship_relationships
 
 router = APIRouter(prefix="/orgs", tags=["org-buddy"])
 
@@ -1441,6 +1442,179 @@ def cancel_scheduled_meeting(
     schedule.cancelled_at = datetime.utcnow()
     db.commit()
     return {"cancelled": True}
+
+
+# --- Group / reciprocal mentoring relationships (additive to MentorAssignment's
+# strict 1:1 shape -- see MentorshipRelationship's docstring for why this is a
+# separate system rather than a migration of the existing one) ---
+
+_relationship_out = mentorship_relationships.relationship_out
+_require_relationship_access = mentorship_relationships.require_relationship_access
+
+
+@router.post("/{organization_id}/mentorship-relationships", response_model=schemas.MentorshipRelationshipOut)
+def create_mentorship_relationship(
+    organization_id: int,
+    payload: schemas.MentorshipRelationshipCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin-only, same as assign_mentor for 1:1 -- building a group or
+    pairing is a program-management decision. No AI-assisted
+    suggestion in this first pass (see MentorshipRelationship's
+    docstring); the admin picks participants and roles directly."""
+    _require_scope_admin(db, organization_id, user.id, None)
+
+    if payload.relationship_type not in schemas.VALID_RELATIONSHIP_TYPES:
+        raise HTTPException(status_code=400, detail=f"relationship_type must be one of: {', '.join(schemas.VALID_RELATIONSHIP_TYPES)}")
+
+    for p in payload.participants:
+        if p.role not in schemas.VALID_PARTICIPANT_ROLES:
+            raise HTTPException(status_code=400, detail=f"role must be one of: {', '.join(schemas.VALID_PARTICIPANT_ROLES)}")
+        application = db.query(models.Application).filter_by(id=p.application_id, organization_id=organization_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail=f"Employee (application {p.application_id}) not found in this organization.")
+
+    if payload.relationship_type == "reciprocal" and any(p.role != "peer" for p in payload.participants):
+        raise HTTPException(status_code=400, detail="Reciprocal relationships use role='peer' for every participant -- no mentor/mentee hierarchy.")
+
+    relationship = models.MentorshipRelationship(
+        organization_id=organization_id, relationship_type=payload.relationship_type, name=payload.name,
+    )
+    db.add(relationship)
+    db.commit()
+    db.refresh(relationship)
+
+    for p in payload.participants:
+        db.add(models.MentorshipParticipant(relationship_id=relationship.id, application_id=p.application_id, role=p.role))
+    db.commit()
+
+    return _relationship_out(db, relationship)
+
+
+@router.get("/{organization_id}/mentorship-relationships", response_model=list[schemas.MentorshipRelationshipOut])
+def list_mentorship_relationships(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin-only listing (the org-wide view) -- an individual
+    participant sees their own relationships through a different,
+    narrower endpoint (see get_my_mentorship_relationships in
+    job_buddy.py), not this one."""
+    _require_scope_admin(db, organization_id, user.id, None)
+    rows = db.query(models.MentorshipRelationship).filter_by(organization_id=organization_id).order_by(models.MentorshipRelationship.created_at.desc()).all()
+    return [_relationship_out(db, r) for r in rows]
+
+
+@router.post("/{organization_id}/mentorship-relationships/{relationship_id}/participants", response_model=schemas.MentorshipRelationshipOut)
+def add_relationship_participant(
+    organization_id: int,
+    relationship_id: int,
+    payload: schemas.MentorshipParticipantCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, None)
+    relationship = db.query(models.MentorshipRelationship).filter_by(id=relationship_id, organization_id=organization_id).first()
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Mentorship relationship not found.")
+    if payload.role not in schemas.VALID_PARTICIPANT_ROLES:
+        raise HTTPException(status_code=400, detail=f"role must be one of: {', '.join(schemas.VALID_PARTICIPANT_ROLES)}")
+    application = db.query(models.Application).filter_by(id=payload.application_id, organization_id=organization_id).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Employee not found in this organization.")
+
+    existing = db.query(models.MentorshipParticipant).filter_by(relationship_id=relationship_id, application_id=payload.application_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="This employee is already a participant in this relationship.")
+
+    db.add(models.MentorshipParticipant(relationship_id=relationship_id, application_id=payload.application_id, role=payload.role))
+    db.commit()
+    return _relationship_out(db, relationship)
+
+
+@router.delete("/{organization_id}/mentorship-relationships/{relationship_id}/participants/{participant_id}", response_model=schemas.MentorshipRelationshipOut)
+def remove_relationship_participant(
+    organization_id: int,
+    relationship_id: int,
+    participant_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, None)
+    relationship = db.query(models.MentorshipRelationship).filter_by(id=relationship_id, organization_id=organization_id).first()
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Mentorship relationship not found.")
+    participant = db.query(models.MentorshipParticipant).filter_by(id=participant_id, relationship_id=relationship_id).first()
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participant not found in this relationship.")
+
+    db.delete(participant)
+    db.commit()
+    return _relationship_out(db, relationship)
+
+
+@router.post("/{organization_id}/mentorship-relationships/{relationship_id}/end", response_model=schemas.MentorshipRelationshipOut)
+def end_mentorship_relationship(
+    organization_id: int,
+    relationship_id: int,
+    payload: schemas.MentorshipRelationshipEndRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, None)
+    relationship = db.query(models.MentorshipRelationship).filter_by(id=relationship_id, organization_id=organization_id).first()
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Mentorship relationship not found.")
+
+    relationship.ended_at = datetime.utcnow()
+    relationship.end_reason = payload.reason
+    db.commit()
+    return _relationship_out(db, relationship)
+
+
+@router.post("/{organization_id}/mentorship-relationships/{relationship_id}/meetings", response_model=schemas.MentorshipMeetingLogOut)
+def log_mentorship_meeting(
+    organization_id: int,
+    relationship_id: int,
+    payload: schemas.MentorshipMeetingLogCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    relationship = db.query(models.MentorshipRelationship).filter_by(id=relationship_id, organization_id=organization_id).first()
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Mentorship relationship not found.")
+    _require_relationship_access(db, organization_id, user.id, relationship)
+
+    log = models.MentorshipMeetingLog(
+        relationship_id=relationship_id, logged_by_user_id=user.id,
+        meeting_date=payload.meeting_date, notes=payload.notes,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+@router.get("/{organization_id}/mentorship-relationships/{relationship_id}/meetings", response_model=list[schemas.MentorshipMeetingLogOut])
+def list_mentorship_meetings(
+    organization_id: int,
+    relationship_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    relationship = db.query(models.MentorshipRelationship).filter_by(id=relationship_id, organization_id=organization_id).first()
+    if not relationship:
+        raise HTTPException(status_code=404, detail="Mentorship relationship not found.")
+    _require_relationship_access(db, organization_id, user.id, relationship)
+
+    return (
+        db.query(models.MentorshipMeetingLog)
+        .filter_by(relationship_id=relationship_id)
+        .order_by(models.MentorshipMeetingLog.meeting_date.desc())
+        .all()
+    )
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

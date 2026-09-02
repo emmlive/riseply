@@ -481,6 +481,30 @@ def get_my_mentor(
     )
 
 
+@router.get("/{application_id}/mentorship-relationships", response_model=list[schemas.MentorshipRelationshipOut])
+def get_my_mentorship_relationships(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The employee-facing counterpart to admin's list_mentorship_relationships
+    in org_buddy.py -- returns only relationships THIS application
+    participates in, not the org-wide list (that's an admin-only view).
+    A person could in principle be in more than one group/reciprocal
+    relationship at once, so this returns a list, not a single object
+    the way get_my_mentor does for the strictly-1:1 case."""
+    app_row = _get_owned_application(db, application_id, user.id)
+
+    participant_rows = db.query(models.MentorshipParticipant).filter_by(application_id=app_row.id).all()
+    relationship_ids = [p.relationship_id for p in participant_rows]
+    if not relationship_ids:
+        return []
+
+    from app.services import mentorship_relationships
+    relationships = db.query(models.MentorshipRelationship).filter(models.MentorshipRelationship.id.in_(relationship_ids)).all()
+    return [mentorship_relationships.relationship_out(db, r) for r in relationships]
+
+
 @router.get("/{application_id}/career-goals", response_model=list[schemas.CareerGoalOut])
 def list_career_goals(
     application_id: int,

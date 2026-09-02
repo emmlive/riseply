@@ -476,6 +476,56 @@ class MentorRetrospectiveOut(BaseModel):
     created_at: datetime
 
 
+VALID_RELATIONSHIP_TYPES = ("group", "reciprocal")
+VALID_PARTICIPANT_ROLES = ("mentor", "mentee", "peer")
+
+
+class MentorshipParticipantCreate(BaseModel):
+    application_id: int
+    role: str = Field(min_length=1, max_length=20)
+
+
+class MentorshipParticipantOut(BaseModel):
+    id: int
+    application_id: int
+    user_full_name: str
+    role: str
+    added_at: datetime
+
+
+class MentorshipRelationshipCreate(BaseModel):
+    relationship_type: str = Field(min_length=1, max_length=20)
+    name: str = Field(default="", max_length=200)
+    participants: list[MentorshipParticipantCreate] = Field(min_length=2, max_length=50)
+
+
+class MentorshipRelationshipOut(BaseModel):
+    id: int
+    relationship_type: str
+    name: str
+    participants: list[MentorshipParticipantOut]
+    created_at: datetime
+    ended_at: datetime | None
+    end_reason: str
+
+
+class MentorshipRelationshipEndRequest(BaseModel):
+    reason: str = Field(default="", max_length=200)
+
+
+class MentorshipMeetingLogCreate(BaseModel):
+    meeting_date: date
+    notes: str = Field(default="", max_length=2000)
+
+
+class MentorshipMeetingLogOut(BaseModel):
+    id: int
+    relationship_id: int
+    meeting_date: date
+    notes: str
+    created_at: datetime
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str

@@ -768,7 +768,19 @@ class MentorMeetingLog(Base):
     surfaced per-entry to admins -- same privacy boundary as chat
     content and CareerGoal: what was discussed is the pair's own
     business, only that meetings are happening (and roughly how
-    they're rated) is fair game for program-health reporting."""
+    they're rated) is fair game for program-health reporting.
+
+    Strictly 1:1-pairing-scoped -- see MentorshipMeetingLog below for
+    the parallel, deliberately SEPARATE table used by group/reciprocal
+    relationships (MentorshipRelationship). Extending this table with
+    a nullable relationship_id instead was considered and rejected: it
+    would mean touching every existing query already filtering by
+    mentor_assignment_id (list, PDF export, analytics, several routers)
+    just to make room for a second, structurally different use case.
+    A separate table costs some duplication but touches zero already-
+    working, already-tested 1:1 code -- the same "additive, not a
+    migration" reasoning MentorshipRelationship itself uses relative
+    to MentorAssignment."""
     __tablename__ = "mentor_meeting_logs"
 
     id = Column(Integer, primary_key=True)
@@ -778,6 +790,67 @@ class MentorMeetingLog(Base):
     notes = Column(Text, default="", server_default="")
     rating = Column(Integer, nullable=True)  # 1-5, optional, employee-submitted
     feedback_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class MentorshipRelationship(Base):
+    """Generalized beyond MentorAssignment's strict 1:1 shape -- covers
+    group (many mentees, one or more mentors) and reciprocal (peers,
+    no hierarchy) mentoring. Deliberately NOT used for the existing
+    1:1 case -- MentorAssignment stays exactly as it was, avoiding any
+    migration of live pairing data. An org can have 1:1, group, and
+    reciprocal relationships all active simultaneously; they're
+    independent, coexisting systems, not a replacement for each other.
+
+    No mentor_bio-style AI matching for group/reciprocal in this first
+    pass -- an admin builds the group/pair manually via participants
+    below. AI-assisted suggestion (mirroring mentor_matcher.py's
+    1:1 approach) is a reasonable fast-follow, not attempted here."""
+    __tablename__ = "mentorship_relationships"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    relationship_type = Column(String, nullable=False)  # "group" | "reciprocal"
+    name = Column(String, default="")  # e.g. "New Grad Nurse Cohort — Fall 2026"
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    ended_at = Column(DateTime, nullable=True)
+    end_reason = Column(String, default="", server_default="")
+
+
+class MentorshipParticipant(Base):
+    """Join table -- who's in a MentorshipRelationship and what role
+    they hold. role="peer" for reciprocal (symmetric, no hierarchy --
+    both participants are simply "peer", neither is "the mentor");
+    role="mentor"/"mentee" for group, where a group can have more than
+    one of either (e.g. two co-mentors, five mentees)."""
+    __tablename__ = "mentorship_participants"
+    __table_args__ = (UniqueConstraint("relationship_id", "application_id", name="uq_relationship_participant"),)
+
+    id = Column(Integer, primary_key=True)
+    relationship_id = Column(Integer, ForeignKey("mentorship_relationships.id"), nullable=False)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    role = Column(String, nullable=False)  # "mentor" | "mentee" | "peer"
+    added_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class MentorshipMeetingLog(Base):
+    """The group/reciprocal counterpart to MentorMeetingLog -- see that
+    model's docstring for why this is a genuinely separate table
+    rather than a shared one with a nullable foreign key. Deliberately
+    missing feedback_note/rating in this first pass (unlike
+    MentorMeetingLog) -- per-participant feedback on a group meeting
+    raises design questions 1:1 doesn't have (whose rating represents
+    the group? does everyone rate, or just mentees?) that are worth
+    answering deliberately rather than guessing under demo deadline
+    pressure. Basic meeting logging (that it happened, when, notes)
+    ships now; structured feedback is a scoped fast-follow."""
+    __tablename__ = "mentorship_meeting_logs"
+
+    id = Column(Integer, primary_key=True)
+    relationship_id = Column(Integer, ForeignKey("mentorship_relationships.id"), nullable=False)
+    logged_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    meeting_date = Column(Date, nullable=False)
+    notes = Column(Text, default="", server_default="")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
