@@ -70,6 +70,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Org Buddy
           </Link>
         )}
+        {hasOrgAdminAccess && (
+          <Link
+            href="/dashboard/mentor-as-a-service"
+            className={`sidebar-link ${pathname === "/dashboard/mentor-as-a-service" ? "active" : ""}`}
+          >
+            Mentor as a Service
+          </Link>
+        )}
         {user?.is_admin && (
           <Link
             href="/dashboard/admin"
