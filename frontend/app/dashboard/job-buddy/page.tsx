@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -180,6 +180,10 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [newRelMeetingDate, setNewRelMeetingDate] = useState("");
   const [newRelMeetingNotes, setNewRelMeetingNotes] = useState("");
   const [loggingRelMeeting, setLoggingRelMeeting] = useState(false);
+  const [internalJobs, setInternalJobs] = useState<InternalJobPosting[]>([]);
+  const [applyingToJobId, setApplyingToJobId] = useState<number | null>(null);
+  const [internalJobNote, setInternalJobNote] = useState("");
+  const [submittingInternalApp, setSubmittingInternalApp] = useState(false);
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
@@ -205,6 +209,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     api<LessonDelivery[]>(`/applications/${applicationId}/lessons`).then(setLessons).catch(() => {});
     api<MentorAssignment | null>(`/applications/${applicationId}/mentor`).then(setMentor).catch(() => {});
     api<MentorshipRelationship[]>(`/applications/${applicationId}/mentorship-relationships`).then(setMentorshipRelationships).catch(() => {});
+    api<InternalJobPosting[]>(`/applications/${applicationId}/internal-jobs`).then(setInternalJobs).catch(() => {});
     api<CareerGoal[]>(`/applications/${applicationId}/career-goals`).then(setGoals).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
@@ -408,6 +413,24 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       alert(err.message || "Couldn't log that meeting.");
     } finally {
       setLoggingRelMeeting(false);
+    }
+  }
+
+  async function submitInternalJobApplication(postingId: number) {
+    setSubmittingInternalApp(true);
+    try {
+      await api(`/applications/${applicationId}/internal-jobs/${postingId}/apply`, {
+        method: "POST",
+        body: JSON.stringify({ note: internalJobNote }),
+      });
+      setApplyingToJobId(null);
+      setInternalJobNote("");
+      const rows = await api<InternalJobPosting[]>(`/applications/${applicationId}/internal-jobs`);
+      setInternalJobs(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't submit that application.");
+    } finally {
+      setSubmittingInternalApp(false);
     }
   }
 
@@ -970,6 +993,48 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                       </div>
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {internalJobs.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Open roles at your company</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Internal openings — apply with the resume already on file, no external search
+                needed.
+              </p>
+              {internalJobs.map((job) => (
+                <div key={job.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {job.title}
+                        {job.department_name && <span className="hint"> · {job.department_name}</span>}
+                      </div>
+                      {job.description && <div className="hint" style={{ marginTop: 2 }}>{job.description}</div>}
+                    </div>
+                    {job.has_applied ? (
+                      <span className="pill pill-approved" style={{ flexShrink: 0 }}>Applied</span>
+                    ) : applyingToJobId === job.id ? (
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                        <input
+                          value={internalJobNote}
+                          onChange={(e) => setInternalJobNote(e.target.value)}
+                          placeholder="Optional note"
+                          style={{ width: 160 }}
+                        />
+                        <button className="btn btn-primary btn-sm" disabled={submittingInternalApp} onClick={() => submitInternalJobApplication(job.id)}>
+                          {submittingInternalApp ? "Sending…" : "Submit"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => { setApplyingToJobId(job.id); setInternalJobNote(""); }}>
+                        Apply
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

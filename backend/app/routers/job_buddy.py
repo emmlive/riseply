@@ -505,6 +505,68 @@ def get_my_mentorship_relationships(
     return [mentorship_relationships.relationship_out(db, r) for r in relationships]
 
 
+@router.get("/{application_id}/internal-jobs", response_model=list[schemas.InternalJobPostingOut])
+def list_open_internal_jobs(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Only OPEN postings, for this employee's own org -- an
+    unaffiliated application (organization_id is None) sees an empty
+    list rather than an error, same graceful-empty pattern as
+    get_my_mentor and get_my_mentorship_relationships above."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        return []
+
+    from app.services import internal_jobs
+    rows = (
+        db.query(models.InternalJobPosting)
+        .filter_by(organization_id=app_row.organization_id, closed_at=None)
+        .order_by(models.InternalJobPosting.created_at.desc())
+        .all()
+    )
+    applied_posting_ids = {
+        a.posting_id for a in
+        db.query(models.InternalJobApplication).filter_by(applicant_user_id=user.id).all()
+    }
+    return [internal_jobs.posting_out(db, p, has_applied=p.id in applied_posting_ids) for p in rows]
+
+
+@router.post("/{application_id}/internal-jobs/{posting_id}/apply")
+def apply_to_internal_job(
+    application_id: int,
+    posting_id: int,
+    payload: schemas.InternalJobApplicationCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Uses the resume already on file (User.resume_text) -- see
+    InternalJobApplication's docstring for why this deliberately
+    doesn't reuse the external tailored-resume flow. One application
+    per person per posting; a second attempt is a clear, specific
+    error rather than a generic 400, since "you already applied" is a
+    genuinely different situation from a malformed request."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        raise HTTPException(status_code=404, detail="You're not affiliated with an organization.")
+
+    posting = db.query(models.InternalJobPosting).filter_by(id=posting_id, organization_id=app_row.organization_id).first()
+    if not posting:
+        raise HTTPException(status_code=404, detail="Internal job posting not found.")
+    if posting.closed_at is not None:
+        raise HTTPException(status_code=400, detail="This posting is no longer open.")
+
+    existing = db.query(models.InternalJobApplication).filter_by(posting_id=posting_id, applicant_user_id=user.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="You've already applied to this posting.")
+
+    application = models.InternalJobApplication(posting_id=posting_id, applicant_user_id=user.id, note=payload.note)
+    db.add(application)
+    db.commit()
+    return {"applied": True}
+
+
 @router.get("/{application_id}/career-goals", response_model=list[schemas.CareerGoalOut])
 def list_career_goals(
     application_id: int,

@@ -526,6 +526,41 @@ class MentorshipMeetingLogOut(BaseModel):
     created_at: datetime
 
 
+class InternalJobPostingCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    department_id: int | None = None
+    description: str = Field(default="", max_length=3000)
+
+
+class InternalJobPostingOut(BaseModel):
+    id: int
+    title: str
+    department_id: int | None
+    department_name: str | None
+    description: str
+    created_at: datetime
+    closed_at: datetime | None
+    applicant_count: int
+    # Only set on the employee-facing endpoint, so an employee's own
+    # browse view can show "Applied" instead of an Apply button
+    # without a second round-trip -- None on the admin endpoint, which
+    # has no single "current employee" to check this against.
+    has_applied: bool | None = None
+
+
+class InternalJobApplicationCreate(BaseModel):
+    note: str = Field(default="", max_length=1000)
+
+
+class InternalJobApplicationOut(BaseModel):
+    id: int
+    posting_id: int
+    applicant_name: str
+    applicant_email: str
+    note: str
+    submitted_at: datetime
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str
