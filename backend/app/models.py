@@ -676,6 +676,50 @@ class MentorMeetingSchedule(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class InternalJobPosting(Base):
+    """An org-managed opening at THAT SAME organization -- internal
+    mobility, not external job discovery. Deliberately its own thing,
+    not a repurposing of the existing Job model: Job rows are
+    discovered from external sources (Greenhouse, Adzuna, etc.) into
+    one shared, cross-org pool, matched by AI scoring against a
+    resume, and applied to via the external submission flow. An
+    internal posting is admin-authored, org-scoped from the start (no
+    shared pool, no discovery, no AI matching in this first pass), and
+    applying to one is fundamentally a different, lighter action --
+    expressing interest with your resume already on file, not
+    generating a tailored resume for an outside company."""
+    __tablename__ = "internal_job_postings"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    title = Column(String, nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    description = Column(Text, default="", server_default="")
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    closed_at = Column(DateTime, nullable=True)
+
+
+class InternalJobApplication(Base):
+    """One employee expressing interest in an internal posting -- uses
+    their resume already on file (User.resume_text) rather than a
+    fresh upload or a tailored version, since applying internally
+    isn't competing against a stranger's ATS; whoever reviews it
+    already has access to more context than an external resume alone
+    would give them anyway. One application per person per posting
+    (see the unique constraint) -- resubmitting isn't a supported
+    concept here, unlike external applications which can be
+    re-tailored and resubmitted freely."""
+    __tablename__ = "internal_job_applications"
+    __table_args__ = (UniqueConstraint("posting_id", "applicant_user_id", name="uq_internal_posting_applicant"),)
+
+    id = Column(Integer, primary_key=True)
+    posting_id = Column(Integer, ForeignKey("internal_job_postings.id"), nullable=False)
+    applicant_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    note = Column(Text, default="", server_default="")
+    submitted_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class MentorAssignment(Base):
     """Pairs one employee (via their org-linked Application) with one
     mentor (an OrgHumanContact row with is_mentor=True). Deliberately

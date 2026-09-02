@@ -13,6 +13,7 @@ from app.security import get_current_user
 from app import models, schemas
 from app.services import calendar_oauth
 from app.services import mentorship_relationships
+from app.services import internal_jobs
 
 router = APIRouter(prefix="/orgs", tags=["org-buddy"])
 
@@ -1615,6 +1616,96 @@ def list_mentorship_meetings(
         .order_by(models.MentorshipMeetingLog.meeting_date.desc())
         .all()
     )
+
+
+# --- Internal job board (internal mobility -- distinct from the external,
+# AI-matched job discovery pipeline; see InternalJobPosting's docstring) ---
+
+_internal_posting_out = internal_jobs.posting_out
+
+
+@router.post("/{organization_id}/internal-jobs", response_model=schemas.InternalJobPostingOut)
+def create_internal_job_posting(
+    organization_id: int,
+    payload: schemas.InternalJobPostingCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
+
+    if payload.department_id is not None:
+        dept = db.query(models.Department).filter_by(id=payload.department_id, organization_id=organization_id).first()
+        if not dept:
+            raise HTTPException(status_code=404, detail="Department not found in this organization.")
+
+    posting = models.InternalJobPosting(
+        organization_id=organization_id, title=payload.title, department_id=payload.department_id,
+        description=payload.description, created_by_user_id=user.id,
+    )
+    db.add(posting)
+    db.commit()
+    db.refresh(posting)
+    return _internal_posting_out(db, posting)
+
+
+@router.get("/{organization_id}/internal-jobs", response_model=list[schemas.InternalJobPostingOut])
+def list_internal_job_postings(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin view -- includes closed postings too (unlike the employee-
+    facing browse endpoint in job_buddy.py, which only shows open
+    ones)."""
+    _require_scope_admin(db, organization_id, user.id, None)
+    rows = db.query(models.InternalJobPosting).filter_by(organization_id=organization_id).order_by(models.InternalJobPosting.created_at.desc()).all()
+    return [_internal_posting_out(db, p) for p in rows]
+
+
+@router.post("/{organization_id}/internal-jobs/{posting_id}/close", response_model=schemas.InternalJobPostingOut)
+def close_internal_job_posting(
+    organization_id: int,
+    posting_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    posting = db.query(models.InternalJobPosting).filter_by(id=posting_id, organization_id=organization_id).first()
+    if not posting:
+        raise HTTPException(status_code=404, detail="Internal job posting not found.")
+    _require_scope_admin(db, organization_id, user.id, posting.department_id)
+
+    posting.closed_at = datetime.utcnow()
+    db.commit()
+    return _internal_posting_out(db, posting)
+
+
+@router.get("/{organization_id}/internal-jobs/{posting_id}/applicants", response_model=list[schemas.InternalJobApplicationOut])
+def list_internal_job_applicants(
+    organization_id: int,
+    posting_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    posting = db.query(models.InternalJobPosting).filter_by(id=posting_id, organization_id=organization_id).first()
+    if not posting:
+        raise HTTPException(status_code=404, detail="Internal job posting not found.")
+    _require_scope_admin(db, organization_id, user.id, posting.department_id)
+
+    rows = (
+        db.query(models.InternalJobApplication, models.User)
+        .join(models.User, models.InternalJobApplication.applicant_user_id == models.User.id)
+        .filter(models.InternalJobApplication.posting_id == posting_id)
+        .order_by(models.InternalJobApplication.submitted_at.desc())
+        .all()
+    )
+    return [
+        schemas.InternalJobApplicationOut(
+            id=app_row.id, posting_id=app_row.posting_id,
+            applicant_name=user_row.full_name or user_row.email, applicant_email=user_row.email,
+            note=app_row.note, submitted_at=app_row.submitted_at,
+        )
+        for app_row, user_row in rows
+    ]
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

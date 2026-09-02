@@ -387,6 +387,28 @@ export interface MentorshipMeetingLog {
   created_at: string;
 }
 
+export interface InternalJobPosting {
+  id: number;
+  title: string;
+  department_id: number | null;
+  department_name: string | null;
+  description: string;
+  created_at: string;
+  closed_at: string | null;
+  applicant_count: number;
+  has_applied: boolean | null;
+}
+
+export interface InternalJobApplication {
+  id: number;
+  posting_id: number;
+  applicant_name: string;
+  applicant_email: string;
+  note: string;
+  submitted_at: string;
+}
+
+
 export interface CareerGoal {
   id: number;
   goal_text: string;
