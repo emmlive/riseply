@@ -152,6 +152,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [showPlan, setShowPlan] = useState(false);
   const [handoffContacts, setHandoffContacts] = useState<OrgContact[]>([]);
   const [showHandoffForm, setShowHandoffForm] = useState(false);
+  const handoffFormRef = useRef<HTMLDivElement>(null);
   const [handoffContactId, setHandoffContactId] = useState<number | null>(null);
   const [handoffNote, setHandoffNote] = useState("");
   const [handoffSending, setHandoffSending] = useState(false);
@@ -932,8 +933,39 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
             </div>
           </div>
 
-          {handoffContacts.length > 0 && (
+          {handoffContacts.filter((c) => c.is_mentor).length > 0 && (
             <div className="card">
+              <h3 style={{ marginTop: 0 }}>Browse mentors</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Not just your assigned mentor — you can request a one-time intro to anyone here,
+                no standing pairing required.
+              </p>
+              {handoffContacts.filter((c) => c.is_mentor).map((m) => (
+                <div key={m.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{m.name}</div>
+                      {m.mentor_bio && <div className="hint" style={{ marginTop: 2 }}>{m.mentor_bio}</div>}
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => {
+                        setHandoffContactId(m.id);
+                        setShowHandoffForm(true);
+                        setTimeout(() => handoffFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+                      }}
+                    >
+                      Request an intro
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {handoffContacts.length > 0 && (
+            <div className="card" ref={handoffFormRef}>
               <h3 style={{ marginTop: 0 }}>Need an actual person?</h3>
               <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
                 For things Job Buddy can't do directly — a tour, a face-to-face intro —
