@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -174,6 +174,12 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [newScheduleAt, setNewScheduleAt] = useState("");
   const [newScheduleDuration, setNewScheduleDuration] = useState(30);
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
+  const [mentorshipRelationships, setMentorshipRelationships] = useState<MentorshipRelationship[]>([]);
+  const [relationshipMeetingsOpenFor, setRelationshipMeetingsOpenFor] = useState<number | null>(null);
+  const [relationshipMeetings, setRelationshipMeetings] = useState<Record<number, MentorshipMeetingLog[]>>({});
+  const [newRelMeetingDate, setNewRelMeetingDate] = useState("");
+  const [newRelMeetingNotes, setNewRelMeetingNotes] = useState("");
+  const [loggingRelMeeting, setLoggingRelMeeting] = useState(false);
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
@@ -198,6 +204,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     api<ChecklistProgressItem[]>(`/applications/${applicationId}/checklist`).then(setChecklist).catch(() => {});
     api<LessonDelivery[]>(`/applications/${applicationId}/lessons`).then(setLessons).catch(() => {});
     api<MentorAssignment | null>(`/applications/${applicationId}/mentor`).then(setMentor).catch(() => {});
+    api<MentorshipRelationship[]>(`/applications/${applicationId}/mentorship-relationships`).then(setMentorshipRelationships).catch(() => {});
     api<CareerGoal[]>(`/applications/${applicationId}/career-goals`).then(setGoals).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
@@ -367,6 +374,40 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       setMentorSchedules(rows);
     } catch (err: any) {
       alert(err.message || "Couldn't cancel that meeting.");
+    }
+  }
+
+  async function toggleRelationshipMeetings(relationshipId: number) {
+    if (!app?.organization_id) return;
+    if (relationshipMeetingsOpenFor === relationshipId) {
+      setRelationshipMeetingsOpenFor(null);
+      return;
+    }
+    setRelationshipMeetingsOpenFor(relationshipId);
+    setNewRelMeetingDate(""); setNewRelMeetingNotes("");
+    try {
+      const rows = await api<MentorshipMeetingLog[]>(`/orgs/${app.organization_id}/mentorship-relationships/${relationshipId}/meetings`);
+      setRelationshipMeetings((prev) => ({ ...prev, [relationshipId]: rows }));
+    } catch {
+      // quietly leave empty rather than blocking the rest of the page
+    }
+  }
+
+  async function logRelationshipMeeting(relationshipId: number) {
+    if (!app?.organization_id || !newRelMeetingDate) return;
+    setLoggingRelMeeting(true);
+    try {
+      await api(`/orgs/${app.organization_id}/mentorship-relationships/${relationshipId}/meetings`, {
+        method: "POST",
+        body: JSON.stringify({ meeting_date: newRelMeetingDate, notes: newRelMeetingNotes }),
+      });
+      setNewRelMeetingDate(""); setNewRelMeetingNotes("");
+      const rows = await api<MentorshipMeetingLog[]>(`/orgs/${app.organization_id}/mentorship-relationships/${relationshipId}/meetings`);
+      setRelationshipMeetings((prev) => ({ ...prev, [relationshipId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't log that meeting.");
+    } finally {
+      setLoggingRelMeeting(false);
     }
   }
 
@@ -874,6 +915,63 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {mentorshipRelationships.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Your mentorship groups</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Separate from a 1:1 assigned mentor — group cohorts and peer pairs you're part of.
+              </p>
+              {mentorshipRelationships.map((r) => (
+                <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {r.name || (r.relationship_type === "group" ? "Group" : "Peer pair")}
+                    <span className="pill" style={{ marginLeft: 8, fontSize: "0.75rem" }}>{r.relationship_type}</span>
+                    {r.ended_at && <span className="pill" style={{ marginLeft: 6, fontSize: "0.75rem" }}>Ended</span>}
+                  </div>
+                  <div className="hint" style={{ marginBottom: 6 }}>
+                    {r.participants.map((p) => `${p.user_full_name} (${p.role})`).join(", ")}
+                  </div>
+                  {!r.ended_at && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => toggleRelationshipMeetings(r.id)}>
+                      {relationshipMeetingsOpenFor === r.id ? "Hide meetings" : "Meetings"}
+                    </button>
+                  )}
+                  {relationshipMeetingsOpenFor === r.id && (
+                    <div style={{ marginTop: 8 }}>
+                      {(relationshipMeetings[r.id] || []).length === 0 ? (
+                        <p className="hint">No meetings logged yet.</p>
+                      ) : (
+                        (relationshipMeetings[r.id] || []).map((m) => (
+                          <div key={m.id} style={{ padding: "4px 0" }}>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{m.meeting_date}</div>
+                            {m.notes && <div className="hint">{m.notes}</div>}
+                          </div>
+                        ))
+                      )}
+                      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <div className="field" style={{ marginBottom: 0 }}>
+                          <label>Date</label>
+                          <input type="date" value={newRelMeetingDate} onChange={(e) => setNewRelMeetingDate(e.target.value)} />
+                        </div>
+                        <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 160 }}>
+                          <label>Notes (optional)</label>
+                          <input value={newRelMeetingNotes} onChange={(e) => setNewRelMeetingNotes(e.target.value)} />
+                        </div>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={loggingRelMeeting || !newRelMeetingDate}
+                          onClick={() => logRelationshipMeeting(r.id)}
+                        >
+                          {loggingRelMeeting ? "Logging…" : "Log"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

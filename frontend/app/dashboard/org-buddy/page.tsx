@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorMeetingSchedule } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorMeetingSchedule, MentorshipRelationship } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -164,6 +164,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [newScheduleAt, setNewScheduleAt] = useState("");
   const [newScheduleDuration, setNewScheduleDuration] = useState(30);
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
+  const [relationships, setRelationships] = useState<MentorshipRelationship[]>([]);
+  const [newRelationshipType, setNewRelationshipType] = useState<string | null>(null);
+  const [newRelationshipName, setNewRelationshipName] = useState("");
+  const [newRelationshipParticipants, setNewRelationshipParticipants] = useState<{ application_id: number; role: string }[]>([]);
+  const [creatingRelationship, setCreatingRelationship] = useState(false);
   // PDF report section selection -- all on by default, matching what
   // the CSV export always includes; the PDF is the "pick and choose"
   // option next to it, not a replacement.
@@ -237,7 +242,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgQALog[]>(`/orgs/${org.id}/qa-logs?unmatched_only=${qaFilter === "unmatched"}`).then(setQaLogs).catch(() => setQaLogs(null));
   }
 
-  useEffect(() => { load(); setLogoUrl(org.logo_url); }, [org.id, qaFilter]);
+  useEffect(() => { load(); setLogoUrl(org.logo_url); loadRelationships(); }, [org.id, qaFilter]);
   useEffect(() => {
     api<string[]>("/orgs/content/categories").then(setContentCategories).catch(() => {});
   }, []);
@@ -546,6 +551,62 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       alert(err.message || "Couldn't end that pairing.");
     } finally {
       setEndingPairingId(null);
+    }
+  }
+
+  async function loadRelationships() {
+    try {
+      const rows = await api<MentorshipRelationship[]>(`/orgs/${org.id}/mentorship-relationships`);
+      setRelationships(rows);
+    } catch {
+      // quietly leave empty rather than blocking the rest of the page
+    }
+  }
+
+  function startNewRelationship(type: string) {
+    setNewRelationshipType(type);
+    setNewRelationshipName("");
+    setNewRelationshipParticipants([]);
+  }
+
+  async function createRelationship() {
+    if (!newRelationshipType || newRelationshipParticipants.length < 2) return;
+    if (newRelationshipType === "reciprocal" && newRelationshipParticipants.length !== 2) {
+      alert("A reciprocal pair needs exactly two peers.");
+      return;
+    }
+    setCreatingRelationship(true);
+    try {
+      await api(`/orgs/${org.id}/mentorship-relationships`, {
+        method: "POST",
+        body: JSON.stringify({
+          relationship_type: newRelationshipType,
+          name: newRelationshipName,
+          participants: newRelationshipParticipants.map((p) => ({
+            application_id: p.application_id,
+            role: newRelationshipType === "reciprocal" ? "peer" : p.role,
+          })),
+        }),
+      });
+      setNewRelationshipType(null);
+      loadRelationships();
+    } catch (err: any) {
+      alert(err.message || "Couldn't create that relationship.");
+    } finally {
+      setCreatingRelationship(false);
+    }
+  }
+
+  async function endRelationship(relationshipId: number) {
+    const reason = prompt("Why is this ending? (optional)");
+    if (reason === null) return;
+    try {
+      await api(`/orgs/${org.id}/mentorship-relationships/${relationshipId}/end`, {
+        method: "POST", body: JSON.stringify({ reason }),
+      });
+      loadRelationships();
+    } catch (err: any) {
+      alert(err.message || "Couldn't end that relationship.");
     }
   }
 
@@ -1485,6 +1546,105 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
               </div>
             );
           })
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-row">
+          <h3 style={{ marginTop: 0 }}>Group & reciprocal mentoring</h3>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => startNewRelationship("group")}>+ New group</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => startNewRelationship("reciprocal")}>+ New peer pair</button>
+          </div>
+        </div>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Separate from the 1:1 mentor assignments above — a group has one or more mentors and
+          several mentees; a reciprocal pair has two peers with no hierarchy between them.
+        </p>
+
+        {newRelationshipType && (
+          <div style={{ padding: 12, border: "1px solid var(--border, #eee)", borderRadius: 6, marginBottom: 12 }}>
+            <p style={{ fontWeight: 600, marginTop: 0, marginBottom: 8 }}>
+              {newRelationshipType === "group" ? "New group" : "New peer pair"}
+            </p>
+            <div className="field">
+              <label>Name (optional)</label>
+              <input value={newRelationshipName} onChange={(e) => setNewRelationshipName(e.target.value)}
+                     placeholder={newRelationshipType === "group" ? "e.g. New Grad Cohort — Fall 2026" : ""} />
+            </div>
+            <p className="hint" style={{ marginBottom: 6 }}>
+              {newRelationshipType === "group" ? "Pick participants and their role:" : "Pick exactly two peers:"}
+            </p>
+            {employees.map((e) => {
+              const selected = newRelationshipParticipants.find((p) => p.application_id === e.application_id);
+              return (
+                <div key={e.application_id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto" }}
+                    checked={!!selected}
+                    onChange={(ev) => {
+                      if (ev.target.checked) {
+                        setNewRelationshipParticipants((prev) => [...prev, {
+                          application_id: e.application_id,
+                          role: newRelationshipType === "reciprocal" ? "peer" : "mentee",
+                        }]);
+                      } else {
+                        setNewRelationshipParticipants((prev) => prev.filter((p) => p.application_id !== e.application_id));
+                      }
+                    }}
+                  />
+                  <span style={{ flex: 1 }}>{e.user_full_name}</span>
+                  {newRelationshipType === "group" && selected && (
+                    <select
+                      value={selected.role}
+                      onChange={(ev) => setNewRelationshipParticipants((prev) =>
+                        prev.map((p) => p.application_id === e.application_id ? { ...p, role: ev.target.value } : p)
+                      )}
+                      style={{ width: 120 }}
+                    >
+                      <option value="mentor">Mentor</option>
+                      <option value="mentee">Mentee</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={creatingRelationship || newRelationshipParticipants.length < 2}
+                onClick={createRelationship}
+              >
+                {creatingRelationship ? "Creating…" : "Create"}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setNewRelationshipType(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {relationships.length === 0 ? (
+          <p className="muted">No group or reciprocal relationships yet.</p>
+        ) : (
+          relationships.map((r) => (
+            <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {r.name || (r.relationship_type === "group" ? "Untitled group" : "Peer pair")}
+                    <span className="pill" style={{ marginLeft: 8, fontSize: "0.75rem" }}>{r.relationship_type}</span>
+                    {r.ended_at && <span className="pill" style={{ marginLeft: 6, fontSize: "0.75rem" }}>Ended</span>}
+                  </div>
+                  <div className="hint">
+                    {r.participants.map((p) => `${p.user_full_name} (${p.role})`).join(", ")}
+                  </div>
+                </div>
+                {!r.ended_at && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => endRelationship(r.id)}>End</button>
+                )}
+              </div>
+            </div>
+          ))
         )}
       </div>
 
