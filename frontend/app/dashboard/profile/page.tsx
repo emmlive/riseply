@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, User, API_URL } from "@/lib/api";
+import { api, User, API_URL, CalendarConnection } from "@/lib/api";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -16,6 +16,37 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [calendarConnections, setCalendarConnections] = useState<CalendarConnection[]>([]);
+  const [connectingCalendar, setConnectingCalendar] = useState(false);
+  const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
+
+  function loadCalendarConnections() {
+    api<CalendarConnection[]>("/calendar/connections").then(setCalendarConnections).catch(() => {});
+  }
+
+  async function connectCalendar(provider: string) {
+    setConnectingCalendar(true);
+    try {
+      const { url, state } = await api<{ url: string; state: string }>(`/calendar/connect/${provider}`);
+      sessionStorage.setItem(`calendar_oauth_state_${provider}`, state);
+      window.location.href = url;
+    } catch (err: any) {
+      alert(err.message || "Couldn't start connecting your calendar.");
+      setConnectingCalendar(false);
+    }
+  }
+
+  async function disconnectCalendar(provider: string) {
+    setDisconnectingCalendar(true);
+    try {
+      await api(`/calendar/connections/${provider}`, { method: "DELETE" });
+      loadCalendarConnections();
+    } catch (err: any) {
+      alert(err.message || "Couldn't disconnect that calendar.");
+    } finally {
+      setDisconnectingCalendar(false);
+    }
+  }
 
   async function copyBookmarklet() {
     if (!user?.bookmarklet_token) return;
@@ -43,6 +74,7 @@ export default function ProfilePage() {
         notification_channel: u.notification_channel, sms_consent: u.sms_consent,
       });
     });
+    loadCalendarConnections();
   }, []);
 
   async function save() {
@@ -201,6 +233,34 @@ export default function ProfilePage() {
 
         {saved && <p style={{ color: "var(--accent)" }}>Saved.</p>}
         {error && <p className="error-text">{error}</p>}
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Calendar</h3>
+        <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
+          Connect your calendar so scheduling a mentorship meeting sends a real invite —
+          only one side of a pairing needs this connected for both people to get one.
+        </p>
+        {calendarConnections.some((c) => c.provider === "microsoft") ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="pill pill-approved">Microsoft Calendar connected</span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={disconnectingCalendar}
+              onClick={() => disconnectCalendar("microsoft")}
+            >
+              {disconnectingCalendar ? "Disconnecting…" : "Disconnect"}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={connectingCalendar}
+            onClick={() => connectCalendar("microsoft")}
+          >
+            {connectingCalendar ? "Connecting…" : "Connect Microsoft Calendar"}
+          </button>
+        )}
       </div>
 
       <div className="card">

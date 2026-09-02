@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog, MEETING_AGENDA_TEMPLATES } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, SuggestedMentor, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorMeetingSchedule } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -159,6 +159,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
   const [endingPairingId, setEndingPairingId] = useState<number | null>(null);
+  const [scheduleOpenFor, setScheduleOpenFor] = useState<number | null>(null);
+  const [schedules, setSchedules] = useState<Record<number, MentorMeetingSchedule[]>>({});
+  const [newScheduleAt, setNewScheduleAt] = useState("");
+  const [newScheduleDuration, setNewScheduleDuration] = useState(30);
+  const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   // PDF report section selection -- all on by default, matching what
   // the CSV export always includes; the PDF is the "pick and choose"
   // option next to it, not a replacement.
@@ -541,6 +546,54 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       alert(err.message || "Couldn't end that pairing.");
     } finally {
       setEndingPairingId(null);
+    }
+  }
+
+  async function loadSchedules(assignmentId: number) {
+    if (scheduleOpenFor === assignmentId) {
+      setScheduleOpenFor(null);
+      return;
+    }
+    setScheduleOpenFor(assignmentId);
+    setNewScheduleAt(""); setNewScheduleDuration(30);
+    try {
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${org.id}/mentor-assignments/${assignmentId}/schedule`);
+      setSchedules((prev) => ({ ...prev, [assignmentId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't load the schedule.");
+    }
+  }
+
+  async function createSchedule(assignmentId: number) {
+    if (!newScheduleAt) return;
+    setSchedulingMeeting(true);
+    try {
+      // datetime-local gives a value with no timezone offset -- treated
+      // as local time and converted to a real ISO instant before
+      // sending, since the backend stores/compares real UTC instants.
+      const iso = new Date(newScheduleAt).toISOString();
+      await api(`/orgs/${org.id}/mentor-assignments/${assignmentId}/schedule`, {
+        method: "POST",
+        body: JSON.stringify({ scheduled_at: iso, duration_minutes: newScheduleDuration }),
+      });
+      setNewScheduleAt("");
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${org.id}/mentor-assignments/${assignmentId}/schedule`);
+      setSchedules((prev) => ({ ...prev, [assignmentId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't schedule that meeting.");
+    } finally {
+      setSchedulingMeeting(false);
+    }
+  }
+
+  async function cancelSchedule(scheduleId: number, assignmentId: number) {
+    if (!confirm("Cancel this scheduled meeting?")) return;
+    try {
+      await api(`/orgs/${org.id}/mentor-meeting-schedules/${scheduleId}`, { method: "DELETE" });
+      const rows = await api<MentorMeetingSchedule[]>(`/orgs/${org.id}/mentor-assignments/${assignmentId}/schedule`);
+      setSchedules((prev) => ({ ...prev, [assignmentId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't cancel that meeting.");
     }
   }
 
@@ -1236,6 +1289,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             const mentorPool = contacts.filter((c) => c.is_mentor && (c.department_id === null || c.department_id === e.department_id));
             const ranked = suggestions[e.application_id];
             const employeeMeetings = e.mentor_assignment_id ? meetings[e.mentor_assignment_id] : undefined;
+            const assignmentSchedules = e.mentor_assignment_id ? schedules[e.mentor_assignment_id] : undefined;
             return (
               <div key={e.application_id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid var(--border, #eee)" }}>
                 <div className="points-event-row" style={{ borderBottom: "none", paddingBottom: 0 }}>
@@ -1271,6 +1325,11 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                     {e.mentor_assignment_id && (
                       <button className="btn btn-ghost btn-sm" onClick={() => loadMeetings(e.mentor_assignment_id!)}>
                         {meetingLogOpenFor === e.mentor_assignment_id ? "Hide meetings" : "Meetings"}
+                      </button>
+                    )}
+                    {e.mentor_assignment_id && !e.mentor_ended_at && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => loadSchedules(e.mentor_assignment_id!)}>
+                        {scheduleOpenFor === e.mentor_assignment_id ? "Hide schedule" : "Schedule"}
                       </button>
                     )}
                     {e.mentor_assignment_id && (
@@ -1371,6 +1430,54 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                         onClick={() => logMeeting(e.mentor_assignment_id!)}
                       >
                         {loggingMeeting ? "Logging…" : "Log meeting"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {e.mentor_assignment_id && scheduleOpenFor === e.mentor_assignment_id && (
+                  <div style={{ marginTop: 10, marginLeft: 42 }}>
+                    {assignmentSchedules === undefined ? (
+                      <p className="hint">Loading…</p>
+                    ) : assignmentSchedules.length === 0 ? (
+                      <p className="hint">Nothing scheduled yet.</p>
+                    ) : (
+                      assignmentSchedules.map((s) => (
+                        <div key={s.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>
+                              {new Date(s.scheduled_at).toLocaleString()} · {s.duration_minutes} min
+                            </div>
+                            <div className="hint">
+                              {s.calendar_event_created ? "✓ Calendar invite sent" : "No calendar invite (nobody connected yet)"}
+                            </div>
+                          </div>
+                          <button className="btn btn-ghost btn-sm" onClick={() => cancelSchedule(s.id, e.mentor_assignment_id!)}>
+                            Cancel
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label>Date &amp; time</label>
+                        <input type="datetime-local" value={newScheduleAt} onChange={(ev) => setNewScheduleAt(ev.target.value)} />
+                      </div>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label>Duration</label>
+                        <select value={newScheduleDuration} onChange={(ev) => setNewScheduleDuration(Number(ev.target.value))}>
+                          <option value={15}>15 min</option>
+                          <option value={30}>30 min</option>
+                          <option value={45}>45 min</option>
+                          <option value={60}>60 min</option>
+                        </select>
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={schedulingMeeting || !newScheduleAt}
+                        onClick={() => createSchedule(e.mentor_assignment_id!)}
+                      >
+                        {schedulingMeeting ? "Scheduling…" : "Schedule meeting"}
                       </button>
                     </div>
                   </div>

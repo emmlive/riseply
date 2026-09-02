@@ -11,6 +11,7 @@ from app.database import get_db
 from app.config import settings
 from app.security import get_current_user
 from app import models, schemas
+from app.services import calendar_oauth
 
 router = APIRouter(prefix="/orgs", tags=["org-buddy"])
 
@@ -1262,6 +1263,184 @@ def submit_meeting_feedback(
     db.commit()
     db.refresh(meeting)
     return meeting
+
+
+@router.post("/{organization_id}/mentor-assignments/{assignment_id}/schedule", response_model=schemas.MentorMeetingScheduleOut)
+def schedule_mentor_meeting(
+    organization_id: int,
+    assignment_id: int,
+    payload: schemas.MentorMeetingScheduleCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Creates an UPCOMING meeting (see MentorMeetingSchedule's
+    docstring for how this differs from the retrospective
+    MentorMeetingLog) and, if either person in the pairing has a
+    calendar connected, a real calendar event inviting both of them.
+
+    Tries the SCHEDULER'S own connection first (the natural case --
+    "I'm putting this on my calendar and inviting you"), falling back
+    to the other party's connection if the scheduler doesn't have one
+    connected but the other person does. Either way, Graph's
+    /me/events invites whoever ISN'T the token owner as an attendee,
+    so only one side needs to be connected for both people to get a
+    real invite.
+
+    A calendar failure (expired-beyond-refresh token, Graph API
+    hiccup, neither party connected) does NOT fail the whole request
+    -- the meeting still gets scheduled and saved, just without an
+    auto-sent invite. Scheduling shouldn't be held hostage to a
+    calendar integration being flaky; the person can always add it to
+    their own calendar manually."""
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    application = db.query(models.Application).filter_by(id=assignment.application_id).first()
+    employee = db.query(models.User).filter_by(id=application.user_id).first() if application else None
+    contact = db.query(models.OrgHumanContact).filter_by(id=assignment.contact_id).first()
+    mentor_user = db.query(models.User).filter_by(email=contact.email).first() if contact else None
+
+    schedule = models.MentorMeetingSchedule(
+        mentor_assignment_id=assignment_id, scheduled_by_user_id=user.id,
+        scheduled_at=payload.scheduled_at, duration_minutes=payload.duration_minutes,
+    )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+
+    # Scheduler's own connection first, then the other party's.
+    candidate_users = [u for u in [user, employee, mentor_user] if u is not None]
+    # De-dupe while preserving order (the scheduler might BE the
+    # employee or the mentor, which would otherwise check the same
+    # user's connection twice).
+    seen_ids = set()
+    candidate_users = [u for u in candidate_users if not (u.id in seen_ids or seen_ids.add(u.id))]
+
+    attendee_emails = list(filter(None, {
+        (employee.notify_email or employee.email) if employee else None,
+        contact.email if contact else None,
+    }))
+
+    for candidate in candidate_users:
+        connection = db.query(models.CalendarConnection).filter_by(user_id=candidate.id, provider="microsoft").first()
+        if connection is None:
+            continue
+        try:
+            access_token = calendar_oauth.get_valid_access_token(db, connection)
+            # Exclude the token owner's own identifying emails --
+            # Graph API's /me/events already lists them as organizer,
+            # no need to also list them as an attendee.
+            candidate_emails = {candidate.email, candidate.notify_email or candidate.email}
+            other_attendees = [e for e in attendee_emails if e not in candidate_emails]
+            event_id = calendar_oauth.create_event(
+                access_token,
+                subject=f"Mentorship meeting — Riseply",
+                start=payload.scheduled_at,
+                duration_minutes=payload.duration_minutes,
+                attendee_emails=other_attendees,
+            )
+            schedule.calendar_event_id = event_id
+            schedule.calendar_provider = "microsoft"
+            schedule.calendar_connection_user_id = candidate.id
+            db.commit()
+            break
+        except HTTPException:
+            # This candidate's connection didn't work (expired beyond
+            # refresh, Graph API error) -- try the next one rather than
+            # failing the whole schedule over one bad connection.
+            continue
+
+    return schemas.MentorMeetingScheduleOut(
+        id=schedule.id, mentor_assignment_id=schedule.mentor_assignment_id,
+        scheduled_at=schedule.scheduled_at, duration_minutes=schedule.duration_minutes,
+        calendar_event_created=schedule.calendar_event_id is not None,
+        cancelled_at=schedule.cancelled_at, created_at=schedule.created_at,
+    )
+
+
+@router.get("/{organization_id}/mentor-assignments/{assignment_id}/schedule", response_model=list[schemas.MentorMeetingScheduleOut])
+def list_scheduled_meetings(
+    organization_id: int,
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    assignment = db.query(models.MentorAssignment).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorAssignment.id == assignment_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Mentor pairing not found.")
+
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    rows = (
+        db.query(models.MentorMeetingSchedule)
+        .filter_by(mentor_assignment_id=assignment_id, cancelled_at=None)
+        .order_by(models.MentorMeetingSchedule.scheduled_at.asc())
+        .all()
+    )
+    return [
+        schemas.MentorMeetingScheduleOut(
+            id=s.id, mentor_assignment_id=s.mentor_assignment_id,
+            scheduled_at=s.scheduled_at, duration_minutes=s.duration_minutes,
+            calendar_event_created=s.calendar_event_id is not None,
+            cancelled_at=s.cancelled_at, created_at=s.created_at,
+        )
+        for s in rows
+    ]
+
+
+@router.delete("/{organization_id}/mentor-meeting-schedules/{schedule_id}")
+def cancel_scheduled_meeting(
+    organization_id: int,
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    schedule = db.query(models.MentorMeetingSchedule).join(
+        models.MentorAssignment, models.MentorMeetingSchedule.mentor_assignment_id == models.MentorAssignment.id
+    ).join(
+        models.Application, models.MentorAssignment.application_id == models.Application.id
+    ).filter(
+        models.MentorMeetingSchedule.id == schedule_id,
+        models.Application.organization_id == organization_id,
+    ).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Scheduled meeting not found.")
+
+    assignment = db.query(models.MentorAssignment).filter_by(id=schedule.mentor_assignment_id).first()
+    _require_mentor_pairing_access(db, organization_id, user.id, assignment)
+
+    if schedule.calendar_event_id and schedule.calendar_connection_user_id:
+        connection = db.query(models.CalendarConnection).filter_by(
+            user_id=schedule.calendar_connection_user_id, provider=schedule.calendar_provider,
+        ).first()
+        if connection:
+            try:
+                access_token = calendar_oauth.get_valid_access_token(db, connection)
+                calendar_oauth.cancel_event(access_token, schedule.calendar_event_id)
+            except HTTPException:
+                # Best-effort -- the schedule itself still gets
+                # cancelled in our own records even if the calendar
+                # side couldn't be reached; a stale calendar entry the
+                # person deletes manually is a much smaller problem
+                # than not being able to cancel at all.
+                pass
+
+    schedule.cancelled_at = datetime.utcnow()
+    db.commit()
+    return {"cancelled": True}
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

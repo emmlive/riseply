@@ -169,3 +169,36 @@ def cancel_event(access_token: str, event_id: str) -> None:
             resp.raise_for_status()
     except requests.HTTPError:
         raise HTTPException(status_code=502, detail="Couldn't cancel the calendar event.")
+
+
+def get_valid_access_token(db, connection) -> str:
+    """Returns a usable, decrypted access token for a CalendarConnection
+    row -- transparently refreshing it first if it's expired or close
+    to it. Lives here (not in routers/calendar.py, where it was first
+    written) since it's genuinely reusable business logic needed by
+    both the connection-management endpoints AND the scheduling
+    endpoints in routers/org_buddy.py -- a service module is the right
+    home for logic two different routers both need, rather than one
+    router importing from another.
+
+    db/connection aren't type-hinted against Session/CalendarConnection
+    directly to avoid a service-module-imports-from-models-imports-
+    from-database circular-import risk; callers pass the real types."""
+    from app.services import calendar_encryption
+
+    # 60-second-equivalent buffer via the plain ">" check below rather
+    # than checking against the exact expiry instant -- avoids a token
+    # expiring in the few seconds between this check and the actual
+    # Graph API call it's about to be used for.
+    if connection.expires_at > datetime.utcnow():
+        return calendar_encryption.decrypt_token(connection.access_token)
+
+    refresh_token = calendar_encryption.decrypt_token(connection.refresh_token)
+    tokens = refresh_access_token(refresh_token)
+
+    connection.access_token = calendar_encryption.encrypt_token(tokens["access_token"])
+    connection.refresh_token = calendar_encryption.encrypt_token(tokens["refresh_token"])
+    connection.expires_at = tokens["expires_at"]
+    db.commit()
+
+    return tokens["access_token"]

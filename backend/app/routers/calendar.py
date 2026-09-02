@@ -9,7 +9,6 @@ added by extending get_connect_url/exchange_code_for_tokens per-
 provider rather than needing to touch these endpoints' shape.
 """
 import secrets
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -82,24 +81,10 @@ def disconnect(provider: str, db: Session = Depends(get_db), user: models.User =
 
 
 def get_valid_access_token(db: Session, connection: models.CalendarConnection) -> str:
-    """Returns a usable, decrypted access token for this connection --
-    transparently refreshing it first if it's expired or close to it.
-    Used by the scheduling endpoint (not built in this pass) rather
-    than duplicated wherever a Graph API call is made, so token
-    refresh logic exists in exactly one place."""
-    # 60-second buffer rather than checking against the exact expiry
-    # instant -- avoids a token expiring in the few seconds between
-    # this check and the actual Graph API call it's about to be used
-    # for.
-    if connection.expires_at > datetime.utcnow():
-        return calendar_encryption.decrypt_token(connection.access_token)
-
-    refresh_token = calendar_encryption.decrypt_token(connection.refresh_token)
-    tokens = calendar_oauth.refresh_access_token(refresh_token)
-
-    connection.access_token = calendar_encryption.encrypt_token(tokens["access_token"])
-    connection.refresh_token = calendar_encryption.encrypt_token(tokens["refresh_token"])
-    connection.expires_at = tokens["expires_at"]
-    db.commit()
-
-    return tokens["access_token"]
+    """Thin delegate to calendar_oauth.get_valid_access_token -- kept
+    importable from here too since it's the natural place a router
+    function would look for it, and existing tests already reference
+    it via this module. The real implementation lives in the service
+    module now that routers/org_buddy.py's scheduling endpoints need
+    it too (see that module's docstring on why)."""
+    return calendar_oauth.get_valid_access_token(db, connection)
