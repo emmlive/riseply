@@ -361,6 +361,32 @@ export interface MentorRetrospective {
   created_at: string;
 }
 
+export interface MentorshipParticipant {
+  id: number;
+  application_id: number;
+  user_full_name: string;
+  role: string;
+  added_at: string;
+}
+
+export interface MentorshipRelationship {
+  id: number;
+  relationship_type: string;
+  name: string;
+  participants: MentorshipParticipant[];
+  created_at: string;
+  ended_at: string | null;
+  end_reason: string;
+}
+
+export interface MentorshipMeetingLog {
+  id: number;
+  relationship_id: number;
+  meeting_date: string;
+  notes: string;
+  created_at: string;
+}
+
 export interface CareerGoal {
   id: number;
   goal_text: string;
