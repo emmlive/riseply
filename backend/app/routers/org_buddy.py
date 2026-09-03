@@ -1,7 +1,7 @@
 import csv
 import io
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
@@ -572,6 +572,143 @@ def org_analytics(
         qa_gaps=qa_gaps,
         departments=department_stats,
         mentorship=mentorship_stats,
+    )
+
+
+@router.get("/{organization_id}/analytics/trends", response_model=schemas.OrgAnalyticsTrends)
+def get_org_analytics_trends(
+    organization_id: int,
+    months: int = 6,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Month-over-month activity counts -- computed from existing
+    timestamped rows (Application.created_at, ChecklistCompletion.
+    completed_at, MentorMeetingLog.created_at,
+    EmployeeCertification.completed_at), not a separate stored
+    snapshot table. Bucketed in Python rather than SQL (strftime/
+    date_trunc), matching the same month-string pattern already used
+    in usage.py and admin.py -- avoids a SQLite-vs-Postgres dialect
+    split for something this simple. Raw counts, not rates -- see
+    MonthlyTrendPoint's own docstring for why."""
+    _require_scope_admin(db, organization_id, user.id, None)
+    months = max(1, min(months, 24))
+
+    now = datetime.utcnow()
+    month_keys = []
+    cursor = now.replace(day=1)
+    for _ in range(months):
+        month_keys.append(cursor.strftime("%Y-%m"))
+        cursor = (cursor - timedelta(days=1)).replace(day=1)
+    month_keys.reverse()
+    earliest = datetime.strptime(month_keys[0], "%Y-%m")
+
+    def _bucket(timestamps: list[datetime]) -> dict[str, int]:
+        counts = {m: 0 for m in month_keys}
+        for ts in timestamps:
+            key = ts.strftime("%Y-%m")
+            if key in counts:
+                counts[key] += 1
+        return counts
+
+    app_ids = [a.id for a in db.query(models.Application.id).filter_by(organization_id=organization_id).all()]
+
+    joined_ts = [a.created_at for a in db.query(models.Application.created_at).filter(
+        models.Application.organization_id == organization_id, models.Application.created_at >= earliest,
+    ).all()]
+    checklist_ts = [c.completed_at for c in db.query(models.ChecklistCompletion.completed_at).filter(
+        models.ChecklistCompletion.application_id.in_(app_ids), models.ChecklistCompletion.completed_at >= earliest,
+    ).all()] if app_ids else []
+    assignment_ids = [a.id for a in db.query(models.MentorAssignment.id).filter(models.MentorAssignment.application_id.in_(app_ids)).all()] if app_ids else []
+    meeting_ts = [m.created_at for m in db.query(models.MentorMeetingLog.created_at).filter(
+        models.MentorMeetingLog.mentor_assignment_id.in_(assignment_ids), models.MentorMeetingLog.created_at >= earliest,
+    ).all()] if assignment_ids else []
+    cert_ts = [c.completed_at for c in db.query(models.EmployeeCertification.completed_at).filter(
+        models.EmployeeCertification.application_id.in_(app_ids), models.EmployeeCertification.completed_at >= earliest,
+    ).all()] if app_ids else []
+
+    joined_by_month = _bucket(joined_ts)
+    checklist_by_month = _bucket(checklist_ts)
+    meetings_by_month = _bucket(meeting_ts)
+    certs_by_month = _bucket(cert_ts)
+
+    return schemas.OrgAnalyticsTrends(points=[
+        schemas.MonthlyTrendPoint(
+            month=m, employees_joined=joined_by_month[m], checklist_completions=checklist_by_month[m],
+            mentor_meetings_logged=meetings_by_month[m], certification_completions=certs_by_month[m],
+        )
+        for m in month_keys
+    ])
+
+
+@router.get("/{organization_id}/analytics/benchmark", response_model=schemas.OrgBenchmark)
+def get_org_benchmark(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Anonymized, cross-org comparison -- same MIN_SAMPLE_SIZE
+    discipline as rise_index.py's company_stats(): the benchmark only
+    computes once enough OTHER orgs (this one excluded) have real
+    onboarding activity to average across safely. No org names, no
+    per-org breakdown ever returned -- just one aggregate number this
+    org's own figure gets compared against."""
+    from app.services.rise_index import MIN_SAMPLE_SIZE
+
+    _require_scope_admin(db, organization_id, user.id, None)
+
+    this_org_apps = db.query(models.Application).filter_by(organization_id=organization_id).all()
+    this_org_app_ids = [a.id for a in this_org_apps]
+    this_org_items = db.query(models.OrgChecklistItem).filter_by(organization_id=organization_id).all()
+    this_org_completions = db.query(models.ChecklistCompletion).filter(
+        models.ChecklistCompletion.application_id.in_(this_org_app_ids)
+    ).count() if this_org_app_ids else 0
+    denom = len(this_org_apps) * len(this_org_items)
+    your_checklist_pct = round(this_org_completions / denom * 100, 1) if denom else 0.0
+
+    this_org_assignments = db.query(models.MentorAssignment).filter(
+        models.MentorAssignment.application_id.in_(this_org_app_ids)
+    ).all() if this_org_app_ids else []
+    this_org_assignment_ids = [a.id for a in this_org_assignments]
+    this_org_meetings = db.query(models.MentorMeetingLog).filter(
+        models.MentorMeetingLog.mentor_assignment_id.in_(this_org_assignment_ids)
+    ).count() if this_org_assignment_ids else 0
+    your_avg_meetings = round(this_org_meetings / len(this_org_assignments), 1) if this_org_assignments else 0.0
+
+    # Every OTHER org with at least one employee -- computed the same
+    # way, one org at a time, so the average is an average of PER-ORG
+    # rates (not one giant pooled calculation that a single very large
+    # org could dominate).
+    other_org_ids = [
+        o.id for o in db.query(models.Organization.id).filter(models.Organization.id != organization_id).all()
+    ]
+    other_checklist_pcts = []
+    other_meeting_avgs = []
+    for other_id in other_org_ids:
+        apps = db.query(models.Application).filter_by(organization_id=other_id).all()
+        if not apps:
+            continue
+        app_ids = [a.id for a in apps]
+        items = db.query(models.OrgChecklistItem).filter_by(organization_id=other_id).all()
+        completions = db.query(models.ChecklistCompletion).filter(models.ChecklistCompletion.application_id.in_(app_ids)).count()
+        d = len(apps) * len(items)
+        if d:
+            other_checklist_pcts.append(completions / d * 100)
+
+        assignments = db.query(models.MentorAssignment).filter(models.MentorAssignment.application_id.in_(app_ids)).all()
+        if assignments:
+            assignment_ids = [a.id for a in assignments]
+            meetings = db.query(models.MentorMeetingLog).filter(models.MentorMeetingLog.mentor_assignment_id.in_(assignment_ids)).count()
+            other_meeting_avgs.append(meetings / len(assignments))
+
+    sample_size = len(other_checklist_pcts)
+    avg_checklist_pct = round(sum(other_checklist_pcts) / len(other_checklist_pcts), 1) if sample_size >= MIN_SAMPLE_SIZE else None
+    avg_meetings = round(sum(other_meeting_avgs) / len(other_meeting_avgs), 1) if len(other_meeting_avgs) >= MIN_SAMPLE_SIZE else None
+
+    return schemas.OrgBenchmark(
+        sample_size=sample_size, your_checklist_completion_pct=your_checklist_pct,
+        avg_checklist_completion_pct=avg_checklist_pct,
+        your_avg_meetings_per_pairing=your_avg_meetings, avg_meetings_per_pairing=avg_meetings,
     )
 
 

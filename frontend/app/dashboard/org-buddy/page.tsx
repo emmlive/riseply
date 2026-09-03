@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification, OrgAnalyticsTrends, OrgBenchmark } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -117,6 +117,8 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [content, setContent] = useState<OrgContent[]>([]);
   const [stats, setStats] = useState<OrgUsageStats | null>(null);
   const [analytics, setAnalytics] = useState<OrgAnalytics | null>(null);
+  const [trends, setTrends] = useState<OrgAnalyticsTrends | null>(null);
+  const [benchmark, setBenchmark] = useState<OrgBenchmark | null>(null);
   const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [showEnterpriseBillingForm, setShowEnterpriseBillingForm] = useState(false);
@@ -219,6 +221,8 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     // rather than rendering an empty shell.
     api<OrgUsageStats>(`/orgs/${org.id}/usage`).then(setStats).catch(() => {});
     api<OrgAnalytics>(`/orgs/${org.id}/analytics`).then(setAnalytics).catch(() => {});
+    api<OrgAnalyticsTrends>(`/orgs/${org.id}/analytics/trends`).then(setTrends).catch(() => {});
+    api<OrgBenchmark>(`/orgs/${org.id}/analytics/benchmark`).then(setBenchmark).catch(() => {});
     api<OrgSSOConfig | null>(`/orgs/${org.id}/sso-config`).then(setSsoConfig).catch(() => {});
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
@@ -1053,6 +1057,70 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                 <div><strong>{analytics.mentorship.total_group_relationships}</strong> <span className="hint">group cohorts</span></div>
                 <div><strong>{analytics.mentorship.total_reciprocal_relationships}</strong> <span className="hint">reciprocal pairs</span></div>
                 <div><strong>{analytics.mentorship.total_relationship_meetings_logged}</strong> <span className="hint">group/reciprocal meetings logged</span></div>
+              </div>
+            </div>
+          )}
+
+          {trends && trends.points.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Trends</p>
+              <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                Month-over-month activity — raw counts, not rates, since headcount itself
+                changes over time.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", fontSize: "0.85rem", width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "4px 10px 4px 0", fontWeight: 600 }}></th>
+                      {trends.points.map((p) => (
+                        <th key={p.month} className="hint" style={{ textAlign: "right", padding: "4px 10px", fontWeight: 500 }}>{p.month}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: "Employees joined", key: "employees_joined" as const },
+                      { label: "Checklist completions", key: "checklist_completions" as const },
+                      { label: "Mentor meetings logged", key: "mentor_meetings_logged" as const },
+                      { label: "Certifications completed", key: "certification_completions" as const },
+                    ].map((row) => (
+                      <tr key={row.key} style={{ borderTop: "1px solid var(--border, #eee)" }}>
+                        <td style={{ padding: "6px 10px 6px 0" }}>{row.label}</td>
+                        {trends.points.map((p) => (
+                          <td key={p.month} style={{ textAlign: "right", padding: "6px 10px" }}>{p[row.key]}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {benchmark && (
+            <div style={{ marginTop: 20 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>How you compare</p>
+              <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                Anonymized — based on {benchmark.sample_size} other {benchmark.sample_size === 1 ? "organization" : "organizations"} using Riseply, never individual company data.
+              </p>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: "0.9rem" }}>
+                <div>
+                  <strong>{benchmark.your_checklist_completion_pct}%</strong> <span className="hint">your onboarding completion</span>
+                  {benchmark.avg_checklist_completion_pct !== null ? (
+                    <span className="hint"> (avg: {benchmark.avg_checklist_completion_pct}%)</span>
+                  ) : (
+                    <span className="hint"> (not enough other orgs yet to compare)</span>
+                  )}
+                </div>
+                <div>
+                  <strong>{benchmark.your_avg_meetings_per_pairing}</strong> <span className="hint">your avg meetings/pairing</span>
+                  {benchmark.avg_meetings_per_pairing !== null ? (
+                    <span className="hint"> (avg: {benchmark.avg_meetings_per_pairing})</span>
+                  ) : (
+                    <span className="hint"> (not enough other orgs yet to compare)</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
