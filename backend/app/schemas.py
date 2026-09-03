@@ -163,6 +163,7 @@ class ApplicationOut(BaseModel):
     job_url: str
     organization_id: Optional[int] = None
     organization_logo_url: str = ""
+    organization_accent_color: str = ""
     tailoring_rationale: str = ""
     has_tailored_resume_data: bool = False
     salary_min: Optional[int] = None
@@ -258,11 +259,19 @@ class OrganizationOut(BaseModel):
     created_at: datetime
     is_sandbox: bool = False
     logo_url: str = ""
+    accent_color: str = ""
     require_manager_approval_for_internal_jobs: bool = False
 
 
 class OrgSettingsUpdate(BaseModel):
     logo_url: str = Field(default="", max_length=1000)
+    # Same always-set-from-payload behavior as logo_url (not the
+    # None-means-leave-alone treatment require_manager_approval_for_
+    # internal_jobs needs) -- an empty string is a legitimate, safe
+    # "no custom color" state to reset TO, same category of field as
+    # the logo, not a stateful toggle with a meaningful prior value to
+    # protect.
+    accent_color: str = Field(default="", max_length=20)
     # None (not False) as the "don't touch this" default -- distinct
     # from an explicit False, so a settings save that doesn't know
     # about this field (e.g. a logo-only update from an older client)

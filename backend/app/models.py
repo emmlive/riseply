@@ -485,6 +485,16 @@ class Organization(Base):
     # applicant's own manager (via Application.manager_email, the same
     # field the manager tier's /my-reports already reuses) before an
     # admin treats it as a live internal transfer request.
+    # White-labeling for larger accounts -- makes Job Buddy (and the
+    # admin surfaces) feel like an internal tool the company built,
+    # not a visibly third-party vendor's product. Just one base hex
+    # color, not three -- the frontend derives hover/soft shades from
+    # it programmatically, same relationship the app's own default
+    # --accent/--accent-hover/--accent-soft already have to each
+    # other, rather than asking an admin to pick three coordinated
+    # colors themselves.
+    accent_color = Column(String, default="", server_default="")
+
     require_manager_approval_for_internal_jobs = Column(Boolean, default=False, server_default="false")
 
     # --- Billing: hybrid (base plan + per-seat overage) ---

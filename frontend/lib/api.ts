@@ -137,6 +137,7 @@ export interface Application {
   job_url: string;
   organization_id: number | null;
   organization_logo_url: string;
+  organization_accent_color: string;
   tailoring_rationale: string;
   has_tailored_resume_data: boolean;
   salary_min: number | null;
@@ -207,6 +208,7 @@ export interface Organization {
   created_at: string;
   is_sandbox: boolean;
   logo_url: string;
+  accent_color: string;
   require_manager_approval_for_internal_jobs: boolean;
 }
 

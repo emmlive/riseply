@@ -488,6 +488,48 @@ def test_settings_can_explicitly_toggle_approval_flag(db):
     assert resp.json()["require_manager_approval_for_internal_jobs"] is True
 
 
+# --- custom branding (accent_color) ---
+
+def test_accent_color_saves_valid_hex(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    resp = client.put(f"/orgs/{org.id}/settings", json={"accent_color": "#1F7A6C"})
+    assert resp.status_code == 200
+    assert resp.json()["accent_color"] == "#1F7A6C"
+
+
+def test_accent_color_rejects_invalid_hex(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    for bad in ["not-a-color", "#FFF", "1F7A6C", "#GGGGGG"]:
+        resp = client.put(f"/orgs/{org.id}/settings", json={"accent_color": bad})
+        assert resp.status_code == 400, f"expected {bad!r} to be rejected"
+
+
+def test_accent_color_empty_string_clears_it(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    client.put(f"/orgs/{org.id}/settings", json={"accent_color": "#1F7A6C"})
+    resp = client.put(f"/orgs/{org.id}/settings", json={"accent_color": ""})
+    assert resp.json()["accent_color"] == ""
+
+
+def test_application_reflects_org_accent_color(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    client.put(f"/orgs/{org.id}/settings", json={"accent_color": "#1F7A6C"})
+
+    _login_as(employee)
+    resp = client.get("/applications")
+    assert resp.status_code == 200
+    matching = next(a for a in resp.json() if a["id"] == employee_app.id)
+    assert matching["organization_accent_color"] == "#1F7A6C"
+
+
 def test_manager_can_list_their_pending_approvals(db):
     admin = _make_user(db)
     org = _make_org(db)
