@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, Organization, Application } from "@/lib/api";
 
-const FAQ = [
+const INDIVIDUAL_FAQ = [
   {
     q: "How does matching work?",
     a: "Every job posting is scored against your resume and each of your active search profiles using Claude. It only gets queued for your review if it clears that profile's minimum match score.",
@@ -26,12 +26,61 @@ const FAQ = [
   },
 ];
 
+// Distinct from INDIVIDUAL_FAQ above rather than a filtered subset --
+// the two audiences' actual questions barely overlap (an org-affiliated
+// person has never seen "search profiles" or "Rise Index" in their own
+// nav, so an FAQ entry explaining those would be explaining something
+// they can't access in the first place). Kept as a single combined list
+// covering both admin setup questions and employee privacy questions,
+// rather than splitting further by admin/employee -- both audiences
+// plausibly wonder about either topic (an admin cares about privacy
+// too; an employee might wonder how matching/setup works), and a
+// three-way FAQ split for this small a list isn't worth the added
+// complexity yet.
+const ORG_FAQ = [
+  {
+    q: "How does mentor matching work?",
+    a: "When an admin clicks \"Suggest mentors (AI),\" Claude scores each eligible mentor against the employee's resume and stated career goal and explains its reasoning in plain language. It's advisory only — an admin always makes the final assignment.",
+  },
+  {
+    q: "Can admins see what employees discuss with their mentor or in Job Buddy chat?",
+    a: "No. Conversation content and meeting notes stay private to the employee. Admins only ever see aggregate program-health numbers — pairing counts, meeting frequency, average feedback rating — never the actual words exchanged.",
+  },
+  {
+    q: "How do internal job postings work?",
+    a: "An admin posts an opening (title, department, description) from Internal Jobs. It shows up on employees' Job Buddy page, and they apply using the resume already on file — no fresh upload, no external tailoring.",
+  },
+  {
+    q: "Can employees search for jobs outside the company through this?",
+    a: "No — external job search is intentionally not part of the organization experience. Internal Jobs covers finding a next role within your own company instead.",
+  },
+  {
+    q: "Can I delete my account?",
+    a: "Reach out below and we'll take care of it.",
+  },
+];
+
 export default function SupportPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  // Same org-affiliation check as dashboard/page.tsx and layout.tsx --
+  // null while unresolved so the individual FAQ doesn't flash briefly
+  // for an org-affiliated person before swapping to the org one.
+  const [isOrgAffiliated, setIsOrgAffiliated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      api<Organization[]>("/orgs/mine").catch(() => []),
+      api<Application[]>("/applications").catch(() => []),
+    ]).then(([orgs, apps]) => {
+      setIsOrgAffiliated(orgs.length > 0 || apps.some((a) => a.organization_id !== null));
+    });
+  }, []);
+
+  const FAQ = isOrgAffiliated ? ORG_FAQ : INDIVIDUAL_FAQ;
 
   async function send() {
     setSending(true);
@@ -53,7 +102,7 @@ export default function SupportPage() {
       <h1>Support</h1>
 
       <h2 style={{ marginTop: 8 }}>Common questions</h2>
-      {FAQ.map((item) => (
+      {isOrgAffiliated !== null && FAQ.map((item) => (
         <div key={item.q} className="card">
           <h3 style={{ fontSize: "0.95rem" }}>{item.q}</h3>
           <p style={{ margin: 0 }}>{item.a}</p>
