@@ -412,6 +412,33 @@ export interface InternalJobApplication {
   submitted_at: string;
 }
 
+export interface CertificationRequirement {
+  id: number;
+  name: string;
+  description: string;
+  content: string | null;
+  department_id: number | null;
+  department_name: string | null;
+  renewal_period_days: number | null;
+  created_at: string;
+  my_status: string | null;
+  my_completed_at: string | null;
+  my_expires_at: string | null;
+  my_verified: boolean | null;
+}
+
+export interface EmployeeCertification {
+  id: number;
+  application_id: number;
+  requirement_id: number;
+  applicant_name: string;
+  applicant_email: string;
+  completed_at: string;
+  expires_at: string | null;
+  verified_by_user_id: number | null;
+  verified_at: string | null;
+}
+
 
 export interface CareerGoal {
   id: number;

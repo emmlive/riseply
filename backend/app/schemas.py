@@ -567,6 +567,49 @@ class InternalJobApplicationOut(BaseModel):
     submitted_at: datetime
 
 
+class CertificationRequirementCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    content: str | None = Field(default=None, max_length=20000)
+    department_id: int | None = None
+    renewal_period_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class CertificationRequirementOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    content: str | None
+    department_id: int | None
+    department_name: str | None
+    renewal_period_days: int | None
+    created_at: datetime
+    # Only populated on the employee-facing endpoint -- the admin
+    # listing has no single "current employee" to check status
+    # against, same has_applied/matches_your_goal pattern already used
+    # for internal job postings.
+    my_status: str | None = None  # "not_started" | "completed" | "expired" | None
+    my_completed_at: datetime | None = None
+    my_expires_at: datetime | None = None
+    my_verified: bool | None = None
+
+
+class EmployeeCertificationCreate(BaseModel):
+    pass  # no body needed -- completing is just "I did this," the requirement_id is in the URL
+
+
+class EmployeeCertificationOut(BaseModel):
+    id: int
+    application_id: int
+    requirement_id: int
+    applicant_name: str
+    applicant_email: str
+    completed_at: datetime
+    expires_at: datetime | None
+    verified_by_user_id: int | None
+    verified_at: datetime | None
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str

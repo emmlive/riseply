@@ -106,9 +106,10 @@ def culture_bot_run(
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
 
-    from app.services import culture_bot, mentor_reminders
+    from app.services import culture_bot, mentor_reminders, certification_reminders
     result = culture_bot.run_deliveries(db)
     result.update(mentor_reminders.run_mentorship_reminders(db))
+    result.update(certification_reminders.run_certification_reminders(db))
     return result
 
 

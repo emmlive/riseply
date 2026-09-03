@@ -586,6 +586,63 @@ def apply_to_internal_job(
     return {"applied": True}
 
 
+@router.get("/{application_id}/certifications", response_model=list[schemas.CertificationRequirementOut])
+def list_my_certifications(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Company-wide requirements plus (if this employee belongs to a
+    department) that department's own requirements layered on top --
+    same pattern _org_content_items already uses for onboarding
+    content. Each requirement comes back with THIS employee's own
+    status folded in (my_status/my_completed_at/etc.), computed fresh
+    per request rather than cached, since expiration is time-based and
+    a cached "completed" status could silently go stale."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        return []
+
+    from app.services import certifications
+    rows = db.query(models.CertificationRequirement).filter(
+        models.CertificationRequirement.organization_id == app_row.organization_id,
+        (models.CertificationRequirement.department_id == None) |  # noqa: E711
+        (models.CertificationRequirement.department_id == app_row.department_id),
+    ).order_by(models.CertificationRequirement.created_at.desc()).all()
+
+    return [certifications.requirement_out(db, r, application_id=application_id) for r in rows]
+
+
+@router.post("/{application_id}/certifications/{requirement_id}/complete", response_model=schemas.CertificationRequirementOut)
+def complete_my_certification(
+    application_id: int,
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Self-attestation -- this alone does NOT mark it admin-verified
+    (see EmployeeCertification's own docstring for why those stay two
+    separate states). Always creates a genuinely new completion record,
+    even for a renewal of something already completed before -- see
+    complete_requirement()'s own docstring for why that preserves full
+    history rather than overwriting the prior record."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not app_row.organization_id:
+        raise HTTPException(status_code=404, detail="You're not affiliated with an organization.")
+
+    requirement = db.query(models.CertificationRequirement).filter_by(
+        id=requirement_id, organization_id=app_row.organization_id,
+    ).first()
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Certification requirement not found.")
+    if requirement.department_id is not None and requirement.department_id != app_row.department_id:
+        raise HTTPException(status_code=404, detail="Certification requirement not found.")
+
+    from app.services import certifications
+    certifications.complete_requirement(db, application_id, requirement)
+    return certifications.requirement_out(db, requirement, application_id=application_id)
+
+
 @router.get("/{application_id}/career-goals", response_model=list[schemas.CareerGoalOut])
 def list_career_goals(
     application_id: int,
