@@ -478,6 +478,21 @@ export interface OrgBenchmark {
   avg_meetings_per_pairing: number | null;
 }
 
+export interface PulseCheckIn {
+  id: number;
+  sent_at: string;
+}
+
+export interface PulseSummary {
+  period_days: number;
+  total_sent: number;
+  total_responded: number;
+  response_rate_pct: number;
+  great_pct: number | null;
+  okay_pct: number | null;
+  struggling_pct: number | null;
+}
+
 
 export interface CareerGoal {
   id: number;

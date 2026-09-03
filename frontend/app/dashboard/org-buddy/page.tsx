@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification, OrgAnalyticsTrends, OrgBenchmark } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification, OrgAnalyticsTrends, OrgBenchmark, PulseSummary } from "@/lib/api";
 import OrgThemeOverride from "@/components/OrgThemeOverride";
 import MediaEmbed from "@/components/MediaEmbed";
 
@@ -120,6 +120,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [analytics, setAnalytics] = useState<OrgAnalytics | null>(null);
   const [trends, setTrends] = useState<OrgAnalyticsTrends | null>(null);
   const [benchmark, setBenchmark] = useState<OrgBenchmark | null>(null);
+  const [pulseSummary, setPulseSummary] = useState<PulseSummary | null>(null);
   const [roster, setRoster] = useState<OrgRosterEntry[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [showEnterpriseBillingForm, setShowEnterpriseBillingForm] = useState(false);
@@ -227,6 +228,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgAnalytics>(`/orgs/${org.id}/analytics`).then(setAnalytics).catch(() => {});
     api<OrgAnalyticsTrends>(`/orgs/${org.id}/analytics/trends`).then(setTrends).catch(() => {});
     api<OrgBenchmark>(`/orgs/${org.id}/analytics/benchmark`).then(setBenchmark).catch(() => {});
+    api<PulseSummary>(`/orgs/${org.id}/pulse-summary`).then(setPulseSummary).catch(() => {});
     api<OrgSSOConfig | null>(`/orgs/${org.id}/sso-config`).then(setSsoConfig).catch(() => {});
     api<OrgRosterEntry[]>(`/orgs/${org.id}/roster`).then(setRoster);
     api<OrgBilling>(`/orgs/${org.id}/billing`).then(setBilling).catch(() => {});
@@ -1166,6 +1168,29 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                     <span className="hint"> (not enough other orgs yet to compare)</span>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {pulseSummary && pulseSummary.total_sent > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>Pulse check-ins</p>
+              <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                Last {pulseSummary.period_days} days — aggregate only. Individual answers and
+                comments are never shown to admins.
+              </p>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: "0.9rem" }}>
+                <div><strong>{pulseSummary.total_sent}</strong> <span className="hint">sent</span></div>
+                <div><strong>{pulseSummary.response_rate_pct}%</strong> <span className="hint">response rate</span></div>
+                {pulseSummary.great_pct !== null ? (
+                  <>
+                    <div><strong>{pulseSummary.great_pct}%</strong> <span className="hint">🙂 great</span></div>
+                    <div><strong>{pulseSummary.okay_pct}%</strong> <span className="hint">😐 okay</span></div>
+                    <div><strong>{pulseSummary.struggling_pct}%</strong> <span className="hint">😟 struggling</span></div>
+                  </>
+                ) : (
+                  <span className="hint">Not enough responses yet to show a sentiment breakdown.</span>
+                )}
               </div>
             </div>
           )}

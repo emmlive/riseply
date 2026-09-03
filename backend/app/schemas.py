@@ -694,6 +694,37 @@ class OrgBenchmark(BaseModel):
     avg_meetings_per_pairing: float | None
 
 
+class PulseCheckInOut(BaseModel):
+    """The employee's own pending prompt to answer -- deliberately
+    carries no prior sentiment/comment fields, since a pending
+    check-in has neither yet."""
+    id: int
+    sent_at: datetime
+
+
+class PulseCheckInRespond(BaseModel):
+    sentiment: str = Field(pattern="^(great|okay|struggling)$")
+    comment: str = Field(default="", max_length=2000)
+
+
+class PulseSummary(BaseModel):
+    """Aggregate-only, org-wide sentiment -- same 'counts and rates,
+    never the actual words' principle as everywhere else. Sentiment
+    percentages are None below MIN_PULSE_RESPONDENTS, same anonymity
+    reasoning as OrgBenchmark's cross-org threshold, just scoped
+    within one org: a 'great_pct: 100%' next to 'total_responded: 1'
+    would functionally reveal exactly what that one person answered,
+    which defeats the entire point of keeping sentiment aggregate-only
+    in the first place."""
+    period_days: int
+    total_sent: int
+    total_responded: int
+    response_rate_pct: float
+    great_pct: float | None
+    okay_pct: float | None
+    struggling_pct: float | None
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str

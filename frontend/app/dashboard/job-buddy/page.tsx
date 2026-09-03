@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting, CertificationRequirement } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting, CertificationRequirement, PulseCheckIn } from "@/lib/api";
 import OrgThemeOverride from "@/components/OrgThemeOverride";
 import MediaEmbed from "@/components/MediaEmbed";
 
@@ -187,6 +187,9 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [myCertifications, setMyCertifications] = useState<CertificationRequirement[]>([]);
   const [expandedCertId, setExpandedCertId] = useState<number | null>(null);
   const [completingCertId, setCompletingCertId] = useState<number | null>(null);
+  const [pendingPulse, setPendingPulse] = useState<PulseCheckIn | null>(null);
+  const [pulseComment, setPulseComment] = useState("");
+  const [submittingPulse, setSubmittingPulse] = useState(false);
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
@@ -214,6 +217,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     api<MentorshipRelationship[]>(`/applications/${applicationId}/mentorship-relationships`).then(setMentorshipRelationships).catch(() => {});
     api<InternalJobPosting[]>(`/applications/${applicationId}/internal-jobs`).then(setInternalJobs).catch(() => {});
     api<CertificationRequirement[]>(`/applications/${applicationId}/certifications`).then(setMyCertifications).catch(() => {});
+    api<PulseCheckIn | null>(`/applications/${applicationId}/pulse-checkins/pending`).then(setPendingPulse).catch(() => {});
     api<CareerGoal[]>(`/applications/${applicationId}/career-goals`).then(setGoals).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
@@ -451,6 +455,22 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     }
   }
 
+  async function respondToPulse(sentiment: "great" | "okay" | "struggling") {
+    if (!pendingPulse) return;
+    setSubmittingPulse(true);
+    try {
+      await api(`/applications/${applicationId}/pulse-checkins/${pendingPulse.id}/respond`, {
+        method: "POST",
+        body: JSON.stringify({ sentiment, comment: pulseComment }),
+      });
+      setPendingPulse(null);
+      setPulseComment("");
+    } catch (err: any) {
+      alert(err.message || "Couldn't record that.");
+      setSubmittingPulse(false);
+    }
+  }
+
   async function logMentorMeeting() {
     if (!mentor || !app?.organization_id || !newMeetingDate) return;
     setLoggingMeeting(true);
@@ -596,6 +616,33 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
         </div>
         <Link href="/dashboard/job-buddy" className="btn btn-ghost btn-sm">← Job Buddy</Link>
       </div>
+
+      {pendingPulse && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Quick check-in — how's it going?</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            Takes 10 seconds. Your answer, including anything you write, stays private — only
+            an anonymous, aggregate trend is ever shared with your organization.
+          </p>
+          {submittingPulse ? (
+            <p className="muted">Saving…</p>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <button className="btn btn-ghost" onClick={() => respondToPulse("great")}>🙂 Great</button>
+                <button className="btn btn-ghost" onClick={() => respondToPulse("okay")}>😐 Okay</button>
+                <button className="btn btn-ghost" onClick={() => respondToPulse("struggling")}>😟 Struggling</button>
+              </div>
+              <input
+                value={pulseComment}
+                onChange={(e) => setPulseComment(e.target.value)}
+                placeholder="Anything you want to add? (optional, private)"
+                style={{ width: "100%" }}
+              />
+            </>
+          )}
+        </div>
+      )}
 
       {plan === "loading" && <p className="muted">Generating your plan…</p>}
 

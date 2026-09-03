@@ -820,6 +820,40 @@ class InternalJobApplication(Base):
     decline_reason = Column(Text, default="", server_default="")
 
 
+class PulseCheckIn(Base):
+    """A short, periodic 'how's it going' prompt for an active
+    employee -- deliberately distinct from MentorRetrospective (which
+    is tied to one specific pairing ending) and from
+    MentorMeetingLog.feedback_note (tied to one specific meeting).
+    This is a general, ongoing temperature check on the whole
+    onboarding/mentoring experience, sent on a recurring cadence
+    regardless of whether someone has a mentor assigned at all.
+
+    sentiment is a simple three-way categorical ("great" | "okay" |
+    "struggling"), not a free-form scale -- easy for an employee to
+    answer in two seconds, and easy to aggregate honestly (a percentage
+    of a small fixed set of buckets, not an average of a continuous
+    scale that implies more precision than a mood check actually has).
+
+    comment is intentionally private -- visible only to the employee
+    who wrote it, NEVER surfaced to an admin, individually or in
+    aggregate. Only sentiment rolls up into reporting, same "counts
+    and rates, never the actual words" principle used everywhere else
+    in this codebase's admin-facing analytics. sentiment itself is
+    aggregate-only too (a percentage breakdown), never shown per-person
+    -- see the pulse-summary endpoint's own docstring for the
+    minimum-respondent threshold that enforces this in practice."""
+    __tablename__ = "pulse_checkins"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    responded_at = Column(DateTime, nullable=True)
+    sentiment = Column(String, nullable=True)  # null until responded
+    comment = Column(Text, default="", server_default="")
+    reminder_last_sent_at = Column(DateTime, nullable=True)
+
+
 class MentorAssignment(Base):
     """Pairs one employee (via their org-linked Application) with one
     mentor (an OrgHumanContact row with is_mentor=True). Deliberately
