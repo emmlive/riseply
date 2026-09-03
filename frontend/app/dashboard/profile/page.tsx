@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, User, API_URL, CalendarConnection } from "@/lib/api";
+import { api, User, API_URL, CalendarConnection, Organization, Application } from "@/lib/api";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -18,6 +18,14 @@ export default function ProfilePage() {
   const [copied, setCopied] = useState(false);
   const [calendarConnections, setCalendarConnections] = useState<CalendarConnection[]>([]);
   const [connectingCalendar, setConnectingCalendar] = useState(false);
+  // Same org-affiliation check as layout.tsx/dashboard/support -- fields
+  // like LinkedIn/portfolio URL, match-notification preferences, SMS
+  // consent, and the auto-fill bookmarklet are entirely about someone's
+  // OWN external job search, same category as the nav items already
+  // hidden for this audience. Email/name/phone/location and Calendar
+  // stay universal -- Calendar specifically because Mentor as a Service
+  // scheduling depends on it for this exact audience.
+  const [isOrgAffiliated, setIsOrgAffiliated] = useState<boolean | null>(null);
   const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
 
   function loadCalendarConnections() {
@@ -75,6 +83,12 @@ export default function ProfilePage() {
       });
     });
     loadCalendarConnections();
+    Promise.all([
+      api<Organization[]>("/orgs/mine").catch(() => []),
+      api<Application[]>("/applications").catch(() => []),
+    ]).then(([orgs, apps]) => {
+      setIsOrgAffiliated(orgs.length > 0 || apps.some((a) => a.organization_id !== null));
+    });
   }, []);
 
   async function save() {
@@ -126,23 +140,29 @@ export default function ProfilePage() {
                  placeholder="e.g. Chicago, IL" />
         </div>
 
-        <div className="field">
-          <label>LinkedIn URL</label>
-          <input value={form.linkedin_url} onChange={(e) => setForm({ ...form, linkedin_url: e.target.value })}
-                 placeholder="https://linkedin.com/in/you" />
-        </div>
+        {isOrgAffiliated === false && (
+          <>
+            <div className="field">
+              <label>LinkedIn URL</label>
+              <input value={form.linkedin_url} onChange={(e) => setForm({ ...form, linkedin_url: e.target.value })}
+                     placeholder="https://linkedin.com/in/you" />
+            </div>
 
-        <div className="field">
-          <label>Portfolio URL</label>
-          <input value={form.portfolio_url} onChange={(e) => setForm({ ...form, portfolio_url: e.target.value })}
-                 placeholder="https://yourportfolio.com" />
-        </div>
+            <div className="field">
+              <label>Portfolio URL</label>
+              <input value={form.portfolio_url} onChange={(e) => setForm({ ...form, portfolio_url: e.target.value })}
+                     placeholder="https://yourportfolio.com" />
+            </div>
+          </>
+        )}
 
-        <div className="field">
-          <label>Notification email</label>
-          <input value={form.notify_email} onChange={(e) => setForm({ ...form, notify_email: e.target.value })} />
-          <p className="hint">Where match alerts and generated documents get sent. Defaults to your login email.</p>
-        </div>
+        {isOrgAffiliated === false && (
+          <>
+            <div className="field">
+              <label>Notification email</label>
+              <input value={form.notify_email} onChange={(e) => setForm({ ...form, notify_email: e.target.value })} />
+              <p className="hint">Where match alerts and generated documents get sent. Defaults to your login email.</p>
+            </div>
 
         <div className="field">
           <label>New match notifications</label>
@@ -230,6 +250,8 @@ export default function ProfilePage() {
             )}
           </div>
         )}
+          </>
+        )}
 
         {saved && <p style={{ color: "var(--accent)" }}>Saved.</p>}
         {error && <p className="error-text">{error}</p>}
@@ -263,7 +285,8 @@ export default function ProfilePage() {
         )}
       </div>
 
-      <div className="card">
+      {isOrgAffiliated === false && (
+        <div className="card">
         <h3 style={{ marginTop: 0 }}>Auto-fill bookmarklet</h3>
         <p className="hint" style={{ marginTop: -4 }}>
           Runs entirely in your own browser, on the actual job application page you have open —
@@ -329,7 +352,8 @@ export default function ProfilePage() {
           a public computer), use this to cut it off — any bookmark made from the old link stops
           working immediately, without touching your password.
         </p>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
