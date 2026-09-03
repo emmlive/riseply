@@ -291,7 +291,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
     <div>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Mentor assignments</h3>
-        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 20 }}>
           Pair a specific employee with one mentor from the pool. Assigned mentors show up
           on the employee's Job Buddy page with a direct "Request an intro" — not just left in
           the general contact list. Use "Suggest mentors (AI)" for a data-informed starting point
@@ -301,7 +301,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
         </p>
 
         {employees.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state" style={{ marginTop: 8 }}>
             No employees have joined yet — once they do, they'll show up here ready to be
             paired with a mentor.
           </div>
@@ -517,7 +517,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
             <button className="btn btn-ghost btn-sm" onClick={() => startNewRelationship("reciprocal")}>+ New peer pair</button>
           </div>
         </div>
-        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 20 }}>
           Separate from the 1:1 mentor assignments above — a group has one or more mentors and
           several mentees; a reciprocal pair has two peers with no hierarchy between them.
         </p>
@@ -584,7 +584,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
         )}
 
         {relationships.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state" style={{ marginTop: 8 }}>
             No group or reciprocal relationships yet — use "New group" or "New peer pair" above
             to build one from your current employees.
           </div>
