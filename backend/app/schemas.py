@@ -610,6 +610,25 @@ class EmployeeCertificationOut(BaseModel):
     verified_at: datetime | None
 
 
+class DirectReportOut(BaseModel):
+    """Aggregate-only progress summary for one of the current user's
+    direct reports -- same privacy boundary as every other admin-
+    facing view in this app: enrollment/progress numbers, never
+    conversation content, never a career goal, never a meeting note.
+    A manager is not necessarily an org admin; this is deliberately a
+    third, narrower tier -- scoped to "people who report to me," not
+    "everyone in my department" or "everyone in the company.\""""
+    application_id: int
+    user_full_name: str
+    user_email: str
+    department_name: str | None
+    checklist_completion_pct: float
+    mentor_name: str | None
+    certifications_completed: int
+    certifications_total: int
+    certifications_expired: int
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str
