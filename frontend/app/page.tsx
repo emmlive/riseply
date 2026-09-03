@@ -4,7 +4,7 @@ import RedirectIfLoggedIn from "@/components/RedirectIfLoggedIn";
 
 export const metadata: Metadata = {
   title: "Riseply — AI job search, resume tailoring, and employee onboarding",
-  description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer. Also powers Buddy as a Service — a company-customized AI onboarding buddy for new hires.",
+  description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer. Also powers Riseply Enterprise — onboarding, mentorship, and internal mobility for growing teams.",
   alternates: { canonical: "https://riseply.com/" },
   openGraph: {
     title: "Riseply — AI job search & employee onboarding",
@@ -33,7 +33,7 @@ const ORG_JSON_LD = {
   name: "Riseply",
   url: "https://riseply.com",
   logo: "https://riseply.com/brand/icon.svg",
-  description: "AI-powered job search platform: job matching, resume tailoring, interview prep, and employee onboarding, including Buddy as a Service for companies.",
+  description: "AI-powered job search platform: job matching, resume tailoring, interview prep, and employee onboarding, including Riseply Enterprise for companies — onboarding, mentorship, and internal mobility.",
 };
 
 export default function HomePage() {
@@ -78,8 +78,8 @@ export default function HomePage() {
           <Link href="/signup" className="btn btn-primary">Get started</Link>
         </div>
         <p className="muted" style={{ marginTop: 20, fontSize: "0.85rem" }}>
-          Hiring? See <Link href="/buddy-as-a-service">Buddy as a Service</Link> for your team's onboarding,
-          or <Link href="/mentor-as-a-service">Mentor as a Service</Link> for ongoing growth.
+          Hiring, growing a team, or building internal mobility? See{" "}
+          <Link href="/riseply-enterprise">Riseply Enterprise</Link>.
         </p>
         <p className="muted" style={{ marginTop: 8, fontSize: "0.8rem" }}>
           <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>

@@ -191,7 +191,8 @@ export default function BuddyAsAServicePage() {
 
         <p className="muted" style={{ marginTop: 24, fontSize: "0.9rem" }}>
           Looking for ongoing career support after onboarding wraps up? See{" "}
-          <Link href="/mentor-as-a-service">Mentor as a Service</Link>.
+          <Link href="/mentor-as-a-service">Mentor as a Service</Link>, or see the full
+          suite at <Link href="/riseply-enterprise">Riseply Enterprise</Link>.
         </p>
 
         <p className="muted" style={{ marginTop: 32, fontSize: "0.88rem" }}>
