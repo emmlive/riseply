@@ -160,7 +160,7 @@ function InternalJobsDashboard({ org }: { org: Organization }) {
       )}
 
       {postings.length === 0 ? (
-        <div className="empty-state">
+        <div className="empty-state" style={{ marginTop: 8 }}>
           No internal postings yet — once you post one, employees will see it right on their
           Job Buddy page and can apply with the resume already on file.
         </div>
