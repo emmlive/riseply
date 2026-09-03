@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, showQuotaLimitModal, formatSalary } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -19,6 +19,16 @@ export default function OverviewPage() {
   const [checklistDismissed, setChecklistDismissed] = useState(
     typeof window !== "undefined" && localStorage.getItem("riseply_hide_getting_started") === "1"
   );
+  // Same org-affiliation signal layout.tsx computes for nav visibility --
+  // duplicated here rather than shared via context, matching how every
+  // other page in this app (mentor-as-a-service, org-buddy,
+  // internal-jobs) independently fetches its own /orgs/mine rather than
+  // relying on a shared store that doesn't exist yet. orgCheckDone
+  // guards against a flash of the full job-search dashboard before the
+  // check resolves -- null (not yet known) intentionally renders
+  // nothing rather than defaulting to either branch.
+  const [hasOrgAdminAccess, setHasOrgAdminAccess] = useState<boolean | null>(null);
+  const [isOrgEmployee, setIsOrgEmployee] = useState(false);
 
   async function load() {
     // Promise.allSettled rather than Promise.all -- if literally ANY
@@ -88,6 +98,13 @@ export default function OverviewPage() {
 
   useEffect(() => {
     load();
+    Promise.all([
+      api<Organization[]>("/orgs/mine").catch(() => []),
+      api<Application[]>("/applications").catch(() => []),
+    ]).then(([orgs, apps]) => {
+      setHasOrgAdminAccess(orgs.length > 0);
+      setIsOrgEmployee(apps.some((a) => a.organization_id !== null));
+    });
   }, []);
 
   async function runPipeline() {
@@ -155,6 +172,22 @@ export default function OverviewPage() {
     } finally {
       setRunning(false);
     }
+  }
+
+  // Org-affiliated users (admins and regular employees alike) get a
+  // simple welcome instead of the full job-search dashboard below --
+  // "Find new matches", pending applications, near-misses, and the
+  // getting-started checklist all assume someone is personally
+  // searching for a job, which isn't the case for someone here to
+  // manage or participate in their employer's Buddy/Mentor/Internal
+  // Jobs setup. hasOrgAdminAccess === null means the check hasn't
+  // resolved yet -- render nothing rather than flashing the full
+  // dashboard and then swapping it out a moment later.
+  if (hasOrgAdminAccess === null) {
+    return null;
+  }
+  if (hasOrgAdminAccess || isOrgEmployee) {
+    return <OrgAffiliatedOverview isAdmin={hasOrgAdminAccess} userName={userName} />;
   }
 
   return (
@@ -280,6 +313,52 @@ export default function OverviewPage() {
             </div>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+function OrgAffiliatedOverview({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
+  return (
+    <div>
+      <h1>Welcome{userName ? `, ${userName}` : ""}!</h1>
+      {isAdmin ? (
+        <>
+          <p className="muted">
+            Here's where to manage your organization's onboarding, mentoring, and internal
+            mobility programs.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginTop: 8 }}>
+            <Link href="/dashboard/org-buddy" className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+              <h3 style={{ marginTop: 0 }}>Org Buddy</h3>
+              <p className="hint" style={{ margin: 0 }}>
+                Onboarding checklists, company content, roster, and SSO for new employees.
+              </p>
+            </Link>
+            <Link href="/dashboard/mentor-as-a-service" className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+              <h3 style={{ marginTop: 0 }}>Mentor as a Service</h3>
+              <p className="hint" style={{ margin: 0 }}>
+                1:1 mentor pairing, group cohorts, reciprocal pairs, and scheduled meetings.
+              </p>
+            </Link>
+            <Link href="/dashboard/internal-jobs" className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+              <h3 style={{ marginTop: 0 }}>Internal Jobs</h3>
+              <p className="hint" style={{ margin: 0 }}>
+                Post openings at your own company and let employees apply from Job Buddy.
+              </p>
+            </Link>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted">
+            Job Buddy is your home base — onboarding, your mentor, internal openings, and
+            everything else in one place.
+          </p>
+          <Link href="/dashboard/job-buddy" className="btn btn-primary" style={{ display: "inline-block", textDecoration: "none" }}>
+            Go to Job Buddy
+          </Link>
+        </>
       )}
     </div>
   );

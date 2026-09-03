@@ -6,32 +6,37 @@ import { useEffect, useState } from "react";
 import { api, clearToken, getToken, User, Organization, Application } from "@/lib/api";
 import QuotaLimitModal from "@/components/QuotaLimitModal";
 
-// Split into two groups: ALWAYS_NAV shows for everyone; JOB_SEARCH_NAV
-// is specifically about finding a job somewhere else (external
-// discovery, resume tailoring, tracking applications) and gets hidden
-// for anyone affiliated with an organization -- an org admin managing
-// Buddy/Mentor/Internal Jobs, or an employee who joined via a code, has
-// no real use for external job search in that context, and showing it
+// Split into two groups: ALWAYS_NAV shows for everyone; INDIVIDUAL_NAV
+// is specifically about an individual's OWN job search (external
+// discovery, resume tailoring, tracking applications) or paying for
+// higher limits on those same features, and gets hidden for anyone
+// affiliated with an organization -- an org admin managing Buddy/
+// Mentor/Internal Jobs, or an employee who joined via a code, has no
+// real use for external job search in that context, and showing it
 // anyway just clutters what should read as a focused enterprise admin
-// surface. Internal Jobs (admin-managed openings at the SAME company)
-// covers the "help someone find their next role" need for this
-// audience instead -- see internal-jobs/page.tsx's own comment for why
-// that's a genuinely separate system from this one, not a rename of it.
+// surface. Billing belongs in this group too, not ALWAYS_NAV -- its
+// entire purpose is selling higher limits on matching/search-profiles/
+// tailoring, so once those are hidden, a page pitching an upgrade for
+// invisible features is just confusing, not neutral. Internal Jobs
+// (admin-managed openings at the SAME company) covers the "help
+// someone find their next role" need for this audience instead -- see
+// internal-jobs/page.tsx's own comment for why that's a genuinely
+// separate system from external search, not a rename of it.
 const ALWAYS_NAV = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/job-buddy", label: "Job Buddy" },
-  { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/profile", label: "Profile" },
   { href: "/dashboard/knowledge-base", label: "Knowledge Base" },
   { href: "/dashboard/support", label: "Support" },
   { href: "/security", label: "Security & Trust" },
 ];
 
-const JOB_SEARCH_NAV = [
+const INDIVIDUAL_NAV = [
   { href: "/dashboard/rise-index", label: "Rise Index" },
   { href: "/dashboard/profiles", label: "Search profiles" },
   { href: "/dashboard/resume", label: "Resume" },
   { href: "/dashboard/applications", label: "Applications" },
+  { href: "/dashboard/billing", label: "Billing" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -70,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push("/login");
   }
 
-  const showJobSearchNav = !hasOrgAdminAccess && !isOrgEmployee;
+  const showIndividualNav = !hasOrgAdminAccess && !isOrgEmployee;
 
   return (
     <div className="app-shell">
@@ -82,7 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard" className={`sidebar-link ${pathname === "/dashboard" ? "active" : ""}`}>
           Overview
         </Link>
-        {showJobSearchNav && JOB_SEARCH_NAV.map((item) => (
+        {showIndividualNav && INDIVIDUAL_NAV.map((item) => (
           <Link
             key={item.href}
             href={item.href}
