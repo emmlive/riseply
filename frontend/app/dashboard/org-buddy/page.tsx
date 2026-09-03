@@ -838,6 +838,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
                 {analytics.mentorship.would_recommend_mentor_pct !== null && (
                   <div><strong>{analytics.mentorship.would_recommend_mentor_pct}%</strong> <span className="hint">would recommend their mentor</span></div>
                 )}
+                <div><strong>{analytics.mentorship.total_group_relationships}</strong> <span className="hint">group cohorts</span></div>
+                <div><strong>{analytics.mentorship.total_reciprocal_relationships}</strong> <span className="hint">reciprocal pairs</span></div>
+                <div><strong>{analytics.mentorship.total_relationship_meetings_logged}</strong> <span className="hint">group/reciprocal meetings logged</span></div>
               </div>
             </div>
           )}

@@ -174,6 +174,49 @@ def test_apply_creates_application_and_shows_has_applied(db):
     assert browse[0]["has_applied"] is True
 
 
+def test_matches_your_goal_reflects_career_goal_keyword_overlap(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    matching_posting = client.post(
+        f"/orgs/{org.id}/internal-jobs",
+        json={"title": "Senior ICU Nurse", "description": "Lead complex critical care cases."},
+    ).json()
+    unrelated_posting = client.post(
+        f"/orgs/{org.id}/internal-jobs",
+        json={"title": "Payroll Coordinator", "description": "Process biweekly payroll runs."},
+    ).json()
+
+    db.add(models.CareerGoal(application_id=employee_app.id, goal_text="Grow into an ICU leadership role"))
+    db.commit()
+
+    _login_as(employee)
+    browse = client.get(f"/applications/{employee_app.id}/internal-jobs").json()
+    by_title = {p["title"]: p for p in browse}
+    assert by_title["Senior ICU Nurse"]["matches_your_goal"] is True
+    assert by_title["Payroll Coordinator"]["matches_your_goal"] is False
+
+
+def test_matches_your_goal_false_with_no_goal_set(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Senior ICU Nurse"})
+
+    _login_as(employee)
+    browse = client.get(f"/applications/{employee_app.id}/internal-jobs").json()
+    assert browse[0]["matches_your_goal"] is False
+
+
+def test_matches_your_goal_never_shown_on_admin_endpoint(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Senior ICU Nurse"})
+    admin_view = client.get(f"/orgs/{org.id}/internal-jobs").json()
+    assert admin_view[0]["matches_your_goal"] is None
+
+
 def test_cannot_apply_twice(db):
     admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
 

@@ -530,7 +530,26 @@ def list_open_internal_jobs(
         a.posting_id for a in
         db.query(models.InternalJobApplication).filter_by(applicant_user_id=user.id).all()
     }
-    return [internal_jobs.posting_out(db, p, has_applied=p.id in applied_posting_ids) for p in rows]
+
+    # Same active-goal lookup pattern used for AI mentor suggestions --
+    # most recent unachieved CareerGoal, if any. A goal_text of ""
+    # (no goal set yet) just means goal_matches_posting returns False
+    # for everything, same as having no goal at all.
+    goal_rows = (
+        db.query(models.CareerGoal)
+        .filter_by(application_id=application_id, achieved_at=None)
+        .order_by(models.CareerGoal.created_at.desc())
+        .all()
+    )
+    goal_text = goal_rows[0].goal_text if goal_rows else ""
+
+    return [
+        internal_jobs.posting_out(
+            db, p, has_applied=p.id in applied_posting_ids,
+            matches_your_goal=internal_jobs.goal_matches_posting(goal_text, p),
+        )
+        for p in rows
+    ]
 
 
 @router.post("/{application_id}/internal-jobs/{posting_id}/apply")

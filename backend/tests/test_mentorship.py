@@ -120,12 +120,12 @@ def test_score_mentor_match_raises_on_missing_score():
             mentor_matcher.score_mentor_match("resume", "goal", "bio")
 
 
-def test_suggest_mentors_ranks_highest_first_and_skips_failures():
+def test_suggest_mentors_ranks_highest_first_and_skips_failures(db):
     mentor_a = type("M", (), {"id": 1, "name": "A", "email": "a@x.com", "mentor_bio": "bio a"})()
     mentor_b = type("M", (), {"id": 2, "name": "B", "email": "b@x.com", "mentor_bio": "bio b"})()
     mentor_c = type("M", (), {"id": 3, "name": "C", "email": "c@x.com", "mentor_bio": "bio c"})()
 
-    def fake_score(resume, goal, bio):
+    def fake_score(resume, goal, bio, track_record=""):
         if bio == "bio a":
             return {"score": 60, "reason": "ok fit"}
         if bio == "bio b":
@@ -133,9 +133,62 @@ def test_suggest_mentors_ranks_highest_first_and_skips_failures():
         return {"score": 95, "reason": "great fit"}
 
     with patch.object(mentor_matcher, "score_mentor_match", side_effect=fake_score):
-        ranked = mentor_matcher.suggest_mentors("resume", "goal", [mentor_a, mentor_b, mentor_c])
+        ranked = mentor_matcher.suggest_mentors(db, "resume", "goal", [mentor_a, mentor_b, mentor_c])
 
     assert [r["contact_id"] for r in ranked] == [3, 1]  # mentor_b (id 2) skipped, highest score first
+
+
+def test_mentor_track_record_reflects_real_retrospectives(db):
+    """The actual new logic -- _mentor_track_record's output against
+    real MentorAssignment + MentorRetrospective rows, not the mocked
+    ranking test above. Confirms it's aggregate-only (a count and a
+    rate) and correctly excludes retrospectives that left
+    would_recommend_mentor unanswered (None), same "don't force an
+    opinion out of a skipped field" reasoning as the retrospective
+    endpoint itself."""
+    admin = _make_user(db, "trackadmin@acme.com")
+    org = _make_org(db, "Track Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    contact = _make_mentor_contact(db, org.id, "Mentor Track", "Experienced")
+
+    # Two past pairings with this same mentor, both ended, both with a
+    # retrospective -- one recommended, one not.
+    for i, recommend in enumerate((True, False)):
+        employee = _make_user(db, f"trackmentee{i}@acme.com")
+        app_row = _make_application(db, employee.id, org.id)
+        assignment = models.MentorAssignment(application_id=app_row.id, contact_id=contact.id, ended_at=datetime.utcnow())
+        db.add(assignment)
+        db.commit()
+        db.refresh(assignment)
+        db.add(models.MentorRetrospective(
+            mentor_assignment_id=assignment.id, what_worked="x", what_didnt_work="",
+            would_recommend_mentor=recommend,
+        ))
+    # A third pairing whose retrospective left the recommend question
+    # unanswered (None) -- should NOT count toward either side of the ratio.
+    employee3 = _make_user(db, "trackmentee3@acme.com")
+    app_row3 = _make_application(db, employee3.id, org.id)
+    assignment3 = models.MentorAssignment(application_id=app_row3.id, contact_id=contact.id, ended_at=datetime.utcnow())
+    db.add(assignment3)
+    db.commit()
+    db.refresh(assignment3)
+    db.add(models.MentorRetrospective(
+        mentor_assignment_id=assignment3.id, what_worked="y", what_didnt_work="",
+        would_recommend_mentor=None,
+    ))
+    db.commit()
+
+    record = mentor_matcher._mentor_track_record(db, contact.id)
+    assert record == "Recommended by 1 of 2 past mentees who left a retrospective."
+
+
+def test_mentor_track_record_empty_for_no_history(db):
+    admin = _make_user(db, "trackadmin2@acme.com")
+    org = _make_org(db, "NoTrack Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    contact = _make_mentor_contact(db, org.id, "Fresh Mentor", "New to mentoring")
+
+    assert mentor_matcher._mentor_track_record(db, contact.id) == ""
 
 
 # --- suggested-mentors endpoint ---
@@ -329,6 +382,42 @@ def test_analytics_includes_mentorship_stats(db):
     assert m["total_meetings_logged"] == 1
     assert m["avg_feedback_rating"] == 4.0
     assert m["employees_with_mentor_pct"] == 100.0
+
+
+def test_analytics_includes_group_and_reciprocal_relationship_stats(db):
+    admin = _make_user(db, "admin17@acme.com")
+    org = _make_org(db, "Rollup Health")
+    _make_member(db, org.id, admin.id, role="admin")
+    emp_a = _make_user(db, "rollupa@acme.com")
+    emp_b = _make_user(db, "rollupb@acme.com")
+    emp_c = _make_user(db, "rollupc@acme.com")
+    app_a = _make_application(db, emp_a.id, org.id)
+    app_b = _make_application(db, emp_b.id, org.id)
+    app_c = _make_application(db, emp_c.id, org.id)
+
+    group = models.MentorshipRelationship(organization_id=org.id, relationship_type="group", name="Cohort")
+    reciprocal = models.MentorshipRelationship(organization_id=org.id, relationship_type="reciprocal", name="Pair")
+    db.add_all([group, reciprocal])
+    db.commit()
+    db.refresh(group)
+    db.refresh(reciprocal)
+
+    db.add_all([
+        models.MentorshipParticipant(relationship_id=group.id, application_id=app_a.id, role="mentor"),
+        models.MentorshipParticipant(relationship_id=group.id, application_id=app_b.id, role="mentee"),
+        models.MentorshipParticipant(relationship_id=reciprocal.id, application_id=app_b.id, role="peer"),
+        models.MentorshipParticipant(relationship_id=reciprocal.id, application_id=app_c.id, role="peer"),
+    ])
+    db.add(models.MentorshipMeetingLog(relationship_id=group.id, logged_by_user_id=admin.id, meeting_date=date.today()))
+    db.commit()
+
+    _login_as(admin)
+    resp = client.get(f"/orgs/{org.id}/analytics")
+    assert resp.status_code == 200
+    m = resp.json()["mentorship"]
+    assert m["total_group_relationships"] == 1
+    assert m["total_reciprocal_relationships"] == 1
+    assert m["total_relationship_meetings_logged"] == 1
 
 
 # --- mentor_reminders.py ---

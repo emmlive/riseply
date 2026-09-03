@@ -1011,6 +1011,11 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                       <div style={{ fontWeight: 600 }}>
                         {job.title}
                         {job.department_name && <span className="hint"> · {job.department_name}</span>}
+                        {job.matches_your_goal && (
+                          <span className="pill pill-approved" style={{ marginLeft: 8, fontSize: "0.7rem" }}>
+                            Matches your goal
+                          </span>
+                        )}
                       </div>
                       {job.description && <div className="hint" style={{ marginTop: 2 }}>{job.description}</div>}
                     </div>

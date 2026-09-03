@@ -531,6 +531,18 @@ def org_analytics(
     ).all() if assignment_ids else []
     recommend_answers = [r.would_recommend_mentor for r in retrospectives if r.would_recommend_mentor is not None]
 
+    # Group/reciprocal relationships are organization_id-scoped directly
+    # (unlike MentorAssignment, reached via app_ids) -- see
+    # MentorshipRelationship's own docstring for why they're a
+    # genuinely separate system from 1:1 pairings.
+    relationships = db.query(models.MentorshipRelationship).filter_by(organization_id=organization_id).all()
+    total_group_relationships = sum(1 for r in relationships if r.relationship_type == "group")
+    total_reciprocal_relationships = sum(1 for r in relationships if r.relationship_type == "reciprocal")
+    relationship_ids = [r.id for r in relationships]
+    total_relationship_meetings_logged = db.query(models.MentorshipMeetingLog).filter(
+        models.MentorshipMeetingLog.relationship_id.in_(relationship_ids)
+    ).count() if relationship_ids else 0
+
     mentorship_stats = schemas.MentorshipStats(
         total_pairings=len(assignments),
         employees_with_mentor_pct=round(len(assignments) / len(apps) * 100, 1) if apps else 0.0,
@@ -539,6 +551,9 @@ def org_analytics(
         avg_feedback_rating=round(sum(ratings) / len(ratings), 1) if ratings else None,
         pairings_ended=pairings_ended,
         would_recommend_mentor_pct=round(sum(recommend_answers) / len(recommend_answers) * 100, 1) if recommend_answers else None,
+        total_group_relationships=total_group_relationships,
+        total_reciprocal_relationships=total_reciprocal_relationships,
+        total_relationship_meetings_logged=total_relationship_meetings_logged,
     )
 
     return schemas.OrgAnalyticsOut(
@@ -641,6 +656,9 @@ def org_analytics_csv(
     writer.writerow(["Avg feedback rating (1-5)", m.avg_feedback_rating if m.avg_feedback_rating is not None else "N/A"])
     writer.writerow(["Pairings ended", m.pairings_ended])
     writer.writerow(["Would recommend mentor (%)", m.would_recommend_mentor_pct if m.would_recommend_mentor_pct is not None else "N/A"])
+    writer.writerow(["Group relationships", m.total_group_relationships])
+    writer.writerow(["Reciprocal relationships", m.total_reciprocal_relationships])
+    writer.writerow(["Group/reciprocal meetings logged", m.total_relationship_meetings_logged])
 
     output.seek(0)
     return Response(
@@ -987,7 +1005,7 @@ def suggested_mentors(
         return []
 
     from app.services import mentor_matcher
-    ranked = mentor_matcher.suggest_mentors(employee.resume_text or "", goal_text, mentors)
+    ranked = mentor_matcher.suggest_mentors(db, employee.resume_text or "", goal_text, mentors)
     return [schemas.SuggestedMentorOut(**r) for r in ranked]
 
 
