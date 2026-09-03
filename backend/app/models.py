@@ -634,6 +634,77 @@ class CalendarConnection(Base):
     connected_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class CertificationRequirement(Base):
+    """An org-defined required certification/training -- 'HIPAA
+    Training', 'Fire Safety Certification' -- with an optional renewal
+    cycle. Deliberately its own system, not a repurposing of
+    OrgChecklistItem, even though the two look similar on paper: a
+    checklist item is a one-time onboarding task ('set up your
+    laptop'), while a certification requirement is fundamentally
+    recurring compliance -- something that can EXPIRE and need doing
+    again, which OrgChecklistItem's data model has no concept of at
+    all. Mirrors OrgChecklistItem's department_id layering (NULL =
+    company-wide, set = one department) and its optional `content`
+    field for the same reason OrgChecklistItem has policy_content: some
+    certifications are genuinely "read this exact text and
+    acknowledge" (an in-app policy), others are "attest you completed
+    something that happened elsewhere" (an in-person fire drill), and
+    content being empty vs. populated is what distinguishes the two.
+
+    renewal_period_days is nullable -- null means a one-time
+    certification with no expiration ever; set means it expires that
+    many days after completion and needs renewing."""
+    __tablename__ = "certification_requirements"
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    name = Column(String, nullable=False)
+    description = Column(String, default="")
+    content = Column(Text, nullable=True)
+    renewal_period_days = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class EmployeeCertification(Base):
+    """One employee's completion record for one CertificationRequirement.
+    Same historical-snapshot discipline as ChecklistCompletion's
+    policy_content_snapshot, for the exact same reason -- if the org
+    edits the requirement's content later, this record still shows
+    precisely what this employee actually acknowledged at the time,
+    not whatever the requirement currently says.
+
+    expires_at is computed and stored at completion time (completed_at
+    + the requirement's renewal_period_days AT THAT MOMENT), not
+    computed live from the requirement's current renewal_period_days --
+    if an org later changes how often a certification needs renewing,
+    that shouldn't retroactively change when someone's ALREADY-completed
+    certification is considered to expire. Null when the requirement
+    had no renewal_period_days set at completion time (a one-time cert).
+
+    verified_by_user_id/verified_at are null until an admin actually
+    reviews and confirms it -- self-attesting completion and being
+    admin-verified are deliberately two different states, not
+    collapsed into one boolean, since "the employee says they did it"
+    and "an admin confirmed it" carry different weight for an actual
+    compliance record."""
+    __tablename__ = "employee_certifications"
+    __table_args__ = (UniqueConstraint("application_id", "requirement_id", "completed_at", name="uq_app_requirement_completion"),)
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    requirement_id = Column(Integer, ForeignKey("certification_requirements.id"), nullable=False)
+    content_snapshot = Column(Text, nullable=True)
+    completed_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    expires_at = Column(DateTime, nullable=True)
+    verified_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    # Reminder-guard pattern already established for MentorAssignment's
+    # own reminder_last_sent_at -- prevents re-notifying every single
+    # day once a certification is approaching or past expiration.
+    reminder_last_sent_at = Column(DateTime, nullable=True)
+
+
 class MentorMeetingSchedule(Base):
     """An UPCOMING mentor-mentee meeting -- distinct from
     MentorMeetingLog, which is always retrospective (a record of

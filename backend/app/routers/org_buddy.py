@@ -14,6 +14,7 @@ from app import models, schemas
 from app.services import calendar_oauth
 from app.services import mentorship_relationships
 from app.services import internal_jobs
+from app.services import certifications
 
 router = APIRouter(prefix="/orgs", tags=["org-buddy"])
 
@@ -1724,6 +1725,146 @@ def list_internal_job_applicants(
         )
         for app_row, user_row in rows
     ]
+
+
+# --- Compliance certifications (recurring, expiring requirements --
+# distinct from the one-time onboarding checklist below; see
+# CertificationRequirement's own docstring for why) ---
+
+_certification_out = certifications.requirement_out
+
+
+@router.post("/{organization_id}/certification-requirements", response_model=schemas.CertificationRequirementOut)
+def create_certification_requirement(
+    organization_id: int,
+    payload: schemas.CertificationRequirementCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_scope_admin(db, organization_id, user.id, payload.department_id)
+
+    if payload.department_id is not None:
+        dept = db.query(models.Department).filter_by(id=payload.department_id, organization_id=organization_id).first()
+        if not dept:
+            raise HTTPException(status_code=404, detail="Department not found in this organization.")
+
+    requirement = models.CertificationRequirement(
+        organization_id=organization_id, department_id=payload.department_id,
+        name=payload.name, description=payload.description, content=payload.content,
+        renewal_period_days=payload.renewal_period_days,
+    )
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    return _certification_out(db, requirement)
+
+
+@router.get("/{organization_id}/certification-requirements", response_model=list[schemas.CertificationRequirementOut])
+def list_certification_requirements(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin view -- no single employee to check completion status
+    against, so my_status/my_completed_at/etc. all stay None here. Use
+    the {id}/completions endpoint below for who's actually completed
+    each requirement."""
+    _require_scope_admin(db, organization_id, user.id, None)
+    rows = db.query(models.CertificationRequirement).filter_by(organization_id=organization_id).order_by(models.CertificationRequirement.created_at.desc()).all()
+    return [_certification_out(db, r) for r in rows]
+
+
+@router.delete("/{organization_id}/certification-requirements/{requirement_id}")
+def delete_certification_requirement(
+    organization_id: int,
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    requirement = db.query(models.CertificationRequirement).filter_by(id=requirement_id, organization_id=organization_id).first()
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Certification requirement not found.")
+    _require_scope_admin(db, organization_id, user.id, requirement.department_id)
+
+    db.delete(requirement)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.get("/{organization_id}/certification-requirements/{requirement_id}/completions", response_model=list[schemas.EmployeeCertificationOut])
+def list_certification_completions(
+    organization_id: int,
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Every completion record for this requirement across the org --
+    deliberately full history (every past completion, including
+    lapsed/renewed ones), not just each employee's latest, since a
+    real compliance record should show the whole trail, not just
+    current status."""
+    requirement = db.query(models.CertificationRequirement).filter_by(id=requirement_id, organization_id=organization_id).first()
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Certification requirement not found.")
+    _require_scope_admin(db, organization_id, user.id, requirement.department_id)
+
+    rows = (
+        db.query(models.EmployeeCertification, models.Application, models.User)
+        .join(models.Application, models.EmployeeCertification.application_id == models.Application.id)
+        .join(models.User, models.Application.user_id == models.User.id)
+        .filter(models.EmployeeCertification.requirement_id == requirement_id)
+        .order_by(models.EmployeeCertification.completed_at.desc())
+        .all()
+    )
+    return [
+        schemas.EmployeeCertificationOut(
+            id=cert.id, application_id=cert.application_id, requirement_id=cert.requirement_id,
+            applicant_name=user_row.full_name or user_row.email, applicant_email=user_row.email,
+            completed_at=cert.completed_at, expires_at=cert.expires_at,
+            verified_by_user_id=cert.verified_by_user_id, verified_at=cert.verified_at,
+        )
+        for cert, app_row, user_row in rows
+    ]
+
+
+@router.post("/{organization_id}/employee-certifications/{completion_id}/verify", response_model=schemas.EmployeeCertificationOut)
+def verify_employee_certification(
+    organization_id: int,
+    completion_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Deliberately a separate action from completing -- "the employee
+    says they did it" and "an admin confirmed it" are two different
+    states for a real compliance record, not collapsed into one
+    boolean. See EmployeeCertification's own docstring."""
+    row = (
+        db.query(models.EmployeeCertification, models.CertificationRequirement)
+        .join(models.CertificationRequirement, models.EmployeeCertification.requirement_id == models.CertificationRequirement.id)
+        .filter(
+            models.EmployeeCertification.id == completion_id,
+            models.CertificationRequirement.organization_id == organization_id,
+        ).first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Certification completion not found.")
+    cert, requirement = row
+    _require_scope_admin(db, organization_id, user.id, requirement.department_id)
+
+    cert.verified_by_user_id = user.id
+    cert.verified_at = datetime.utcnow()
+    db.commit()
+    db.refresh(cert)
+
+    application = db.query(models.Application).filter_by(id=cert.application_id).first()
+    user_row = db.query(models.User).filter_by(id=application.user_id).first() if application else None
+    return schemas.EmployeeCertificationOut(
+        id=cert.id, application_id=cert.application_id, requirement_id=cert.requirement_id,
+        applicant_name=(user_row.full_name or user_row.email) if user_row else "Unknown",
+        applicant_email=user_row.email if user_row else "",
+        completed_at=cert.completed_at, expires_at=cert.expires_at,
+        verified_by_user_id=cert.verified_by_user_id, verified_at=cert.verified_at,
+    )
 
 
 # --- Onboarding checklist (company-wide or department-specific templates) ---

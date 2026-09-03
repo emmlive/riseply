@@ -107,7 +107,7 @@ def run_deliveries(db: Session) -> dict:
             db.commit()
             reminders += 1
 
-    return {"lessons_sent": sent, "reminders_sent": reminders}
+    return {"lessons_sent": sent, "culture_bot_reminders_sent": reminders}
 
 
 def grade_quiz(quiz_answer: str, response: str) -> bool:

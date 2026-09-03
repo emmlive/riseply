@@ -77,4 +77,4 @@ def run_mentorship_reminders(db: Session) -> dict:
         db.commit()
         sent += 1
 
-    return {"reminders_sent": sent}
+    return {"mentorship_reminders_sent": sent}

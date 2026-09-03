@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting } from "@/lib/api";
+import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting, CertificationRequirement } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -183,6 +183,9 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
   const [applyingToJobId, setApplyingToJobId] = useState<number | null>(null);
   const [internalJobNote, setInternalJobNote] = useState("");
   const [submittingInternalApp, setSubmittingInternalApp] = useState(false);
+  const [myCertifications, setMyCertifications] = useState<CertificationRequirement[]>([]);
+  const [expandedCertId, setExpandedCertId] = useState<number | null>(null);
+  const [completingCertId, setCompletingCertId] = useState<number | null>(null);
   const [newMeetingDate, setNewMeetingDate] = useState("");
   const [newMeetingNotes, setNewMeetingNotes] = useState("");
   const [loggingMeeting, setLoggingMeeting] = useState(false);
@@ -209,6 +212,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
     api<MentorAssignment | null>(`/applications/${applicationId}/mentor`).then(setMentor).catch(() => {});
     api<MentorshipRelationship[]>(`/applications/${applicationId}/mentorship-relationships`).then(setMentorshipRelationships).catch(() => {});
     api<InternalJobPosting[]>(`/applications/${applicationId}/internal-jobs`).then(setInternalJobs).catch(() => {});
+    api<CertificationRequirement[]>(`/applications/${applicationId}/certifications`).then(setMyCertifications).catch(() => {});
     api<CareerGoal[]>(`/applications/${applicationId}/career-goals`).then(setGoals).catch(() => {});
 
     api<OnboardingPlan>(`/applications/${applicationId}/onboarding-plan`)
@@ -430,6 +434,19 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
       alert(err.message || "Couldn't submit that application.");
     } finally {
       setSubmittingInternalApp(false);
+    }
+  }
+
+  async function completeCertification(requirementId: number) {
+    setCompletingCertId(requirementId);
+    try {
+      await api(`/applications/${applicationId}/certifications/${requirementId}/complete`, { method: "POST" });
+      const rows = await api<CertificationRequirement[]>(`/applications/${applicationId}/certifications`);
+      setMyCertifications(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't mark that as complete.");
+    } finally {
+      setCompletingCertId(null);
     }
   }
 
@@ -992,6 +1009,64 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                       </div>
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {myCertifications.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Required certifications</h3>
+              <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+                Company and department training and licensure requirements.
+              </p>
+              {myCertifications.map((cert) => (
+                <div key={cert.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {cert.name}
+                        {cert.department_name && <span className="hint"> · {cert.department_name}</span>}
+                      </div>
+                      {cert.description && <div className="hint" style={{ marginTop: 2 }}>{cert.description}</div>}
+                      {cert.content && expandedCertId === cert.id && (
+                        <div className="hint" style={{ marginTop: 6, padding: 8, background: "var(--paper, #f5f6f8)", borderRadius: 6, whiteSpace: "pre-wrap" }}>
+                          {cert.content}
+                        </div>
+                      )}
+                      {cert.my_status === "completed" && (
+                        <div className="hint" style={{ marginTop: 4 }}>
+                          Completed {cert.my_completed_at && new Date(cert.my_completed_at).toLocaleDateString()}
+                          {cert.my_expires_at && ` · expires ${new Date(cert.my_expires_at).toLocaleDateString()}`}
+                          {cert.my_verified ? " · ✓ verified" : " · pending admin verification"}
+                        </div>
+                      )}
+                      {cert.my_status === "expired" && (
+                        <div className="hint" style={{ marginTop: 4, color: "var(--danger, #B23B3B)" }}>
+                          Expired {cert.my_expires_at && new Date(cert.my_expires_at).toLocaleDateString()} — please renew.
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, flexDirection: "column", alignItems: "flex-end" }}>
+                      {cert.content && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setExpandedCertId(expandedCertId === cert.id ? null : cert.id)}>
+                          {expandedCertId === cert.id ? "Hide" : "Read"}
+                        </button>
+                      )}
+                      {(cert.my_status === "not_started" || cert.my_status === "expired") && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={completingCertId === cert.id}
+                          onClick={() => completeCertification(cert.id)}
+                        >
+                          {completingCertId === cert.id ? "Saving…" : cert.my_status === "expired" ? "Renew" : "Mark complete"}
+                        </button>
+                      )}
+                      {cert.my_status === "completed" && (
+                        <span className="pill pill-approved">Complete</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

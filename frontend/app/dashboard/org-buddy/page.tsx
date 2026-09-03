@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User } from "@/lib/api";
+import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification } from "@/lib/api";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -177,6 +177,16 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [checklistMediaUrl, setChecklistMediaUrl] = useState("");
   const [addingChecklistItem, setAddingChecklistItem] = useState(false);
   const [checklistError, setChecklistError] = useState("");
+  const [certRequirements, setCertRequirements] = useState<CertificationRequirement[]>([]);
+  const [showNewCertForm, setShowNewCertForm] = useState(false);
+  const [newCertName, setNewCertName] = useState("");
+  const [newCertDescription, setNewCertDescription] = useState("");
+  const [newCertContent, setNewCertContent] = useState("");
+  const [newCertDepartmentId, setNewCertDepartmentId] = useState("");
+  const [newCertRenewalDays, setNewCertRenewalDays] = useState("");
+  const [creatingCert, setCreatingCert] = useState(false);
+  const [certCompletionsOpenFor, setCertCompletionsOpenFor] = useState<number | null>(null);
+  const [certCompletions, setCertCompletions] = useState<Record<number, EmployeeCertification[]>>({});
   const [lessons, setLessons] = useState<OrgLesson[]>([]);
   const [lessonDay, setLessonDay] = useState("0");
   const [lessonTitle, setLessonTitle] = useState("");
@@ -214,6 +224,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgEmployee[]>(`/orgs/${org.id}/employees`).then(setEmployees).catch(() => {});
     api<Department[]>(`/orgs/${org.id}/departments`).then(setDepartments);
     api<ChecklistItem[]>(`/orgs/${org.id}/checklist`).then(setChecklist);
+    api<CertificationRequirement[]>(`/orgs/${org.id}/certification-requirements`).then(setCertRequirements).catch(() => {});
     api<OrgLesson[]>(`/orgs/${org.id}/lessons`).then(setLessons);
     // Org-wide-admin-only, same as usage/billing above -- fails silently
     // for a department admin rather than surfacing an error toast.
@@ -287,6 +298,66 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   async function removeChecklistItem(itemId: number) {
     await api(`/orgs/${org.id}/checklist/${itemId}`, { method: "DELETE" });
     load();
+  }
+
+  async function createCertRequirement() {
+    if (!newCertName.trim()) return;
+    setCreatingCert(true);
+    try {
+      await api(`/orgs/${org.id}/certification-requirements`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: newCertName, description: newCertDescription,
+          content: newCertContent || null,
+          department_id: newCertDepartmentId ? Number(newCertDepartmentId) : null,
+          renewal_period_days: newCertRenewalDays ? Number(newCertRenewalDays) : null,
+        }),
+      });
+      setShowNewCertForm(false);
+      setNewCertName(""); setNewCertDescription(""); setNewCertContent("");
+      setNewCertDepartmentId(""); setNewCertRenewalDays("");
+      const rows = await api<CertificationRequirement[]>(`/orgs/${org.id}/certification-requirements`);
+      setCertRequirements(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't create that requirement.");
+    } finally {
+      setCreatingCert(false);
+    }
+  }
+
+  async function deleteCertRequirement(requirementId: number) {
+    if (!confirm("Delete this certification requirement? Existing completion records stay, but no one will be tracked against it anymore.")) return;
+    try {
+      await api(`/orgs/${org.id}/certification-requirements/${requirementId}`, { method: "DELETE" });
+      const rows = await api<CertificationRequirement[]>(`/orgs/${org.id}/certification-requirements`);
+      setCertRequirements(rows);
+    } catch (err: any) {
+      alert(err.message || "Couldn't delete that requirement.");
+    }
+  }
+
+  async function toggleCertCompletions(requirementId: number) {
+    if (certCompletionsOpenFor === requirementId) {
+      setCertCompletionsOpenFor(null);
+      return;
+    }
+    setCertCompletionsOpenFor(requirementId);
+    try {
+      const rows = await api<EmployeeCertification[]>(`/orgs/${org.id}/certification-requirements/${requirementId}/completions`);
+      setCertCompletions((prev) => ({ ...prev, [requirementId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't load completions.");
+    }
+  }
+
+  async function verifyCertCompletion(completionId: number, requirementId: number) {
+    try {
+      await api(`/orgs/${org.id}/employee-certifications/${completionId}/verify`, { method: "POST" });
+      const rows = await api<EmployeeCertification[]>(`/orgs/${org.id}/certification-requirements/${requirementId}/completions`);
+      setCertCompletions((prev) => ({ ...prev, [requirementId]: rows }));
+    } catch (err: any) {
+      alert(err.message || "Couldn't verify that completion.");
+    }
   }
 
   async function addLesson() {
@@ -577,6 +648,105 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
           </button>
         </div>
         {checklistError && <p className="error-text">{checklistError}</p>}
+      </div>
+
+      <div className="card">
+        <div className="card-row">
+          <h3 style={{ marginTop: 0 }}>Compliance certifications</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNewCertForm(!showNewCertForm)}>
+            {showNewCertForm ? "Cancel" : "+ New requirement"}
+          </button>
+        </div>
+        <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          Recurring, expiring requirements — HIPAA training, safety certifications, licensure —
+          distinct from the one-time checklist above. Set a renewal period and Riseply reminds
+          employees before it lapses.
+        </p>
+
+        {showNewCertForm && (
+          <div style={{ padding: 12, border: "1px solid var(--border, #eee)", borderRadius: 6, marginBottom: 12 }}>
+            <div className="field">
+              <label>Name</label>
+              <input value={newCertName} onChange={(e) => setNewCertName(e.target.value)} placeholder="e.g. HIPAA Training" />
+            </div>
+            <div className="field">
+              <label>Description (optional)</label>
+              <input value={newCertDescription} onChange={(e) => setNewCertDescription(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>In-app content to acknowledge (optional)</label>
+              <textarea value={newCertContent} onChange={(e) => setNewCertContent(e.target.value)} rows={3}
+                        placeholder="Leave blank if this is completed elsewhere (e.g. an in-person training) — employees will just self-attest instead of reading text here." />
+            </div>
+            <div className="field">
+              <label>Department (optional)</label>
+              <select value={newCertDepartmentId} onChange={(e) => setNewCertDepartmentId(e.target.value)}>
+                <option value="">Company-wide</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Renewal period, in days (optional — leave blank for a one-time cert)</label>
+              <input type="number" min={1} value={newCertRenewalDays} onChange={(e) => setNewCertRenewalDays(e.target.value)} placeholder="e.g. 365" />
+            </div>
+            <button className="btn btn-primary btn-sm" disabled={creatingCert || !newCertName.trim()} onClick={createCertRequirement}>
+              {creatingCert ? "Creating…" : "Create requirement"}
+            </button>
+          </div>
+        )}
+
+        {certRequirements.length === 0 ? (
+          <div className="empty-state">
+            No certification requirements yet — add one above to start tracking compliance
+            training and licensure.
+          </div>
+        ) : (
+          certRequirements.map((req) => (
+            <div key={req.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+              <div className="card-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {req.name}
+                    {req.department_name && <span className="hint"> · {req.department_name}</span>}
+                    {req.renewal_period_days && <span className="hint"> · renews every {req.renewal_period_days} days</span>}
+                  </div>
+                  {req.description && <div className="hint" style={{ marginTop: 4 }}>{req.description}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => toggleCertCompletions(req.id)}>
+                    {certCompletionsOpenFor === req.id ? "Hide" : "Completions"}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => deleteCertRequirement(req.id)}>Delete</button>
+                </div>
+              </div>
+              {certCompletionsOpenFor === req.id && (
+                <div style={{ marginTop: 8, marginLeft: 12 }}>
+                  {(certCompletions[req.id] || []).length === 0 ? (
+                    <p className="hint">No completions yet.</p>
+                  ) : (
+                    (certCompletions[req.id] || []).map((c) => (
+                      <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>
+                            {c.applicant_name} <span className="hint">· {c.applicant_email}</span>
+                          </div>
+                          <div className="hint">
+                            Completed {new Date(c.completed_at).toLocaleDateString()}
+                            {c.expires_at && ` · expires ${new Date(c.expires_at).toLocaleDateString()}`}
+                            {c.verified_at ? " · ✓ verified" : " · not yet verified"}
+                          </div>
+                        </div>
+                        {!c.verified_at && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => verifyCertCompletion(c.id, req.id)}>Verify</button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       <div className="card">
