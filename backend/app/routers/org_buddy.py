@@ -167,9 +167,14 @@ def update_org_settings(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Org-wide branding settings -- logo_url only for now. Org-wide
-    admin only (not department_admin -- branding applies to the whole
-    company, same scope as billing and creating departments)."""
+    """Org-wide branding and workflow settings. Org-wide admin only
+    (not department_admin -- these apply to the whole company, same
+    scope as billing and creating departments). A partial update:
+    logo_url is always set from whatever's sent (empty string clears
+    it, matching existing behavior), but
+    require_manager_approval_for_internal_jobs only changes when
+    explicitly included -- see OrgSettingsUpdate's own docstring for
+    why that one specifically needs None-means-leave-alone semantics."""
     _require_admin(db, organization_id, user.id)
     org = db.query(models.Organization).filter_by(id=organization_id).first()
 
@@ -178,6 +183,8 @@ def update_org_settings(
         raise HTTPException(status_code=400, detail="Logo URL must start with http:// or https://")
 
     org.logo_url = logo_url
+    if payload.require_manager_approval_for_internal_jobs is not None:
+        org.require_manager_approval_for_internal_jobs = payload.require_manager_approval_for_internal_jobs
     db.commit()
     db.refresh(org)
     return org
@@ -999,6 +1006,94 @@ def list_my_direct_reports(
         ))
 
     return results
+
+
+@router.get("/{organization_id}/my-pending-approvals", response_model=list[schemas.InternalJobApplicationOut])
+def list_my_pending_approvals(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Same self-scoping-by-manager_email access pattern as
+    list_my_direct_reports and decide_internal_job_application below --
+    no admin check, the query itself can only ever return applications
+    routed to THIS caller. Lets a manager actually discover what's
+    waiting on them, rather than needing to already know an
+    application_id to call decide() with."""
+    rows = (
+        db.query(models.InternalJobApplication, models.InternalJobPosting, models.Application, models.User)
+        .join(models.InternalJobPosting, models.InternalJobApplication.posting_id == models.InternalJobPosting.id)
+        .join(models.User, models.InternalJobApplication.applicant_user_id == models.User.id)
+        .join(models.Application, (models.Application.user_id == models.InternalJobApplication.applicant_user_id) & (models.Application.organization_id == organization_id))
+        .filter(
+            models.InternalJobPosting.organization_id == organization_id,
+            models.InternalJobApplication.status == "pending_approval",
+            models.Application.manager_email == user.email,
+        )
+        .order_by(models.InternalJobApplication.submitted_at.desc())
+        .all()
+    )
+    return [
+        schemas.InternalJobApplicationOut(
+            id=job_app.id, posting_id=job_app.posting_id,
+            applicant_name=user_row.full_name or user_row.email, applicant_email=user_row.email,
+            note=job_app.note, submitted_at=job_app.submitted_at,
+            status=job_app.status, decline_reason=job_app.decline_reason,
+            posting_title=posting.title,
+        )
+        for job_app, posting, applicant_app, user_row in rows
+    ]
+
+
+@router.post("/{organization_id}/internal-job-applications/{application_id}/decide", response_model=schemas.InternalJobApplicationOut)
+def decide_internal_job_application(
+    organization_id: int,
+    application_id: int,
+    payload: schemas.InternalJobApplicationDecision,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Same self-scoping-by-manager_email access pattern as
+    list_my_direct_reports above -- no _require_admin call. Only the
+    specific manager this application was routed to can decide it: the
+    check is that THIS caller's email matches the applicant's own
+    Application.manager_email, not any kind of org-wide permission."""
+    row = (
+        db.query(models.InternalJobApplication, models.InternalJobPosting)
+        .join(models.InternalJobPosting, models.InternalJobApplication.posting_id == models.InternalJobPosting.id)
+        .filter(
+            models.InternalJobApplication.id == application_id,
+            models.InternalJobPosting.organization_id == organization_id,
+        ).first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Internal job application not found.")
+    application, posting = row
+
+    applicant_app = db.query(models.Application).filter_by(
+        user_id=application.applicant_user_id, organization_id=organization_id,
+    ).first()
+    if not applicant_app or applicant_app.manager_email != user.email:
+        raise HTTPException(status_code=403, detail="You're not the manager this application was routed to.")
+
+    if application.status != "pending_approval":
+        raise HTTPException(status_code=400, detail="This application has already been decided.")
+
+    application.status = "approved" if payload.approve else "declined"
+    application.decided_by_user_id = user.id
+    application.decided_at = datetime.utcnow()
+    application.decline_reason = payload.reason if not payload.approve else ""
+    db.commit()
+    db.refresh(application)
+
+    applicant = db.query(models.User).filter_by(id=application.applicant_user_id).first()
+    return schemas.InternalJobApplicationOut(
+        id=application.id, posting_id=application.posting_id,
+        applicant_name=(applicant.full_name or applicant.email) if applicant else "Unknown",
+        applicant_email=applicant.email if applicant else "",
+        note=application.note, submitted_at=application.submitted_at,
+        status=application.status, decline_reason=application.decline_reason,
+    )
 
 
 @router.get("/{organization_id}/mentors", response_model=list[schemas.OrgContactOut])
@@ -1826,6 +1921,7 @@ def list_internal_job_applicants(
             id=app_row.id, posting_id=app_row.posting_id,
             applicant_name=user_row.full_name or user_row.email, applicant_email=user_row.email,
             note=app_row.note, submitted_at=app_row.submitted_at,
+            status=app_row.status, decline_reason=app_row.decline_reason,
         )
         for app_row, user_row in rows
     ]

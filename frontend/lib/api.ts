@@ -207,6 +207,7 @@ export interface Organization {
   created_at: string;
   is_sandbox: boolean;
   logo_url: string;
+  require_manager_approval_for_internal_jobs: boolean;
 }
 
 export interface OrgContent {
@@ -401,6 +402,7 @@ export interface InternalJobPosting {
   applicant_count: number;
   has_applied: boolean | null;
   matches_your_goal: boolean | null;
+  my_application_status: string | null;
 }
 
 export interface InternalJobApplication {
@@ -410,6 +412,9 @@ export interface InternalJobApplication {
   applicant_email: string;
   note: string;
   submitted_at: string;
+  status: string;
+  decline_reason: string;
+  posting_title: string | null;
 }
 
 export interface CertificationRequirement {

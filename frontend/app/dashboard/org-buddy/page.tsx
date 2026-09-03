@@ -164,6 +164,8 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [addingDept, setAddingDept] = useState(false);
   const [deptError, setDeptError] = useState("");
   const [logoUrl, setLogoUrl] = useState(org.logo_url);
+  const [requireManagerApproval, setRequireManagerApproval] = useState(org.require_manager_approval_for_internal_jobs);
+  const [savingApprovalSetting, setSavingApprovalSetting] = useState(false);
   const [savingLogo, setSavingLogo] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [contentDept, setContentDept] = useState<string>("");
@@ -231,7 +233,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgQALog[]>(`/orgs/${org.id}/qa-logs?unmatched_only=${qaFilter === "unmatched"}`).then(setQaLogs).catch(() => setQaLogs(null));
   }
 
-  useEffect(() => { load(); setLogoUrl(org.logo_url); }, [org.id, qaFilter]);
+  useEffect(() => { load(); setLogoUrl(org.logo_url); setRequireManagerApproval(org.require_manager_approval_for_internal_jobs); }, [org.id, qaFilter]);
   useEffect(() => {
     api<string[]>("/orgs/content/categories").then(setContentCategories).catch(() => {});
   }, []);
@@ -400,6 +402,27 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
       setLogoError(err.message || "Couldn't save that logo URL.");
     } finally {
       setSavingLogo(false);
+    }
+  }
+
+  async function saveApprovalSetting(value: boolean) {
+    setSavingApprovalSetting(true);
+    const previous = requireManagerApproval;
+    setRequireManagerApproval(value);  // optimistic -- feels instant for a plain checkbox
+    try {
+      // logo_url still needs to be sent (the endpoint's own partial-
+      // update semantics only spare require_manager_approval_for_
+      // internal_jobs from being reset when omitted, not logo_url,
+      // which is always set from whatever's in the payload).
+      await api(`/orgs/${org.id}/settings`, {
+        method: "PUT",
+        body: JSON.stringify({ logo_url: logoUrl, require_manager_approval_for_internal_jobs: value }),
+      });
+    } catch (err: any) {
+      setRequireManagerApproval(previous);  // revert on failure
+      alert(err.message || "Couldn't save that setting.");
+    } finally {
+      setSavingApprovalSetting(false);
     }
   }
 
@@ -572,6 +595,25 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             </button>
           </div>
           {logoError && <p className="error-text">{logoError}</p>}
+        </div>
+
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto" }}
+              checked={requireManagerApproval}
+              onChange={(e) => saveApprovalSetting(e.target.checked)}
+              disabled={savingApprovalSetting}
+            />
+            Require manager approval for internal job applications
+          </label>
+          <p className="hint" style={{ marginTop: 4, marginBottom: 0 }}>
+            When on, an employee's application routes to their manager (from the roster's
+            manager email) before it's a live internal transfer request. Applications from
+            employees with no manager on file still go through immediately, same as when this
+            is off.
+          </p>
         </div>
       </div>
 

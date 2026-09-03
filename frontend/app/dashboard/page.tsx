@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, DirectReport } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, DirectReport, InternalJobApplication } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -30,6 +30,8 @@ export default function OverviewPage() {
   const [hasOrgAdminAccess, setHasOrgAdminAccess] = useState<boolean | null>(null);
   const [isOrgEmployee, setIsOrgEmployee] = useState(false);
   const [directReports, setDirectReports] = useState<DirectReport[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<InternalJobApplication[]>([]);
+  const [resolvedOrgId, setResolvedOrgId] = useState<number | null>(null);
 
   async function load() {
     // Promise.allSettled rather than Promise.all -- if literally ANY
@@ -118,10 +120,31 @@ export default function OverviewPage() {
       // than guess at an org_id that might not exist.
       const orgId = orgs.length > 0 ? orgs[0].id : orgAffiliatedApp?.organization_id;
       if (orgId) {
+        setResolvedOrgId(orgId);
         api<DirectReport[]>(`/orgs/${orgId}/my-reports`).then(setDirectReports).catch(() => {});
+        api<InternalJobApplication[]>(`/orgs/${orgId}/my-pending-approvals`).then(setPendingApprovals).catch(() => {});
       }
     });
   }, []);
+
+  async function decideApproval(applicationId: number, approve: boolean) {
+    if (!resolvedOrgId) return;
+    let reason = "";
+    if (!approve) {
+      const entered = prompt("Reason for declining (optional):");
+      if (entered === null) return;  // cancelled
+      reason = entered;
+    }
+    try {
+      await api(`/orgs/${resolvedOrgId}/internal-job-applications/${applicationId}/decide`, {
+        method: "POST",
+        body: JSON.stringify({ approve, reason }),
+      });
+      setPendingApprovals((prev) => prev.filter((a) => a.id !== applicationId));
+    } catch (err: any) {
+      alert(err.message || "Couldn't record that decision.");
+    }
+  }
 
   async function runPipeline() {
     setRunning(true);
@@ -203,7 +226,12 @@ export default function OverviewPage() {
     return null;
   }
   if (hasOrgAdminAccess || isOrgEmployee) {
-    return <OrgAffiliatedOverview isAdmin={hasOrgAdminAccess} userName={userName} directReports={directReports} />;
+    return (
+      <OrgAffiliatedOverview
+        isAdmin={hasOrgAdminAccess} userName={userName} directReports={directReports}
+        pendingApprovals={pendingApprovals} onDecideApproval={decideApproval}
+      />
+    );
   }
 
   return (
@@ -334,7 +362,7 @@ export default function OverviewPage() {
   );
 }
 
-function OrgAffiliatedOverview({ isAdmin, userName, directReports }: { isAdmin: boolean; userName: string; directReports: DirectReport[] }) {
+function OrgAffiliatedOverview({ isAdmin, userName, directReports, pendingApprovals, onDecideApproval }: { isAdmin: boolean; userName: string; directReports: DirectReport[]; pendingApprovals: InternalJobApplication[]; onDecideApproval: (id: number, approve: boolean) => void }) {
   return (
     <div>
       <h1>Welcome{userName ? `, ${userName}` : ""}!</h1>
@@ -397,6 +425,31 @@ function OrgAffiliatedOverview({ isAdmin, userName, directReports }: { isAdmin: 
                   ` · ${r.certifications_completed}/${r.certifications_total} certifications current`
                   + (r.certifications_expired > 0 ? ` (${r.certifications_expired} expired)` : "")
                 )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pendingApprovals.length > 0 && (
+        <div className="card" style={{ marginTop: 24 }}>
+          <h3 style={{ marginTop: 0 }}>Waiting on your approval</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            Internal job applications from people who list you as their manager.
+          </p>
+          {pendingApprovals.map((a) => (
+            <div key={a.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {a.applicant_name} <span className="hint">→ {a.posting_title}</span>
+                  </div>
+                  {a.note && <div className="hint">{a.note}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => onDecideApproval(a.id, true)}>Approve</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onDecideApproval(a.id, false)}>Decline</button>
+                </div>
               </div>
             </div>
           ))}

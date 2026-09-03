@@ -526,10 +526,9 @@ def list_open_internal_jobs(
         .order_by(models.InternalJobPosting.created_at.desc())
         .all()
     )
-    applied_posting_ids = {
-        a.posting_id for a in
-        db.query(models.InternalJobApplication).filter_by(applicant_user_id=user.id).all()
-    }
+    my_applications = db.query(models.InternalJobApplication).filter_by(applicant_user_id=user.id).all()
+    applied_posting_ids = {a.posting_id for a in my_applications}
+    status_by_posting = {a.posting_id: a.status for a in my_applications}
 
     # Same active-goal lookup pattern used for AI mentor suggestions --
     # most recent unachieved CareerGoal, if any. A goal_text of ""
@@ -547,6 +546,7 @@ def list_open_internal_jobs(
         internal_jobs.posting_out(
             db, p, has_applied=p.id in applied_posting_ids,
             matches_your_goal=internal_jobs.goal_matches_posting(goal_text, p),
+            my_application_status=status_by_posting.get(p.id),
         )
         for p in rows
     ]
@@ -565,7 +565,16 @@ def apply_to_internal_job(
     doesn't reuse the external tailored-resume flow. One application
     per person per posting; a second attempt is a clear, specific
     error rather than a generic 400, since "you already applied" is a
-    genuinely different situation from a malformed request."""
+    genuinely different situation from a malformed request.
+
+    If the org has require_manager_approval_for_internal_jobs on AND
+    this employee has a manager on file (app_row.manager_email, set at
+    join time from the roster upload), the application starts
+    "pending_approval" and the manager gets notified -- they decide
+    via a separate endpoint, same self-scoping-by-manager_email access
+    pattern as the manager tier's /my-reports. Otherwise (approval off,
+    or no manager on file to route it to) it's immediately "approved",
+    the original friction-free behavior, unchanged."""
     app_row = _get_owned_application(db, application_id, user.id)
     if not app_row.organization_id:
         raise HTTPException(status_code=404, detail="You're not affiliated with an organization.")
@@ -580,10 +589,30 @@ def apply_to_internal_job(
     if existing:
         raise HTTPException(status_code=400, detail="You've already applied to this posting.")
 
-    application = models.InternalJobApplication(posting_id=posting_id, applicant_user_id=user.id, note=payload.note)
+    org = db.query(models.Organization).filter_by(id=app_row.organization_id).first()
+    needs_approval = bool(org and org.require_manager_approval_for_internal_jobs and app_row.manager_email)
+    status = "pending_approval" if needs_approval else "approved"
+
+    application = models.InternalJobApplication(
+        posting_id=posting_id, applicant_user_id=user.id, note=payload.note, status=status,
+    )
     db.add(application)
     db.commit()
-    return {"applied": True}
+
+    if needs_approval:
+        try:
+            notifier.send_email(
+                app_row.manager_email,
+                f'{user.full_name or user.email} applied to an internal opening: "{posting.title}"',
+                (
+                    f"{user.full_name or user.email} applied to \"{posting.title}\" and listed you as their "
+                    f"manager. Approve or decline this internal application from your dashboard."
+                ),
+            )
+        except Exception:
+            pass  # best-effort -- the application itself is already saved either way
+
+    return {"applied": True, "status": status}
 
 
 @router.get("/{application_id}/certifications", response_model=list[schemas.CertificationRequirementOut])

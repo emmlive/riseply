@@ -38,6 +38,7 @@ def goal_matches_posting(goal_text: str, posting: models.InternalJobPosting) -> 
 def posting_out(
     db: Session, posting: models.InternalJobPosting,
     has_applied: bool | None = None, matches_your_goal: bool | None = None,
+    my_application_status: str | None = None,
 ) -> schemas.InternalJobPostingOut:
     department = db.query(models.Department).filter_by(id=posting.department_id).first() if posting.department_id else None
     applicant_count = db.query(models.InternalJobApplication).filter_by(posting_id=posting.id).count()
@@ -46,4 +47,5 @@ def posting_out(
         department_name=department.name if department else None,
         description=posting.description, created_at=posting.created_at, closed_at=posting.closed_at,
         applicant_count=applicant_count, has_applied=has_applied, matches_your_goal=matches_your_goal,
+        my_application_status=my_application_status,
     )

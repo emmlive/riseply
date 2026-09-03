@@ -1095,7 +1095,11 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
                       {job.description && <div className="hint" style={{ marginTop: 2 }}>{job.description}</div>}
                     </div>
                     {job.has_applied ? (
-                      <span className="pill pill-approved" style={{ flexShrink: 0 }}>Applied</span>
+                      <span className={`pill ${job.my_application_status === "declined" ? "" : "pill-approved"}`} style={{ flexShrink: 0 }}>
+                        {job.my_application_status === "pending_approval" ? "Pending manager approval"
+                          : job.my_application_status === "declined" ? "Declined"
+                          : "Applied"}
+                      </span>
                     ) : applyingToJobId === job.id ? (
                       <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
                         <input
