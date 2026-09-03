@@ -121,8 +121,7 @@ function JobBuddyPicker() {
 
       {loaded && apps.length === 0 && !showAddForm && (
         <div className="empty-state">
-          No accepted offers yet. Mark an application "Accepted" on the
-          Applications page, or add a job you already have above.
+          No accepted offers yet — add a job you already have above to unlock Job Buddy for it.
         </div>
       )}
 

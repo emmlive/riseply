@@ -24,7 +24,6 @@ import QuotaLimitModal from "@/components/QuotaLimitModal";
 // separate system from external search, not a rename of it.
 const ALWAYS_NAV = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/job-buddy", label: "Job Buddy" },
   { href: "/dashboard/profile", label: "Profile" },
   { href: "/dashboard/knowledge-base", label: "Knowledge Base" },
   { href: "/dashboard/support", label: "Support" },
@@ -87,6 +86,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard" className={`sidebar-link ${pathname === "/dashboard" ? "active" : ""}`}>
           Overview
         </Link>
+        {/* Job Buddy is an employee's own home base (mentor, meetings,
+            internal jobs, onboarding chat) -- tied to THEIR OWN
+            org-linked Application. A pure admin with no employee
+            Application of their own would land on an empty picker
+            offering to "add a job you already have," which isn't
+            meaningfully different from not having the link at all.
+            Shown whenever isOrgEmployee is true regardless of admin
+            status (someone can genuinely be both, e.g. an admin who
+            also joined their own org as an employee to preview the
+            experience -- in that case Job Buddy has real content and
+            should stay), and also shown to plain individual users who
+            are neither admin nor org employee (their normal, unrelated
+            use of Job Buddy for personal job tracking). */}
+        {(isOrgEmployee || (!hasOrgAdminAccess && !isOrgEmployee)) && (
+          <Link href="/dashboard/job-buddy" className={`sidebar-link ${pathname === "/dashboard/job-buddy" ? "active" : ""}`}>
+            Job Buddy
+          </Link>
+        )}
         {showIndividualNav && INDIVIDUAL_NAV.map((item) => (
           <Link
             key={item.href}
