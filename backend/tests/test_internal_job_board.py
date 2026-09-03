@@ -59,9 +59,9 @@ def _make_job(db):
     return job
 
 
-def _make_application(db, user_id, org_id=None):
+def _make_application(db, user_id, org_id=None, manager_email=""):
     job = _make_job(db)
-    app_row = models.Application(user_id=user_id, job_id=job.id, organization_id=org_id)
+    app_row = models.Application(user_id=user_id, job_id=job.id, organization_id=org_id, manager_email=manager_email)
     db.add(app_row)
     db.commit()
     db.refresh(app_row)
@@ -285,3 +285,254 @@ def test_apply_404_for_posting_in_different_org(db):
     _login_as(employee)
     resp = client.post(f"/applications/{employee_app.id}/internal-jobs/{other_posting['id']}/apply", json={"note": "x"})
     assert resp.status_code == 404
+
+
+# --- manager approval workflow ---
+
+def test_approval_off_by_default_application_immediately_approved(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+
+    _login_as(employee)
+    resp = client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "approved"
+
+
+def test_approval_on_but_no_manager_on_file_falls_back_to_approved(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)  # no manager_email set
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+
+    _login_as(employee)
+    resp = client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    assert resp.json()["status"] == "approved"  # nowhere to route it, so no artificial blocking
+
+
+def test_approval_on_with_manager_starts_pending_and_notifies_manager(db):
+    from unittest.mock import patch
+
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+
+    _login_as(employee)
+    with patch("app.routers.job_buddy.notifier.send_email") as mock_send:
+        resp = client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    assert resp.json()["status"] == "pending_approval"
+    mock_send.assert_called_once()
+    assert mock_send.call_args.args[0] == manager.email
+
+
+def test_manager_can_approve_pending_application(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+
+    _login_as(employee)
+    apply_resp = client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+
+    _login_as(admin)
+    completions = client.get(f"/orgs/{org.id}/internal-jobs/{posting['id']}/applicants").json()
+    application_id = completions[0]["id"]
+    assert completions[0]["status"] == "pending_approval"
+
+    _login_as(manager)
+    resp = client.post(f"/orgs/{org.id}/internal-job-applications/{application_id}/decide", json={"approve": True})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "approved"
+
+
+def test_manager_can_decline_with_reason(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    _login_as(admin)
+    application_id = client.get(f"/orgs/{org.id}/internal-jobs/{posting['id']}/applicants").json()[0]["id"]
+
+    _login_as(manager)
+    resp = client.post(
+        f"/orgs/{org.id}/internal-job-applications/{application_id}/decide",
+        json={"approve": False, "reason": "Not enough tenure in current role yet."},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "declined"
+    assert resp.json()["decline_reason"] == "Not enough tenure in current role yet."
+
+
+def test_only_the_actual_manager_can_decide(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    outsider = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    _login_as(admin)
+    application_id = client.get(f"/orgs/{org.id}/internal-jobs/{posting['id']}/applicants").json()[0]["id"]
+
+    _login_as(outsider)
+    resp = client.post(f"/orgs/{org.id}/internal-job-applications/{application_id}/decide", json={"approve": True})
+    assert resp.status_code == 403
+
+
+def test_cannot_decide_an_already_decided_application(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    _login_as(admin)
+    application_id = client.get(f"/orgs/{org.id}/internal-jobs/{posting['id']}/applicants").json()[0]["id"]
+
+    _login_as(manager)
+    client.post(f"/orgs/{org.id}/internal-job-applications/{application_id}/decide", json={"approve": True})
+    resp = client.post(f"/orgs/{org.id}/internal-job-applications/{application_id}/decide", json={"approve": False})
+    assert resp.status_code == 400
+
+
+def test_employee_sees_their_own_application_status(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+
+    browse = client.get(f"/applications/{employee_app.id}/internal-jobs").json()
+    assert browse[0]["my_application_status"] == "pending_approval"
+
+
+def test_settings_partial_update_does_not_reset_approval_flag(db):
+    """The real bug this schema design specifically prevents -- a
+    logo-only settings save shouldn't silently turn approval back off."""
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    resp = client.put(f"/orgs/{org.id}/settings", json={"logo_url": "https://example.com/logo.png"})
+    assert resp.status_code == 200
+    assert resp.json()["require_manager_approval_for_internal_jobs"] is True
+    assert resp.json()["logo_url"] == "https://example.com/logo.png"
+
+
+def test_settings_can_explicitly_toggle_approval_flag(db):
+    admin, org, employee, employee_app = _make_org_with_admin_and_employee(db)
+
+    _login_as(admin)
+    resp = client.put(f"/orgs/{org.id}/settings", json={"require_manager_approval_for_internal_jobs": True})
+    assert resp.status_code == 200
+    assert resp.json()["require_manager_approval_for_internal_jobs"] is True
+
+
+def test_manager_can_list_their_pending_approvals(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+
+    _login_as(manager)
+    resp = client.get(f"/orgs/{org.id}/my-pending-approvals")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["posting_title"] == "Charge Nurse"
+    assert body[0]["applicant_email"] == employee.email
+
+
+def test_pending_approvals_list_excludes_already_decided(db):
+    admin = _make_user(db)
+    org = _make_org(db)
+    _make_member(db, org.id, admin.id, role="admin")
+    manager = _make_user(db)
+    employee = _make_user(db)
+    employee_app = _make_application(db, employee.id, org.id, manager_email=manager.email)
+    org_row = db.query(models.Organization).filter_by(id=org.id).first()
+    org_row.require_manager_approval_for_internal_jobs = True
+    db.commit()
+
+    _login_as(admin)
+    posting = client.post(f"/orgs/{org.id}/internal-jobs", json={"title": "Charge Nurse"}).json()
+    _login_as(employee)
+    client.post(f"/applications/{employee_app.id}/internal-jobs/{posting['id']}/apply", json={"note": "x"})
+    _login_as(admin)
+    application_id = client.get(f"/orgs/{org.id}/internal-jobs/{posting['id']}/applicants").json()[0]["id"]
+
+    _login_as(manager)
+    client.post(f"/orgs/{org.id}/internal-job-applications/{application_id}/decide", json={"approve": True})
+    resp = client.get(f"/orgs/{org.id}/my-pending-approvals")
+    assert resp.json() == []
+

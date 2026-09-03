@@ -478,6 +478,15 @@ class Organization(Base):
     # aggregates across organizations excludes rows where this is true.
     is_sandbox = Column(Boolean, default=False, server_default="false")
 
+    # --- Internal Jobs: optional manager approval gate ---
+    # Off by default -- most orgs want the friction-free "apply
+    # directly, admin sees it" flow Internal Jobs originally shipped
+    # with. Turning this on routes new applications through the
+    # applicant's own manager (via Application.manager_email, the same
+    # field the manager tier's /my-reports already reuses) before an
+    # admin treats it as a live internal transfer request.
+    require_manager_approval_for_internal_jobs = Column(Boolean, default=False, server_default="false")
+
     # --- Billing: hybrid (base plan + per-seat overage) ---
     plan = Column(String, default="", server_default="")  # "" | starter | growth | enterprise
     subscription_status = Column(String, default="", server_default="")
@@ -789,6 +798,16 @@ class InternalJobApplication(Base):
     applicant_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     note = Column(Text, default="", server_default="")
     submitted_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    # "approved" by default -- preserves the original friction-free
+    # behavior for orgs that never turn on
+    # require_manager_approval_for_internal_jobs. Only ever becomes
+    # "pending_approval" at creation time when that org setting is on
+    # AND the applicant has a manager on file to route it to; "declined"
+    # only reachable via a manager's explicit decision, never a default.
+    status = Column(String, default="approved", server_default="approved")
+    decided_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    decline_reason = Column(Text, default="", server_default="")
 
 
 class MentorAssignment(Base):

@@ -258,10 +258,16 @@ class OrganizationOut(BaseModel):
     created_at: datetime
     is_sandbox: bool = False
     logo_url: str = ""
+    require_manager_approval_for_internal_jobs: bool = False
 
 
 class OrgSettingsUpdate(BaseModel):
     logo_url: str = Field(default="", max_length=1000)
+    # None (not False) as the "don't touch this" default -- distinct
+    # from an explicit False, so a settings save that doesn't know
+    # about this field (e.g. a logo-only update from an older client)
+    # can't silently reset it back off if it was previously turned on.
+    require_manager_approval_for_internal_jobs: bool | None = None
 
 
 class DepartmentCreate(BaseModel):
@@ -552,6 +558,13 @@ class InternalJobPostingOut(BaseModel):
     # itself to anyone else; it's a private signal used only to
     # reorder/highlight this specific employee's own view.
     matches_your_goal: bool | None = None
+    # Same has_applied/matches_your_goal pattern -- employee-facing
+    # only, None on the admin endpoint. has_applied stays a plain
+    # boolean for backward compatibility; this carries the actual
+    # workflow state once approval routing is involved (still just
+    # "approved" immediately for orgs with approval off, matching the
+    # original behavior has_applied alone used to fully capture).
+    my_application_status: str | None = None
 
 
 class InternalJobApplicationCreate(BaseModel):
@@ -565,6 +578,17 @@ class InternalJobApplicationOut(BaseModel):
     applicant_email: str
     note: str
     submitted_at: datetime
+    status: str  # "approved" | "pending_approval" | "declined"
+    decline_reason: str
+    # Only populated by list_my_pending_approvals -- the admin-facing
+    # applicants list already shows applications grouped under their
+    # posting's own header, so the title would be redundant there.
+    posting_title: str | None = None
+
+
+class InternalJobApplicationDecision(BaseModel):
+    approve: bool
+    reason: str = Field(default="", max_length=1000)
 
 
 class CertificationRequirementCreate(BaseModel):

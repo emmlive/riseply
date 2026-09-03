@@ -192,8 +192,13 @@ function InternalJobsDashboard({ org }: { org: Organization }) {
                 ) : (
                   (applicants[p.id] || []).map((a) => (
                     <div key={a.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border, #eee)" }}>
-                      <div style={{ fontWeight: 600 }}>{a.applicant_name} <span className="hint">· {a.applicant_email}</span></div>
+                      <div style={{ fontWeight: 600 }}>
+                        {a.applicant_name} <span className="hint">· {a.applicant_email}</span>
+                        {a.status === "pending_approval" && <span className="pill" style={{ marginLeft: 8, fontSize: "0.7rem" }}>Pending manager approval</span>}
+                        {a.status === "declined" && <span className="pill" style={{ marginLeft: 8, fontSize: "0.7rem" }}>Declined by manager</span>}
+                      </div>
                       {a.note && <div className="hint">{a.note}</div>}
+                      {a.status === "declined" && a.decline_reason && <div className="hint">Reason: {a.decline_reason}</div>}
                     </div>
                   ))
                 )}
