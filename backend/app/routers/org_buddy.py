@@ -718,6 +718,53 @@ def get_org_benchmark(
     )
 
 
+# Minimum respondents before sentiment percentages are shown -- see
+# PulseSummary's own docstring for why. Deliberately smaller than
+# rise_index's cross-org MIN_SAMPLE_SIZE (5): this is a within-one-org
+# threshold protecting against inferring ONE person's answer from a
+# tiny group, not a cross-company re-identification risk, so a lower
+# bar is appropriate -- most small teams would never see a summary at
+# all with a threshold of 5.
+MIN_PULSE_RESPONDENTS = 3
+
+
+@router.get("/{organization_id}/pulse-summary", response_model=schemas.PulseSummary)
+def get_pulse_summary(
+    organization_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Aggregate-only sentiment for this org over the last N days --
+    see PulseSummary's own docstring for the anonymity threshold.
+    comment is never included here or anywhere admin-facing, not even
+    in aggregate -- only sentiment rolls up."""
+    _require_scope_admin(db, organization_id, user.id, None)
+    days = max(1, min(days, 365))
+    since = datetime.utcnow() - timedelta(days=days)
+
+    app_ids = [a.id for a in db.query(models.Application.id).filter_by(organization_id=organization_id).all()]
+    checkins = db.query(models.PulseCheckIn).filter(
+        models.PulseCheckIn.application_id.in_(app_ids), models.PulseCheckIn.sent_at >= since,
+    ).all() if app_ids else []
+
+    total_sent = len(checkins)
+    responded = [c for c in checkins if c.responded_at is not None]
+    total_responded = len(responded)
+    response_rate = round(total_responded / total_sent * 100, 1) if total_sent else 0.0
+
+    great_pct = okay_pct = struggling_pct = None
+    if total_responded >= MIN_PULSE_RESPONDENTS:
+        great_pct = round(sum(1 for c in responded if c.sentiment == "great") / total_responded * 100, 1)
+        okay_pct = round(sum(1 for c in responded if c.sentiment == "okay") / total_responded * 100, 1)
+        struggling_pct = round(sum(1 for c in responded if c.sentiment == "struggling") / total_responded * 100, 1)
+
+    return schemas.PulseSummary(
+        period_days=days, total_sent=total_sent, total_responded=total_responded,
+        response_rate_pct=response_rate, great_pct=great_pct, okay_pct=okay_pct, struggling_pct=struggling_pct,
+    )
+
+
 @router.get("/{organization_id}/analytics/export.pdf")
 def org_analytics_pdf(
     organization_id: int,

@@ -615,6 +615,55 @@ def apply_to_internal_job(
     return {"applied": True, "status": status}
 
 
+@router.get("/{application_id}/pulse-checkins/pending", response_model=schemas.PulseCheckInOut | None)
+def get_pending_pulse_checkin(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The most recent unanswered check-in, if any -- null when
+    there's nothing waiting (no check-in has ever been sent, or the
+    last one was already answered). No sentiment/comment fields on
+    the response -- there's nothing to show yet, this is a prompt to
+    answer, not a past answer to review."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    pending = (
+        db.query(models.PulseCheckIn)
+        .filter_by(application_id=app_row.id, responded_at=None)
+        .order_by(models.PulseCheckIn.sent_at.desc())
+        .first()
+    )
+    if not pending:
+        return None
+    return schemas.PulseCheckInOut(id=pending.id, sent_at=pending.sent_at)
+
+
+@router.post("/{application_id}/pulse-checkins/{checkin_id}/respond")
+def respond_to_pulse_checkin(
+    application_id: int,
+    checkin_id: int,
+    payload: schemas.PulseCheckInRespond,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """comment is never surfaced to anyone but the employee themselves
+    -- not returned by any admin-facing endpoint, not even in
+    aggregate. Only sentiment rolls up, and only once
+    MIN_PULSE_RESPONDENTS is met -- see PulseSummary's own docstring."""
+    app_row = _get_owned_application(db, application_id, user.id)
+    checkin = db.query(models.PulseCheckIn).filter_by(id=checkin_id, application_id=app_row.id).first()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="Check-in not found.")
+    if checkin.responded_at is not None:
+        raise HTTPException(status_code=400, detail="This check-in was already answered.")
+
+    checkin.sentiment = payload.sentiment
+    checkin.comment = payload.comment
+    checkin.responded_at = datetime.utcnow()
+    db.commit()
+    return {"recorded": True}
+
+
 @router.get("/{application_id}/certifications", response_model=list[schemas.CertificationRequirementOut])
 def list_my_certifications(
     application_id: int,
