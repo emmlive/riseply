@@ -190,7 +190,8 @@ export default function MentorAsAServicePage() {
 
         <p className="muted" style={{ marginTop: 24, fontSize: "0.9rem" }}>
           Just hired someone? See <Link href="/buddy-as-a-service">Buddy as a Service</Link> for
-          getting them through their first weeks.
+          getting them through their first weeks, or see the full suite at{" "}
+          <Link href="/riseply-enterprise">Riseply Enterprise</Link>.
         </p>
 
         <p className="muted" style={{ marginTop: 32, fontSize: "0.88rem" }}>
