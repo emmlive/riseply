@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 import secrets
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -170,9 +171,9 @@ def update_org_settings(
     """Org-wide branding and workflow settings. Org-wide admin only
     (not department_admin -- these apply to the whole company, same
     scope as billing and creating departments). A partial update:
-    logo_url is always set from whatever's sent (empty string clears
-    it, matching existing behavior), but
-    require_manager_approval_for_internal_jobs only changes when
+    logo_url and accent_color are always set from whatever's sent
+    (empty string clears either, matching existing logo_url behavior),
+    but require_manager_approval_for_internal_jobs only changes when
     explicitly included -- see OrgSettingsUpdate's own docstring for
     why that one specifically needs None-means-leave-alone semantics."""
     _require_admin(db, organization_id, user.id)
@@ -182,7 +183,12 @@ def update_org_settings(
     if logo_url and not (logo_url.startswith("http://") or logo_url.startswith("https://")):
         raise HTTPException(status_code=400, detail="Logo URL must start with http:// or https://")
 
+    accent_color = payload.accent_color.strip()
+    if accent_color and not re.fullmatch(r"#[0-9a-fA-F]{6}", accent_color):
+        raise HTTPException(status_code=400, detail="Accent color must be a 6-digit hex code, e.g. #1F7A6C")
+
     org.logo_url = logo_url
+    org.accent_color = accent_color
     if payload.require_manager_approval_for_internal_jobs is not None:
         org.require_manager_approval_for_internal_jobs = payload.require_manager_approval_for_internal_jobs
     db.commit()

@@ -185,6 +185,7 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         job_location=job.location or "", job_url=job.url or "",
         organization_id=app.organization_id,
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
+        organization_accent_color=(app.organization.accent_color or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
         has_tailored_resume_data=bool(app.tailored_resume_data),
         salary_min=job.salary_min, salary_max=job.salary_max,

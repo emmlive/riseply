@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, downloadFile, API_URL, Organization, OrgContent, OrgUsageStats, OrgAnalytics, OrgRosterEntry, OrgBilling, OrgContact, OrgEmployee, OrgSSOConfig, Department, ChecklistItem, OrgLesson, OrgQALog, User, CertificationRequirement, EmployeeCertification, OrgAnalyticsTrends, OrgBenchmark } from "@/lib/api";
+import OrgThemeOverride from "@/components/OrgThemeOverride";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function OrgBuddyPage() {
@@ -167,6 +168,9 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
   const [deptError, setDeptError] = useState("");
   const [logoUrl, setLogoUrl] = useState(org.logo_url);
   const [requireManagerApproval, setRequireManagerApproval] = useState(org.require_manager_approval_for_internal_jobs);
+  const [accentColor, setAccentColor] = useState(org.accent_color);
+  const [savingAccentColor, setSavingAccentColor] = useState(false);
+  const [accentColorError, setAccentColorError] = useState("");
   const [savingApprovalSetting, setSavingApprovalSetting] = useState(false);
   const [savingLogo, setSavingLogo] = useState(false);
   const [logoError, setLogoError] = useState("");
@@ -237,7 +241,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     api<OrgQALog[]>(`/orgs/${org.id}/qa-logs?unmatched_only=${qaFilter === "unmatched"}`).then(setQaLogs).catch(() => setQaLogs(null));
   }
 
-  useEffect(() => { load(); setLogoUrl(org.logo_url); setRequireManagerApproval(org.require_manager_approval_for_internal_jobs); }, [org.id, qaFilter]);
+  useEffect(() => { load(); setLogoUrl(org.logo_url); setAccentColor(org.accent_color); setRequireManagerApproval(org.require_manager_approval_for_internal_jobs); }, [org.id, qaFilter]);
   useEffect(() => {
     api<string[]>("/orgs/content/categories").then(setContentCategories).catch(() => {});
   }, []);
@@ -401,11 +405,28 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     setSavingLogo(true);
     setLogoError("");
     try {
-      await api(`/orgs/${org.id}/settings`, { method: "PUT", body: JSON.stringify({ logo_url: logoUrl }) });
+      // accent_color must be sent too -- it's an always-set-from-
+      // payload field on the backend (same as logo_url), so omitting
+      // it here would silently wipe out any accent color already
+      // saved. Same reasoning saveApprovalSetting below already
+      // follows for logo_url itself.
+      await api(`/orgs/${org.id}/settings`, { method: "PUT", body: JSON.stringify({ logo_url: logoUrl, accent_color: accentColor }) });
     } catch (err: any) {
       setLogoError(err.message || "Couldn't save that logo URL.");
     } finally {
       setSavingLogo(false);
+    }
+  }
+
+  async function saveAccentColor() {
+    setSavingAccentColor(true);
+    setAccentColorError("");
+    try {
+      await api(`/orgs/${org.id}/settings`, { method: "PUT", body: JSON.stringify({ logo_url: logoUrl, accent_color: accentColor }) });
+    } catch (err: any) {
+      setAccentColorError(err.message || "Couldn't save that accent color.");
+    } finally {
+      setSavingAccentColor(false);
     }
   }
 
@@ -414,13 +435,14 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
     const previous = requireManagerApproval;
     setRequireManagerApproval(value);  // optimistic -- feels instant for a plain checkbox
     try {
-      // logo_url still needs to be sent (the endpoint's own partial-
-      // update semantics only spare require_manager_approval_for_
-      // internal_jobs from being reset when omitted, not logo_url,
-      // which is always set from whatever's in the payload).
+      // logo_url and accent_color both need to be resent -- both are
+      // always-set-from-payload fields on the backend, so omitting
+      // either here would silently wipe it out. Only
+      // require_manager_approval_for_internal_jobs itself has
+      // None-means-leave-alone semantics on the backend.
       await api(`/orgs/${org.id}/settings`, {
         method: "PUT",
-        body: JSON.stringify({ logo_url: logoUrl, require_manager_approval_for_internal_jobs: value }),
+        body: JSON.stringify({ logo_url: logoUrl, accent_color: accentColor, require_manager_approval_for_internal_jobs: value }),
       });
     } catch (err: any) {
       setRequireManagerApproval(previous);  // revert on failure
@@ -559,6 +581,7 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
 
   return (
     <div>
+      <OrgThemeOverride accentColor={org.accent_color} />
       {orgs.length > 1 && (
         <select value={org.id} onChange={(e) => onSwitch(orgs.find((o) => o.id === Number(e.target.value))!)}
                 style={{ marginBottom: 16, width: "auto" }}>
@@ -599,6 +622,28 @@ function OrgDashboard({ org, orgs, onSwitch }: { org: Organization; orgs: Organi
             </button>
           </div>
           {logoError && <p className="error-text">{logoError}</p>}
+        </div>
+
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <label style={{ display: "block", marginBottom: 4 }}>Accent color</label>
+          <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>
+            Applied across Job Buddy and your admin pages — makes Riseply feel like part of
+            your own systems. Leave blank to use Riseply's default color.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(accentColor) ? accentColor : "#1F7A6C"}
+              onChange={(e) => setAccentColor(e.target.value)}
+              style={{ width: 44, height: 36, padding: 2, flexShrink: 0 }}
+            />
+            <input value={accentColor} onChange={(e) => setAccentColor(e.target.value)}
+                   placeholder="#1F7A6C" style={{ flex: 1, maxWidth: 140 }} />
+            <button className="btn btn-ghost btn-sm" onClick={saveAccentColor} disabled={savingAccentColor}>
+              {savingAccentColor ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {accentColorError && <p className="error-text">{accentColorError}</p>}
         </div>
 
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>

@@ -5,6 +5,7 @@ import {
   api, downloadFile, Organization, OrgEmployee, OrgContact, SuggestedMentor,
   MentorMeetingLog, MentorMeetingSchedule, MentorshipRelationship, MEETING_AGENDA_TEMPLATES,
 } from "@/lib/api";
+import OrgThemeOverride from "@/components/OrgThemeOverride";
 
 // This page used to be two cards ("Mentor assignments" and "Group &
 // reciprocal mentoring") living inside Org Buddy's admin page. Pulled out
@@ -289,6 +290,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
 
   return (
     <div>
+      <OrgThemeOverride accentColor={org.accent_color} />
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Mentor assignments</h3>
         <p className="hint" style={{ marginTop: -6, marginBottom: 20 }}>

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting, CertificationRequirement } from "@/lib/api";
+import OrgThemeOverride from "@/components/OrgThemeOverride";
 import MediaEmbed from "@/components/MediaEmbed";
 
 export default function JobBuddyPage() {
@@ -581,6 +582,7 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
 
   return (
     <div>
+      <OrgThemeOverride accentColor={app?.organization_accent_color} />
       <div className="topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {app?.organization_logo_url && (

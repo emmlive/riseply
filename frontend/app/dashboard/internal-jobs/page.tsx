@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Organization, Department, InternalJobPosting, InternalJobApplication } from "@/lib/api";
+import OrgThemeOverride from "@/components/OrgThemeOverride";
 
 // Internal mobility -- an org posts its OWN open roles, employees apply
 // with the resume already on file. Deliberately separate from the
@@ -128,10 +129,12 @@ function InternalJobsDashboard({ org }: { org: Organization }) {
   }
 
   return (
-    <div className="card">
-      <div className="card-row">
-        <h3 style={{ marginTop: 0 }}>Postings</h3>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNewForm(!showNewForm)}>
+    <>
+      <OrgThemeOverride accentColor={org.accent_color} />
+      <div className="card">
+        <div className="card-row">
+          <h3 style={{ marginTop: 0 }}>Postings</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNewForm(!showNewForm)}>
           {showNewForm ? "Cancel" : "+ New posting"}
         </button>
       </div>
@@ -207,6 +210,7 @@ function InternalJobsDashboard({ org }: { org: Organization }) {
           </div>
         ))
       )}
-    </div>
+      </div>
+    </>
   );
 }
