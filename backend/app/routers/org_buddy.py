@@ -897,6 +897,110 @@ def list_employees(
     ]
 
 
+@router.get("/{organization_id}/my-reports", response_model=list[schemas.DirectReportOut])
+def list_my_direct_reports(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """A genuinely separate, narrower tier from admin access -- no
+    _require_admin/_require_scope_admin call here at all. Any logged-in
+    user can call this; the query itself is self-scoping (it can only
+    ever return people whose Application.manager_email matches the
+    caller's OWN email), so there's nothing to authorize beyond being
+    logged in. Someone with zero direct reports just gets an empty
+    list back, same as someone who's never been listed as a manager
+    anywhere -- not a security boundary, since the response can never
+    contain anyone else's data no matter what organization_id is
+    passed.
+
+    manager_email is populated on Application at join time from the
+    roster upload's own manager_email column (see job_buddy.py's
+    add_current_job) -- this reuses that existing field rather than
+    introducing a new reporting-line concept; it was already being
+    captured, just only ever used for a one-off checklist-completion
+    notification until now."""
+    reports = db.query(models.Application).filter_by(
+        organization_id=organization_id, manager_email=user.email,
+    ).all()
+    if not reports:
+        return []
+
+    report_ids = [r.id for r in reports]
+    users_by_id = {
+        u.id: u for u in db.query(models.User).filter(
+            models.User.id.in_([r.user_id for r in reports])
+        ).all()
+    }
+    dept_names = {d.id: d.name for d in db.query(models.Department).filter_by(organization_id=organization_id).all()}
+
+    # Checklist completion, per report -- same company-wide-plus-
+    # department layering rule used everywhere else (content, lessons,
+    # analytics), just computed for one specific application instead
+    # of aggregated across the whole org.
+    checklist_items = db.query(models.OrgChecklistItem).filter_by(organization_id=organization_id).all()
+    completions = db.query(models.ChecklistCompletion).filter(
+        models.ChecklistCompletion.application_id.in_(report_ids)
+    ).all()
+    completed_pairs = {(c.application_id, c.checklist_item_id) for c in completions}
+
+    mentor_assignments = db.query(models.MentorAssignment).filter(
+        models.MentorAssignment.application_id.in_(report_ids)
+    ).all()
+    mentor_contact_ids = [a.contact_id for a in mentor_assignments]
+    contacts_by_id = {c.id: c.name for c in db.query(models.OrgHumanContact).filter(models.OrgHumanContact.id.in_(mentor_contact_ids)).all()} if mentor_contact_ids else {}
+    mentor_by_app = {a.application_id: contacts_by_id.get(a.contact_id) for a in mentor_assignments}
+
+    all_certs = db.query(models.EmployeeCertification).filter(
+        models.EmployeeCertification.application_id.in_(report_ids)
+    ).order_by(models.EmployeeCertification.completed_at.desc()).all()
+    latest_cert_by_pair: dict[tuple[int, int], models.EmployeeCertification] = {}
+    for cert in all_certs:
+        key = (cert.application_id, cert.requirement_id)
+        if key not in latest_cert_by_pair:
+            latest_cert_by_pair[key] = cert
+
+    cert_requirements = db.query(models.CertificationRequirement).filter_by(organization_id=organization_id).all()
+
+    results = []
+    for report in reports:
+        user_row = users_by_id.get(report.user_id)
+        if not user_row:
+            continue
+
+        applicable_items = [i for i in checklist_items if i.department_id is None or i.department_id == report.department_id]
+        completed_items = [i for i in applicable_items if (report.id, i.id) in completed_pairs]
+        checklist_pct = round(len(completed_items) / len(applicable_items) * 100, 1) if applicable_items else 0.0
+
+        # Same company-wide-plus-department layering as everywhere
+        # else -- which requirements actually apply to THIS report,
+        # not just which ones they happen to have a completion record
+        # for.
+        applicable_certs = [r for r in cert_requirements if r.department_id is None or r.department_id == report.department_id]
+        certs_total = len(applicable_certs)
+        certs_completed = certs_expired = 0
+        for req in applicable_certs:
+            latest = latest_cert_by_pair.get((report.id, req.id))
+            if latest is None:
+                continue
+            if latest.expires_at and latest.expires_at < datetime.utcnow():
+                certs_expired += 1
+            else:
+                certs_completed += 1
+
+        results.append(schemas.DirectReportOut(
+            application_id=report.id, user_full_name=user_row.full_name or user_row.email,
+            user_email=user_row.email,
+            department_name=dept_names.get(report.department_id) if report.department_id else None,
+            checklist_completion_pct=checklist_pct,
+            mentor_name=mentor_by_app.get(report.id),
+            certifications_completed=certs_completed, certifications_total=certs_total,
+            certifications_expired=certs_expired,
+        ))
+
+    return results
+
+
 @router.get("/{organization_id}/mentors", response_model=list[schemas.OrgContactOut])
 def list_mentors(
     organization_id: int,

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, DirectReport } from "@/lib/api";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -29,6 +29,7 @@ export default function OverviewPage() {
   // nothing rather than defaulting to either branch.
   const [hasOrgAdminAccess, setHasOrgAdminAccess] = useState<boolean | null>(null);
   const [isOrgEmployee, setIsOrgEmployee] = useState(false);
+  const [directReports, setDirectReports] = useState<DirectReport[]>([]);
 
   async function load() {
     // Promise.allSettled rather than Promise.all -- if literally ANY
@@ -103,7 +104,22 @@ export default function OverviewPage() {
       api<Application[]>("/applications").catch(() => []),
     ]).then(([orgs, apps]) => {
       setHasOrgAdminAccess(orgs.length > 0);
-      setIsOrgEmployee(apps.some((a) => a.organization_id !== null));
+      const orgAffiliatedApp = apps.find((a) => a.organization_id !== null);
+      setIsOrgEmployee(!!orgAffiliatedApp);
+
+      // "My team" needs SOME org context to query against -- prefer an
+      // org this person administers, otherwise fall back to whichever
+      // org their own Application belongs to. A manager with neither
+      // (no admin access AND no Application of their own in any org)
+      // is a real but unusual edge case not covered here -- the
+      // overwhelmingly common case is a manager who's also either an
+      // admin or an employee at the same company they manage people
+      // at, and /my-reports itself is safe to skip entirely rather
+      // than guess at an org_id that might not exist.
+      const orgId = orgs.length > 0 ? orgs[0].id : orgAffiliatedApp?.organization_id;
+      if (orgId) {
+        api<DirectReport[]>(`/orgs/${orgId}/my-reports`).then(setDirectReports).catch(() => {});
+      }
     });
   }, []);
 
@@ -187,7 +203,7 @@ export default function OverviewPage() {
     return null;
   }
   if (hasOrgAdminAccess || isOrgEmployee) {
-    return <OrgAffiliatedOverview isAdmin={hasOrgAdminAccess} userName={userName} />;
+    return <OrgAffiliatedOverview isAdmin={hasOrgAdminAccess} userName={userName} directReports={directReports} />;
   }
 
   return (
@@ -318,7 +334,7 @@ export default function OverviewPage() {
   );
 }
 
-function OrgAffiliatedOverview({ isAdmin, userName }: { isAdmin: boolean; userName: string }) {
+function OrgAffiliatedOverview({ isAdmin, userName, directReports }: { isAdmin: boolean; userName: string; directReports: DirectReport[] }) {
   return (
     <div>
       <h1>Welcome{userName ? `, ${userName}` : ""}!</h1>
@@ -359,6 +375,32 @@ function OrgAffiliatedOverview({ isAdmin, userName }: { isAdmin: boolean; userNa
             Go to Job Buddy
           </Link>
         </>
+      )}
+
+      {directReports.length > 0 && (
+        <div className="card" style={{ marginTop: 24 }}>
+          <h3 style={{ marginTop: 0 }}>My team</h3>
+          <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
+            Progress for the people who report to you — aggregate numbers only, never
+            conversation content, career goals, or meeting notes.
+          </p>
+          {directReports.map((r) => (
+            <div key={r.application_id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border, #eee)" }}>
+              <div style={{ fontWeight: 600 }}>
+                {r.user_full_name}
+                {r.department_name && <span className="hint"> · {r.department_name}</span>}
+              </div>
+              <div className="hint">
+                {r.checklist_completion_pct}% onboarding complete
+                {r.mentor_name ? ` · mentor: ${r.mentor_name}` : " · no mentor assigned"}
+                {r.certifications_total > 0 && (
+                  ` · ${r.certifications_completed}/${r.certifications_total} certifications current`
+                  + (r.certifications_expired > 0 ? ` (${r.certifications_expired} expired)` : "")
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

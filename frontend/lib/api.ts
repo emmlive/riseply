@@ -439,6 +439,18 @@ export interface EmployeeCertification {
   verified_at: string | null;
 }
 
+export interface DirectReport {
+  application_id: number;
+  user_full_name: string;
+  user_email: string;
+  department_name: string | null;
+  checklist_completion_pct: number;
+  mentor_name: string | null;
+  certifications_completed: number;
+  certifications_total: number;
+  certifications_expired: number;
+}
+
 
 export interface CareerGoal {
   id: number;
