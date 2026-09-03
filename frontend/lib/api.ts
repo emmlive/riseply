@@ -264,6 +264,9 @@ export interface MentorshipStats {
   avg_feedback_rating: number | null;
   pairings_ended: number;
   would_recommend_mentor_pct: number | null;
+  total_group_relationships: number;
+  total_reciprocal_relationships: number;
+  total_relationship_meetings_logged: number;
 }
 
 export interface OrgAnalytics {
@@ -397,6 +400,7 @@ export interface InternalJobPosting {
   closed_at: string | null;
   applicant_count: number;
   has_applied: boolean | null;
+  matches_your_goal: boolean | null;
 }
 
 export interface InternalJobApplication {

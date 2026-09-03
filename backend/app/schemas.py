@@ -546,6 +546,12 @@ class InternalJobPostingOut(BaseModel):
     # without a second round-trip -- None on the admin endpoint, which
     # has no single "current employee" to check this against.
     has_applied: bool | None = None
+    # Same reasoning as has_applied -- only meaningful (and only
+    # computed) on the employee-facing browse endpoint, against THAT
+    # employee's own stated career goal. Never reveals the goal text
+    # itself to anyone else; it's a private signal used only to
+    # reorder/highlight this specific employee's own view.
+    matches_your_goal: bool | None = None
 
 
 class InternalJobApplicationCreate(BaseModel):
@@ -1004,6 +1010,17 @@ class MentorshipStats(BaseModel):
     avg_feedback_rating: Optional[float]  # None if no ratings submitted yet
     pairings_ended: int
     would_recommend_mentor_pct: Optional[float]  # None if no retrospectives submitted yet
+    # Group/reciprocal relationships were shipped additive to 1:1
+    # MentorAssignment (see MentorshipRelationship's own docstring) but
+    # never got their own rollup here -- a known, explicitly documented
+    # gap at the time. total_group_relationships and
+    # total_reciprocal_relationships are separate counts (not summed)
+    # since they're meaningfully different program shapes, the same
+    # reasoning relationship_type stays a distinct field rather than a
+    # generic "group" bucket everywhere else in this codebase.
+    total_group_relationships: int
+    total_reciprocal_relationships: int
+    total_relationship_meetings_logged: int
 
 
 class OrgAnalyticsOut(BaseModel):
