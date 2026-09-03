@@ -653,6 +653,38 @@ class DirectReportOut(BaseModel):
     certifications_expired: int
 
 
+class MonthlyTrendPoint(BaseModel):
+    """One month's worth of activity counts -- deliberately raw
+    counts, not rates or percentages, since a rate needs a denominator
+    that itself changes month to month (headcount grows over time) and
+    would be misleading to compare directly across months without
+    normalizing for that. Counts are always comparable as-is."""
+    month: str  # "2026-08" format
+    employees_joined: int
+    checklist_completions: int
+    mentor_meetings_logged: int
+    certification_completions: int
+
+
+class OrgAnalyticsTrends(BaseModel):
+    points: list[MonthlyTrendPoint]  # oldest first
+
+
+class OrgBenchmark(BaseModel):
+    """Cross-organization, anonymized comparison -- same MIN_SAMPLE_SIZE
+    discipline as rise_index.py's company_stats(): a benchmark only
+    computes once enough OTHER orgs (not counting this one) have
+    activity to average across, so no individual org's numbers could
+    be reverse-engineered from a tiny comparison group. sample_size is
+    always returned (so the UI can say how many orgs it's based on),
+    but the averages themselves are None when below threshold."""
+    sample_size: int
+    your_checklist_completion_pct: float
+    avg_checklist_completion_pct: float | None
+    your_avg_meetings_per_pairing: float
+    avg_meetings_per_pairing: float | None
+
+
 class SuggestedMentorOut(BaseModel):
     contact_id: int
     name: str

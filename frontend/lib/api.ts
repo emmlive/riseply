@@ -456,6 +456,26 @@ export interface DirectReport {
   certifications_expired: number;
 }
 
+export interface MonthlyTrendPoint {
+  month: string;
+  employees_joined: number;
+  checklist_completions: number;
+  mentor_meetings_logged: number;
+  certification_completions: number;
+}
+
+export interface OrgAnalyticsTrends {
+  points: MonthlyTrendPoint[];
+}
+
+export interface OrgBenchmark {
+  sample_size: number;
+  your_checklist_completion_pct: number;
+  avg_checklist_completion_pct: number | null;
+  your_avg_meetings_per_pairing: number;
+  avg_meetings_per_pairing: number | null;
+}
+
 
 export interface CareerGoal {
   id: number;
