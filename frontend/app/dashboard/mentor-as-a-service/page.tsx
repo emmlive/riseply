@@ -517,7 +517,7 @@ function MentorshipDashboard({ org }: { org: Organization }) {
             <button className="btn btn-ghost btn-sm" onClick={() => startNewRelationship("reciprocal")}>+ New peer pair</button>
           </div>
         </div>
-        <p className="hint" style={{ marginTop: -6, marginBottom: 20 }}>
+        <p className="hint" style={{ marginTop: 6, marginBottom: 20 }}>
           Separate from the 1:1 mentor assignments above — a group has one or more mentors and
           several mentees; a reciprocal pair has two peers with no hierarchy between them.
         </p>
