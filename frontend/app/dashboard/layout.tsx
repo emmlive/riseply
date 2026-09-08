@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, clearToken, getToken, User, Organization, Application } from "@/lib/api";
+import { isPreviewingAsIndividual, setPreviewAsIndividual } from "@/lib/previewMode";
 import QuotaLimitModal from "@/components/QuotaLimitModal";
 
 // Split into two groups: ALWAYS_NAV shows for everyone; INDIVIDUAL_NAV
@@ -42,8 +43,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [hasOrgAdminAccess, setHasOrgAdminAccess] = useState(false);
-  const [isOrgEmployee, setIsOrgEmployee] = useState(false);
+  const [realHasOrgAdminAccess, setRealHasOrgAdminAccess] = useState(false);
+  const [realIsOrgEmployee, setRealIsOrgEmployee] = useState(false);
+  const [previewingAsIndividual, setPreviewingAsIndividual] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -57,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // hit a confusing "create an organization" prompt that doesn't
     // apply to them. Everything relevant to a plain employee is already
     // surfaced through Job Buddy.
-    api<Organization[]>("/orgs/mine").then((orgs) => setHasOrgAdminAccess(orgs.length > 0)).catch(() => {});
+    api<Organization[]>("/orgs/mine").then((orgs) => setRealHasOrgAdminAccess(orgs.length > 0)).catch(() => {});
     // Separate from admin access -- a regular employee who joined an
     // org via a code has an Application with organization_id set, but
     // isn't an OrganizationMember and wouldn't show up in /orgs/mine at
@@ -65,14 +67,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // hasOrgAdminAccess additionally unlocks the admin-only pages
     // (Org Buddy, Mentor as a Service, Internal Jobs).
     api<Application[]>("/applications").then((apps) => {
-      setIsOrgEmployee(apps.some((a) => a.organization_id !== null));
+      setRealIsOrgEmployee(apps.some((a) => a.organization_id !== null));
     }).catch(() => {});
+    setPreviewingAsIndividual(isPreviewingAsIndividual());
   }, [router]);
 
   function handleLogout() {
     clearToken();
     router.push("/login");
   }
+
+  function togglePreview() {
+    const next = !previewingAsIndividual;
+    setPreviewAsIndividual(next);
+    // A hard reload, not router.push/refresh -- this page and Overview
+    // both read the flag fresh on mount, and a soft navigation to a
+    // route you're already on isn't guaranteed to actually remount
+    // everything that depends on it. A full reload is a small, one-time
+    // cost for a staff QA toggle, and it's the version that's
+    // guaranteed correct.
+    window.location.href = "/dashboard";
+  }
+
+  // Super-admin-only display override -- see previewMode.ts's own
+  // comment for why this is a client-side-only preview, never a real
+  // change to the account's actual org affiliation. Every other user
+  // (including a plain org admin or employee) always sees their real
+  // hasOrgAdminAccess/isOrgEmployee values, no exceptions.
+  const isPreviewActive = !!user?.is_admin && previewingAsIndividual;
+  const hasOrgAdminAccess = isPreviewActive ? false : realHasOrgAdminAccess;
+  const isOrgEmployee = isPreviewActive ? false : realIsOrgEmployee;
 
   const showIndividualNav = !hasOrgAdminAccess && !isOrgEmployee;
 
@@ -155,6 +179,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Admin
           </Link>
         )}
+        {user?.is_admin && (
+          <button
+            onClick={togglePreview}
+            className="sidebar-link"
+            style={{ textAlign: "left", background: previewingAsIndividual ? "var(--accent-soft)" : "transparent", border: "none", cursor: "pointer" }}
+          >
+            {previewingAsIndividual ? "◀ Exit individual preview" : "Preview as individual"}
+          </button>
+        )}
         <div style={{ flex: 1 }} />
         {user && (
           <div style={{ padding: "0 8px", fontSize: "0.82rem" }} className="muted">
@@ -165,7 +198,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           Log out
         </button>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main">
+        {isPreviewActive && (
+          <div style={{
+            background: "var(--amber-soft, #FBEEE0)", color: "var(--amber, #C97A2B)",
+            padding: "8px 16px", borderRadius: 8, marginBottom: 16, fontSize: "0.85rem",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span>Previewing as an individual user — your real account and org data are unchanged.</span>
+            <button onClick={togglePreview} className="btn btn-ghost btn-sm">Exit preview</button>
+          </div>
+        )}
+        {children}
+      </main>
       <QuotaLimitModal />
     </div>
   );

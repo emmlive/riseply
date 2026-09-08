@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, DirectReport, InternalJobApplication } from "@/lib/api";
+import { isPreviewingAsIndividual } from "@/lib/previewMode";
 
 export default function OverviewPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -16,6 +17,7 @@ export default function OverviewPage() {
   const [hasSearchedBefore, setHasSearchedBefore] = useState<boolean | null>(null);
   const [profileCount, setProfileCount] = useState<number | null>(null);
   const [userName, setUserName] = useState<string>("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [checklistDismissed, setChecklistDismissed] = useState(
     typeof window !== "undefined" && localStorage.getItem("riseply_hide_getting_started") === "1"
   );
@@ -76,6 +78,7 @@ export default function OverviewPage() {
       // click, welcome or not, and stays true forever after.
       setHasSearchedBefore(meR.value.used_welcome_search);
       setUserName((meR.value.full_name || "").split(" ")[0]);
+      setIsAdmin(!!meR.value.is_admin);
     }
     if (profilesR.status === "fulfilled") setProfileCount(profilesR.value.length);
     if (nearMissesR.status === "fulfilled") setNearMisses(nearMissesR.value);
@@ -225,7 +228,13 @@ export default function OverviewPage() {
   if (hasOrgAdminAccess === null) {
     return null;
   }
-  if (hasOrgAdminAccess || isOrgEmployee) {
+  // Super-admin-only preview override -- see previewMode.ts's own
+  // comment. Only affects rendering for THIS page; the real
+  // hasOrgAdminAccess/isOrgEmployee values (and everything fetched
+  // using them, like directReports) are untouched, so exiting preview
+  // mode returns to exactly the real state with no stale data.
+  const effectiveIsOrgAffiliated = (isAdmin && isPreviewingAsIndividual()) ? false : (hasOrgAdminAccess || isOrgEmployee);
+  if (effectiveIsOrgAffiliated) {
     return (
       <OrgAffiliatedOverview
         isAdmin={hasOrgAdminAccess} userName={userName} directReports={directReports}
