@@ -156,9 +156,7 @@ class Settings(BaseSettings):
 
     # How many unseen jobs a single interactive "Find new matches" click
     # scores before returning, so the request comes back in a reasonable
-    # time regardless of the user's monthly limit or pool size. The
-    # scheduled batch job isn't capped -- it works through the rest
-    # overnight without anyone waiting on it.
+    # time regardless of the user's monthly limit or pool size.
     #
     # Tier-differentiated (previously a single shared manual_match_run_
     # job_cap=25 for everyone) so Pro is a genuinely deeper search per
@@ -167,6 +165,23 @@ class Settings(BaseSettings):
     # nobody's watching in the moment.
     free_tier_match_run_job_cap: int = 40
     pro_tier_match_run_job_cap: int = 100
+    # The scheduled batch job used to be uncapped, on the assumption
+    # that it "works through the rest overnight without anyone waiting
+    # on it." That assumption held when the platform was smaller, but
+    # doesn't anymore: the batch runs sequentially inside the same
+    # process that also has to answer the external scheduler's status-
+    # check polling, and as the user base and job pool grew, total
+    # runtime grew right along with it -- eventually long enough to
+    # exhaust the server's request-handling capacity for the whole
+    # window, which the scheduler's poller saw as sustained 502s rather
+    # than a slow-but-eventually-successful run. Capping per-user work
+    # here bounds the batch's total runtime regardless of how large the
+    # user base gets; anything not covered in one run is picked up on
+    # the next, since already-seen jobs aren't rescored. Set below the
+    # interactive tiers above -- this recurs automatically every day,
+    # so it doesn't need to be exhaustive in any single run the way a
+    # user's own deliberate "Find new matches" click does.
+    scheduled_run_max_jobs_per_user: int = 30
     # A new user's very first "Find new matches" click (see
     # models.User.used_welcome_search) scores this many instead of
     # their tier's normal per-click cap, and doesn't consume any of

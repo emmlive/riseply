@@ -36,12 +36,14 @@ def scheduled_run(
 
     Returns 202 immediately with a run_id rather than blocking until
     the batch finishes. The actual discovery+matching work (one Claude
-    API call per unseen job per user, uncapped for this scheduled path
-    -- see run_matching_for_user's docstring) can legitimately take a
-    long time for a real user base, and used to run inline in this
-    request -- which meant the triggering GitHub Actions curl call sat
-    on a single open connection for as long as that took, at the mercy
-    of any proxy/timeout along the way. Poll GET /internal/scheduled-run/
+    API call per unseen job per user, capped per user at
+    settings.scheduled_run_max_jobs_per_user -- see
+    run_scheduled_matching_batch's docstring for why this is capped at
+    all) can still legitimately take a while for a real user base, and
+    used to run inline in this request -- which meant the triggering
+    GitHub Actions curl call sat on a single open connection for as
+    long as that took, at the mercy of any proxy/timeout along the
+    way. Poll GET /internal/scheduled-run/
     {run_id} (same header) for status."""
     _check_cron_secret(x_cron_secret, "Scheduled matching isn't configured (CRON_SECRET unset).")
 

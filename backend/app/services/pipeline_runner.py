@@ -105,12 +105,17 @@ def run_scheduled_matching_batch(db: Session) -> dict:
     controls the lifetime of, same reasoning as this module's docstring
     at the top of the file: one code path, not two that can drift.
 
-    Deliberately synchronous/sequential internally (no concurrency) --
-    see run_matching_for_user's docstring on why an uncapped run can
-    mean many sequential Claude API calls per user; that's expected to
-    take a while for a real user base, which is exactly why the caller
-    (POST /internal/scheduled-run) runs this via BackgroundTasks rather
-    than blocking the triggering request on it."""
+    Deliberately synchronous/sequential internally (no concurrency),
+    and per-user work is capped at settings.scheduled_run_max_jobs_per_
+    user rather than left uncapped -- see that setting's own comment
+    for why: this batch runs inside the same process that also answers
+    the external scheduler's status-check polling, so an unbounded
+    total runtime (which grows with the user base and job pool) can
+    exhaust the server's capacity to respond to anything at all, which
+    is exactly what started happening as real usage grew. Capping
+    bounds the batch's total runtime regardless of how large the user
+    base gets; anything not covered in one run is picked up on a later
+    one, since already-seen jobs aren't rescored."""
     discovery_result = run_discovery(db)
 
     users = db.query(models.User).filter(models.User.resume_text.isnot(None)).all()
@@ -125,7 +130,7 @@ def run_scheduled_matching_batch(db: Session) -> dict:
             continue
 
         try:
-            result = run_matching_for_user(db, user)
+            result = run_matching_for_user(db, user, max_jobs=settings.scheduled_run_max_jobs_per_user)
             per_user_results[user.email] = {
                 "queued": len(result["queued_application_ids"]),
                 "usage_limit_reached": result["usage_limit_reached"],
