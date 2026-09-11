@@ -57,15 +57,13 @@ jobs:
         # short-lived request every 15s is far less exposed to any
         # single proxy/connection timeout along the way than one curl
         # call held open for the whole batch. 240 attempts * 15s = 60
-        # minutes. Widened from the original 20 -- with days of failed
-        # cron runs behind this one, the very first successful run has
-        # to work through however large a backlog of unseen jobs built
-        # up in the meantime, one real Claude API call per job per
-        # user, which is meaningfully slower than the fast-failing 400s
-        # that hit this same limit during the billing outage. If your
-        # user base grows enough that even 60 minutes isn't enough,
-        # the better long-term fix is capping max_jobs per scheduled
-        # run rather than raising this further.
+        # minutes. The batch's per-user work is now capped
+        # (settings.scheduled_run_max_jobs_per_user) specifically so
+        # this budget stays sufficient regardless of how large the user
+        # base grows -- previously uncapped per-user matching meant
+        # total runtime grew with the user base and job pool, which is
+        # what caused the repeated 502s/timeouts this comment used to
+        # warn about.
         #
         # A non-200 (or a 200 with a non-JSON body -- e.g. Render's own
         # branded HTML error page during a mid-batch auto-restart, which
