@@ -20,6 +20,20 @@ router = APIRouter(tags=["pipeline"])
 # --- Discovery (shared job pool, not per-user) ---
 
 DISCOVERY_STALE_AFTER_MINUTES = 10  # see docstring below for why this exists
+# The scheduled cron's own discovery phase is one step INSIDE a batch
+# that can legitimately run much longer than a standalone interactive
+# discovery pass -- see run_scheduled_matching_batch's docstring for
+# why its per-user work is capped rather than uncapped, and the GitHub
+# Actions workflow's own 60-minute polling budget. A 10-minute cutoff
+# would treat a scheduled run that's still genuinely in progress at
+# minute 15 as stale and let an interactive click start a second,
+# fully redundant discovery pass right on top of it -- which is the
+# concurrent-discovery memory-stacking risk the guard exists to
+# prevent in the first place, just via a gap the original guard didn't
+# cover (it only ever checked for OTHER interactive runs, never a
+# scheduled one). Set comfortably past the workflow's own timeout so a
+# genuinely still-running scheduled batch is never mistaken for stale.
+SCHEDULED_RUN_STALE_AFTER_MINUTES = 90
 
 
 @router.post("/pipeline/discover")
@@ -42,29 +56,36 @@ def discover(
     Poll GET /pipeline/discover/{run_id} for completion.
 
     Reuses an already-running discovery pass instead of starting a new
-    one, if one was started recently. BackgroundTasks moved discovery
-    off the request/response timeout budget, but it did nothing about
-    MEMORY -- a background task still runs in this same process, with
-    this same memory budget. Now that "Find new matches" no longer
-    blocks the UI while discovery runs, nothing previously stopped
-    several users clicking around the same time (or a click landing
-    near the nightly cron's own discovery run) from stacking multiple
-    memory-heavy passes on top of each other concurrently, which is a
-    real, plausible contributor to this service's memory-limit
-    restarts. One pass in flight is enough; a second click just rides
-    along with it.
+    one, if one was started recently -- either another interactive
+    click, OR the scheduled cron's own discovery phase (see
+    SCHEDULED_RUN_STALE_AFTER_MINUTES's own comment for why that needs
+    a longer staleness window than an interactive run gets). BackgroundTasks
+    moved discovery off the request/response timeout budget, but it did
+    nothing about MEMORY -- a background task still runs in this same
+    process, with this same memory budget. Now that "Find new matches"
+    no longer blocks the UI while discovery runs, nothing previously
+    stopped several users clicking around the same time (or a click
+    landing near the nightly cron's own discovery run) from stacking
+    multiple memory-heavy passes on top of each other concurrently,
+    which is a real, plausible contributor to this service's
+    memory-limit restarts. One pass in flight is enough; a second
+    click just rides along with it.
 
-    The staleness cutoff matters specifically because of what causes
+    The staleness cutoffs matter specifically because of what causes
     those same restarts: if a discovery run's process gets killed
     mid-run by an OOM restart, nothing ever gets the chance to mark its
     log row "failed" -- it would sit at "running" forever, and without
-    this cutoff, that single stuck row would permanently block every
+    a cutoff, that single stuck row would permanently block every
     future discovery attempt from ever starting again."""
-    cutoff = datetime.utcnow() - timedelta(minutes=DISCOVERY_STALE_AFTER_MINUTES)
+    interactive_cutoff = datetime.utcnow() - timedelta(minutes=DISCOVERY_STALE_AFTER_MINUTES)
+    scheduled_cutoff = datetime.utcnow() - timedelta(minutes=SCHEDULED_RUN_STALE_AFTER_MINUTES)
     already_running = db.query(models.ScheduledRunLog).filter(
-        models.ScheduledRunLog.run_type == "interactive_discover",
         models.ScheduledRunLog.status == "running",
-        models.ScheduledRunLog.started_at >= cutoff,
+        (
+            (models.ScheduledRunLog.run_type == "interactive_discover") & (models.ScheduledRunLog.started_at >= interactive_cutoff)
+        ) | (
+            (models.ScheduledRunLog.run_type == "scheduled_run") & (models.ScheduledRunLog.started_at >= scheduled_cutoff)
+        ),
     ).first()
     if already_running is not None:
         return JSONResponse(status_code=202, content={"status": "started", "run_id": already_running.id})
