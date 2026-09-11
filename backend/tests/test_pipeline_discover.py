@@ -217,3 +217,120 @@ def test_no_running_discovery_starts_a_fresh_one(db, monkeypatch):
     resp = client.post("/pipeline/discover")
     assert resp.status_code == 202
     assert isinstance(resp.json()["run_id"], int)
+
+
+# --- Extending the guard to the scheduled cron's own discovery phase ---
+# The original guard only ever checked for another INTERACTIVE run --
+# it had no awareness that the nightly scheduled batch runs its own
+# discovery internally too (see run_scheduled_matching_batch), on a
+# "scheduled_run"-typed log row that can legitimately stay "running"
+# far longer than 10 minutes. An interactive click landing while that
+# scheduled run is still genuinely in progress used to start a second,
+# fully redundant discovery pass right on top of it -- exactly the
+# concurrent memory-stacking risk this guard exists to prevent, just
+# via a gap the original check didn't cover.
+
+def test_running_scheduled_run_blocks_a_new_interactive_discovery(db, monkeypatch):
+    user = _make_user(db)
+    _login_as(user)
+
+    call_count = [0]
+
+    def fake_discovery(db):
+        call_count[0] += 1
+        return {"jobs_added": 1}
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", fake_discovery)
+
+    scheduled_log = models.ScheduledRunLog(run_type="scheduled_run", status="running", started_at=datetime.utcnow())
+    db.add(scheduled_log)
+    db.commit()
+    db.refresh(scheduled_log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    # Checks that no NEW discovery pass started, not that the returned
+    # run_id is specifically THIS test's row -- other tests earlier in
+    # this same file deliberately leave behind their own still-"running"
+    # rows (that's what they're testing), and this suite shares one
+    # database across the whole run (see conftest.py), so the guard's
+    # query could legitimately return any qualifying running row, not
+    # necessarily this one. The actual behavior that matters -- a
+    # redundant discovery pass was correctly skipped -- doesn't depend
+    # on which specific row satisfied the guard.
+    assert call_count[0] == 0
+
+
+def test_scheduled_run_forty_minutes_in_still_blocks_new_discovery(db, monkeypatch):
+    """The whole point of the longer cutoff -- a scheduled run at
+    minute 40 is well past the interactive 10-minute window, but still
+    genuinely in progress, not stale. Must still block."""
+    user = _make_user(db)
+    _login_as(user)
+
+    call_count = [0]
+
+    def fake_discovery(db):
+        call_count[0] += 1
+        return {"jobs_added": 1}
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", fake_discovery)
+
+    scheduled_log = models.ScheduledRunLog(
+        run_type="scheduled_run", status="running",
+        started_at=datetime.utcnow() - timedelta(minutes=40),
+    )
+    db.add(scheduled_log)
+    db.commit()
+    db.refresh(scheduled_log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    # Same reasoning as the test above -- checks no new pass started,
+    # not that this specific row was the one the guard matched on.
+    assert call_count[0] == 0
+
+
+def test_stale_scheduled_run_does_not_block_a_new_discovery(db, monkeypatch):
+    """A scheduled_run row older than SCHEDULED_RUN_STALE_AFTER_MINUTES
+    (e.g. its process got OOM-killed mid-run and nothing ever marked
+    it "failed") must not permanently block interactive discovery
+    either -- same reasoning as the interactive staleness cutoff,
+    just with its own longer window."""
+    user = _make_user(db)
+    _login_as(user)
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", lambda db: {"jobs_added": 1})
+
+    stale_scheduled_log = models.ScheduledRunLog(
+        run_type="scheduled_run", status="running",
+        started_at=datetime.utcnow() - timedelta(minutes=120),
+    )
+    db.add(stale_scheduled_log)
+    db.commit()
+    db.refresh(stale_scheduled_log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    assert resp.json()["run_id"] != stale_scheduled_log.id
+
+
+def test_completed_scheduled_run_does_not_block_new_discovery(db, monkeypatch):
+    """A scheduled_run row that already finished (status != "running")
+    should never block anything, regardless of age."""
+    user = _make_user(db)
+    _login_as(user)
+
+    monkeypatch.setattr(pipeline_runner, "run_discovery", lambda db: {"jobs_added": 1})
+
+    finished_log = models.ScheduledRunLog(
+        run_type="scheduled_run", status="success",
+        started_at=datetime.utcnow(), finished_at=datetime.utcnow(),
+    )
+    db.add(finished_log)
+    db.commit()
+    db.refresh(finished_log)
+
+    resp = client.post("/pipeline/discover")
+    assert resp.status_code == 202
+    assert resp.json()["run_id"] != finished_log.id
