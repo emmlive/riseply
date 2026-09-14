@@ -237,21 +237,84 @@ def run_discovery_background(run_log_id: int) -> None:
 def run_discovery(db: Session) -> dict:
     """Pulls fresh postings into the shared job pool.
 
-    Uses a database-level INSERT ... ON CONFLICT DO NOTHING rather than a
-    manual "check if it exists, then insert" loop. The manual version had
-    a real gap: it only committed once at the end of the whole loop, so
-    two jobs with the same (source, external_id) landing in the same
-    batch -- or two near-simultaneous requests racing each other, since
-    this runs in a thread pool -- could both pass the "does this exist"
-    check before either had committed, then crash into each other's
-    INSERT with a UniqueViolation. Postgres and SQLite both resolve
-    ON CONFLICT atomically at the database level, which closes that gap
-    regardless of the exact interleaving.
+    Writes and commits each source's postings as soon as that source
+    finishes fetching, rather than accumulating every source's raw
+    results into one big list and writing everything at the very end.
+    The previous all-at-once approach held full job data (including
+    complete descriptions) from all 8 sources -- Greenhouse across
+    every configured company, Lever, RSS, RemoteOK, Arbeitnow, Adzuna
+    keyword search, USAJobs, and Adzuna location-paired search -- in
+    memory simultaneously for the whole run, which is a real, standing
+    memory cost on every single discovery run (interactive or
+    scheduled) that neither the scheduled-batch job cap nor the
+    discovery-overlap guard touches -- both of those address different
+    problems (unbounded per-user matching work, and multiple discovery
+    passes stacking concurrently), not this. Writing incrementally
+    means peak memory during discovery is bounded by whichever single
+    source returns the most postings, not the sum of all 8 -- each
+    source's raw list is eligible for garbage collection as soon as
+    it's written, instead of staying alive until the very end of the
+    function.
+
+    Uses a database-level INSERT ... ON CONFLICT DO NOTHING rather than
+    a manual "check if it exists, then insert" loop. The manual version
+    had a real gap: it only committed once at the end of the whole
+    loop, so two jobs with the same (source, external_id) landing in
+    the same batch -- or two near-simultaneous requests racing each
+    other, since this runs in a thread pool -- could both pass the
+    "does this exist" check before either had committed, then crash
+    into each other's INSERT with a UniqueViolation. Postgres and
+    SQLite both resolve ON CONFLICT atomically at the database level,
+    which closes that gap regardless of the exact interleaving.
     """
-    raw_jobs = []
+    insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+
+    def _write_and_commit(jobs: list[dict]) -> int:
+        """Inserts one source's jobs and commits immediately, so that
+        source's raw data (this function's own `jobs` list, and
+        whatever the caller held before passing it in) can be freed
+        right away rather than living until run_discovery returns."""
+        new_count = 0
+        for j in jobs:
+            stmt = insert_fn(models.Job).values(
+                source=j["source"], external_id=j["external_id"], company=j["company"],
+                title=j["title"], location=j["location"], url=j["url"],
+                description=j["description"],
+                # .get() rather than direct indexing -- only the Adzuna
+                # source populates these (see adzuna.py); Greenhouse/Lever/
+                # RSS job dicts simply don't have these keys at all, and
+                # should insert with "no salary data" rather than a KeyError.
+                salary_min=j.get("salary_min"), salary_max=j.get("salary_max"),
+                salary_currency=j.get("salary_currency", ""),
+                salary_is_predicted=j.get("salary_is_predicted", False),
+            ).on_conflict_do_nothing(index_elements=["source", "external_id"])
+            result = db.execute(stmt)
+            if result.rowcount > 0:
+                new_count += 1
+        db.commit()
+        return new_count
+
+    total_discovered = 0
+    total_new = 0
+
     gh_jobs = greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
+    total_discovered += len(gh_jobs)
+    total_new += _write_and_commit(gh_jobs)
+    print(f"[discovery] greenhouse: {len(gh_jobs)} raw postings, written and committed")
+    del gh_jobs
+
     lever_jobs = lever.fetch_all(discovery_sources.LEVER_COMPANIES)
+    total_discovered += len(lever_jobs)
+    total_new += _write_and_commit(lever_jobs)
+    print(f"[discovery] lever: {len(lever_jobs)} raw postings, written and committed")
+    del lever_jobs
+
     rss_jobs = rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
+    total_discovered += len(rss_jobs)
+    total_new += _write_and_commit(rss_jobs)
+    print(f"[discovery] rss: {len(rss_jobs)} raw postings, written and committed")
+    del rss_jobs
+
     # RemoteOK: free, no-auth, general-purpose public JSON API -- despite
     # the name recognition being programming-heavy, lists roles across
     # many functions (design, support, sales, marketing, PM, etc), so
@@ -261,6 +324,11 @@ def run_discovery(db: Session) -> dict:
     # the build environment -- its diagnostic logging is deliberately
     # thorough for exactly that reason.
     remoteok_jobs = remoteok.fetch_jobs()
+    total_discovered += len(remoteok_jobs)
+    total_new += _write_and_commit(remoteok_jobs)
+    print(f"[discovery] remoteok: {len(remoteok_jobs)} raw postings, written and committed")
+    del remoteok_jobs
+
     # Arbeitnow: free, no-auth, general-purpose public JSON API pulling
     # from real ATS platforms -- primarily Europe-based, but includes
     # remote postings the existing location matcher already knows how
@@ -268,11 +336,10 @@ def run_discovery(db: Session) -> dict:
     # country. See arbeitnow.py's module docstring for the same
     # unverified-live-schema caveat remoteok.py has.
     arbeitnow_jobs = arbeitnow.fetch_jobs()
-    raw_jobs += gh_jobs
-    raw_jobs += lever_jobs
-    raw_jobs += rss_jobs
-    raw_jobs += remoteok_jobs
-    raw_jobs += arbeitnow_jobs
+    total_discovered += len(arbeitnow_jobs)
+    total_new += _write_and_commit(arbeitnow_jobs)
+    print(f"[discovery] arbeitnow: {len(arbeitnow_jobs)} raw postings, written and committed")
+    del arbeitnow_jobs
 
     # Adzuna: general, all-industries keyword search -- driven by
     # whatever titles are actually in people's active search profiles
@@ -284,7 +351,10 @@ def run_discovery(db: Session) -> dict:
     print(f"[discovery] {len(search_titles)} distinct active search-profile title(s) total, "
           f"{len(keywords_this_run)} selected for Adzuna this run")
     adzuna_jobs = adzuna.fetch_by_keywords(keywords_this_run)
-    raw_jobs += adzuna_jobs
+    total_discovered += len(adzuna_jobs)
+    total_new += _write_and_commit(adzuna_jobs)
+    print(f"[discovery] adzuna (keyword): {len(adzuna_jobs)} raw postings, written and committed")
+    del adzuna_jobs
 
     # USAJobs: US federal job search, keyword-driven off the same
     # search_titles collected above -- reuses _select_keyword_rotation()
@@ -297,7 +367,10 @@ def run_discovery(db: Session) -> dict:
     usajobs_keywords_this_run = _select_keyword_rotation(search_titles, settings.usajobs_max_keywords_per_run)
     print(f"[discovery] {len(usajobs_keywords_this_run)} selected for USAJobs this run")
     usajobs_jobs = usajobs.fetch_by_keywords(usajobs_keywords_this_run)
-    raw_jobs += usajobs_jobs
+    total_discovered += len(usajobs_jobs)
+    total_new += _write_and_commit(usajobs_jobs)
+    print(f"[discovery] usajobs: {len(usajobs_jobs)} raw postings, written and committed")
+    del usajobs_jobs
 
     # Location-paired queries: additive to the broad keyword-only batch
     # above, not a replacement. A purely national "what=Compliance
@@ -320,38 +393,13 @@ def run_discovery(db: Session) -> dict:
     print(f"[discovery] {len(location_hints)} distinct active search-profile location hint(s) total, "
           f"{len(location_pairs_this_run)} keyword/location pair(s) selected for Adzuna this run")
     adzuna_location_jobs = adzuna.fetch_by_keyword_location_pairs(location_pairs_this_run)
-    raw_jobs += adzuna_location_jobs
+    total_discovered += len(adzuna_location_jobs)
+    total_new += _write_and_commit(adzuna_location_jobs)
+    print(f"[discovery] adzuna (location-paired): {len(adzuna_location_jobs)} raw postings, written and committed")
+    del adzuna_location_jobs
 
-    print(f"[discovery] raw postings this run -- greenhouse: {len(gh_jobs)}, lever: {len(lever_jobs)}, "
-          f"rss: {len(rss_jobs)}, remoteok: {len(remoteok_jobs)}, arbeitnow: {len(arbeitnow_jobs)}, "
-          f"adzuna (keyword): {len(adzuna_jobs)}, usajobs: {len(usajobs_jobs)}, "
-          f"adzuna (location-paired): {len(adzuna_location_jobs)}, "
-          f"total: {len(raw_jobs)}")
-
-    if not raw_jobs:
-        return {"discovered": 0, "new": 0}
-
-    insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
-
-    new_count = 0
-    for j in raw_jobs:
-        stmt = insert_fn(models.Job).values(
-            source=j["source"], external_id=j["external_id"], company=j["company"],
-            title=j["title"], location=j["location"], url=j["url"],
-            description=j["description"],
-            # .get() rather than direct indexing -- only the Adzuna
-            # source populates these (see adzuna.py); Greenhouse/Lever/
-            # RSS job dicts simply don't have these keys at all, and
-            # should insert with "no salary data" rather than a KeyError.
-            salary_min=j.get("salary_min"), salary_max=j.get("salary_max"),
-            salary_currency=j.get("salary_currency", ""),
-            salary_is_predicted=j.get("salary_is_predicted", False),
-        ).on_conflict_do_nothing(index_elements=["source", "external_id"])
-        result = db.execute(stmt)
-        if result.rowcount > 0:
-            new_count += 1
-    db.commit()
-    return {"discovered": len(raw_jobs), "new": new_count}
+    print(f"[discovery] total this run -- discovered: {total_discovered}, new: {total_new}")
+    return {"discovered": total_discovered, "new": total_new}
 
 
 def _all_profiles_exclude_company(profiles: list[dict], company: str) -> bool:
