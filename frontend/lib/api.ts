@@ -561,6 +561,27 @@ export interface JobBuddyMessage {
   created_at: string;
 }
 
+export type CoachingSessionType = "drill" | "walkthrough" | "roleplay";
+
+export interface CoachingSession {
+  id: number;
+  application_id: number;
+  session_type: CoachingSessionType;
+  topic: string;
+  status: "in_progress" | "completed";
+  score: number | null;
+  feedback: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface CoachingMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
 export interface CompanyStats {
   company: string;
   applied_count: number;

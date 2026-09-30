@@ -6,6 +6,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import job_buddy as job_buddy_service
+from app.services import coaching as coaching_service
 from app.services import usage, rise_index, notifier, safety_flags
 from app.services import kb as kb_service
 from app.routers.org_buddy import resolve_join_code
@@ -337,6 +338,202 @@ def ask_org_question(
     db.commit()
 
     return schemas.OrgAskResponse(answer=answer, sources=[i.title for i in relevant])
+
+
+# --- Coaching: practical, role-specific training ---
+#
+# A bounded practice exercise (drill / walkthrough / roleplay), generated
+# fresh for this person's actual role and scored at the end -- distinct
+# from both the onboarding plan (a static document) and the Job Buddy
+# chat above (an open-ended, never-ending mentor conversation). Doesn't
+# require an onboarding plan to exist first; only needs a resume, same
+# baseline as everything else that reasons about "this person in this
+# role."
+
+def _get_owned_session(db: Session, application_id: int, session_id: int, user_id: int) -> models.CoachingSession:
+    session = db.query(models.CoachingSession).filter_by(
+        id=session_id, application_id=application_id, user_id=user_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Coaching session not found")
+    return session
+
+
+@router.get("/{application_id}/coaching/sessions", response_model=list[schemas.CoachingSessionOut])
+def list_coaching_sessions(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _get_owned_application(db, application_id, user.id)
+    return db.query(models.CoachingSession).filter_by(
+        application_id=application_id, user_id=user.id
+    ).order_by(models.CoachingSession.created_at.desc()).all()
+
+
+@router.post("/{application_id}/coaching/sessions", response_model=schemas.CoachingSessionStartResponse)
+def start_coaching_session(
+    application_id: int,
+    payload: schemas.CoachingSessionStartRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    if not user.resume_text.strip():
+        raise HTTPException(status_code=400, detail="Add your resume before starting a coaching session.")
+
+    usage.check_and_increment(db, user, "coaching_message", 1)
+
+    job = app_row.job
+    try:
+        result = coaching_service.start_coaching_session(
+            payload.session_type,
+            payload.topic,
+            user.resume_text,
+            {"title": job.title, "company": job.company, "description": job.description},
+            org_content=_org_content_for(db, app_row),
+        )
+    except Exception as e:
+        usage.decrement(db, user.id, "coaching_message", 1)
+        print(f"[coaching] Session start failed for application {application_id}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't start a coaching session right now — this attempt wasn't counted against your limit. Try again shortly.",
+        )
+
+    session = models.CoachingSession(
+        application_id=application_id, user_id=user.id,
+        session_type=payload.session_type, topic=result["topic"],
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    opening_flag = safety_flags.scan(result["opening_message"])
+    opening_msg = models.CoachingMessage(
+        session_id=session.id, user_id=user.id, role="assistant", content=result["opening_message"],
+        flagged=bool(opening_flag), flag_reason=opening_flag,
+    )
+    db.add(opening_msg)
+    db.commit()
+    db.refresh(opening_msg)
+
+    return schemas.CoachingSessionStartResponse(session=session, opening_message=opening_msg)
+
+
+@router.get("/{application_id}/coaching/sessions/{session_id}/messages", response_model=list[schemas.CoachingMessageOut])
+def get_coaching_messages(
+    application_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _get_owned_application(db, application_id, user.id)
+    _get_owned_session(db, application_id, session_id, user.id)
+    return db.query(models.CoachingMessage).filter_by(
+        session_id=session_id, user_id=user.id
+    ).order_by(models.CoachingMessage.created_at.asc()).all()
+
+
+@router.post("/{application_id}/coaching/sessions/{session_id}/messages", response_model=schemas.CoachingMessageOut)
+def send_coaching_message(
+    application_id: int,
+    session_id: int,
+    payload: schemas.CoachingMessageRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    session = _get_owned_session(db, application_id, session_id, user.id)
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="This coaching session has already been completed.")
+
+    usage.check_and_increment(db, user, "coaching_message", 1)
+
+    history_rows = db.query(models.CoachingMessage).filter_by(
+        session_id=session_id, user_id=user.id
+    ).order_by(models.CoachingMessage.created_at.asc()).all()
+    history = [{"role": m.role, "content": m.content} for m in history_rows]
+
+    user_flag = safety_flags.scan(payload.message)
+    user_msg = models.CoachingMessage(
+        session_id=session_id, user_id=user.id, role="user", content=payload.message,
+        flagged=bool(user_flag), flag_reason=user_flag,
+    )
+    db.add(user_msg)
+    db.commit()
+
+    job = app_row.job
+    try:
+        reply_text = coaching_service.coaching_reply(
+            session.session_type, session.topic, user.resume_text,
+            {"title": job.title, "company": job.company, "description": job.description},
+            history, payload.message,
+            org_content=_org_content_for(db, app_row),
+        )
+    except Exception as e:
+        usage.decrement(db, user.id, "coaching_message", 1)
+        print(f"[coaching] Reply generation failed for session {session_id}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Coach couldn't respond right now — this attempt wasn't counted against your limit. Your message was saved; try sending again.",
+        )
+
+    reply_flag = safety_flags.scan(reply_text)
+    reply_msg = models.CoachingMessage(
+        session_id=session_id, user_id=user.id, role="assistant", content=reply_text,
+        flagged=bool(reply_flag), flag_reason=reply_flag,
+    )
+    db.add(reply_msg)
+    db.commit()
+    db.refresh(reply_msg)
+    return reply_msg
+
+
+@router.post("/{application_id}/coaching/sessions/{session_id}/complete", response_model=schemas.CoachingSessionOut)
+def complete_coaching_session(
+    application_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row = _get_owned_application(db, application_id, user.id)
+    session = _get_owned_session(db, application_id, session_id, user.id)
+    if session.status != "in_progress":
+        return session
+
+    history_rows = db.query(models.CoachingMessage).filter_by(
+        session_id=session_id, user_id=user.id
+    ).order_by(models.CoachingMessage.created_at.asc()).all()
+    if len(history_rows) < 2:
+        raise HTTPException(status_code=400, detail="Exchange at least one reply before ending the session.")
+    history = [{"role": m.role, "content": m.content} for m in history_rows]
+
+    job = app_row.job
+    usage.check_and_increment(db, user, "coaching_message", 1)
+    try:
+        result = coaching_service.finish_coaching_session(
+            session.session_type, session.topic, user.resume_text,
+            {"title": job.title, "company": job.company, "description": job.description},
+            history,
+            org_content=_org_content_for(db, app_row),
+        )
+    except Exception as e:
+        usage.decrement(db, user.id, "coaching_message", 1)
+        print(f"[coaching] Scoring failed for session {session_id}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't score this session right now — this attempt wasn't counted against your limit. Try ending it again shortly.",
+        )
+
+    session.status = "completed"
+    session.score = result["score"]
+    session.feedback = result["feedback"]
+    session.completed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(session)
+    rise_index.award_points(db, user, "coaching_session_completed", "Completed a coaching session")
+    return session
 
 
 # --- Culture Bot: this employee's delivered lessons ---
