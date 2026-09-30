@@ -16,6 +16,7 @@ POINT_VALUES = {
     "generate_interview_prep": 10,
     "generate_onboarding_plan": 10,
     "job_buddy_message": 2,
+    "coaching_session_completed": 10,  # a real milestone, same weight as an onboarding plan
 }
 
 # Minimum number of applications before a company's stats are shown

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, downloadFile, Application, OnboardingPlan, JobBuddyMessage, OrgContact, ChecklistProgressItem, LessonDelivery, OrgAskResponse, MentorAssignment, CareerGoal, MentorMeetingLog, MEETING_AGENDA_TEMPLATES, MentorRetrospective, MentorMeetingSchedule, MentorshipRelationship, MentorshipMeetingLog, InternalJobPosting, CertificationRequirement, PulseCheckIn } from "@/lib/api";
 import OrgThemeOverride from "@/components/OrgThemeOverride";
 import MediaEmbed from "@/components/MediaEmbed";
+import CoachingPanel from "@/components/CoachingPanel";
 
 export default function JobBuddyPage() {
   return (
@@ -723,6 +724,8 @@ function JobBuddyChat({ applicationId }: { applicationId: number }) {
               ))}
             </div>
           )}
+
+          <CoachingPanel applicationId={applicationId} />
 
           {lessons.length > 0 && (
             <div className="card">

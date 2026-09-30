@@ -322,6 +322,79 @@ class JobBuddyMessage(Base):
     flag_resolved_at = Column(DateTime, nullable=True)
 
 
+class CoachingSession(Base):
+    """One practical-training session for a specific accepted
+    application -- a skill/knowledge drill, a task walkthrough, or a
+    roleplay scenario, all grounded in this person's actual role (and,
+    for org-linked applications, that org's own content). Distinct from
+    OrgLesson/LessonDelivery: lessons are admin-authored, company-wide
+    content delivered on a schedule; a coaching session is generated
+    on demand by the model, scoped to one person's role, and scored at
+    the end -- practice, not curriculum.
+
+    A user can have many sessions over time (repeat practice on the same
+    or different topics), same "many rows per application" shape as
+    JobBuddyMessage. Kept deliberately separate from the freeform Job
+    Buddy chat thread -- a coaching session has a defined start/end and
+    a score, which a running mentor conversation doesn't."""
+    __tablename__ = "coaching_sessions"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    session_type = Column(String, nullable=False)  # "drill" | "walkthrough" | "roleplay"
+    topic = Column(String, default="", server_default="")
+    # Either supplied by the user when starting the session, or picked by
+    # the model when they leave it blank -- either way it's filled in by
+    # the time the row is created, so the session list can show a real
+    # label instead of just a type badge.
+
+    status = Column(String, default="in_progress", server_default="in_progress")
+    # in_progress | completed
+
+    # Set only once the session is marked complete -- see
+    # services/coaching.py's finish_coaching_session(). Deliberately an
+    # AI-assessed read on how the person's actual responses in the
+    # transcript went, not a self-reported number -- same spirit as
+    # match scoring elsewhere in this app being a real judgment call
+    # rather than a checkbox. score is nullable/blank while in_progress;
+    # a session abandoned partway through (never completed) just stays
+    # in_progress forever with no score, which is an honest reflection
+    # of "started, never finished" rather than forcing a number onto it.
+    score = Column(Integer, nullable=True)
+    feedback = Column(Text, default="", server_default="")
+
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+    application = relationship("Application")
+
+
+class CoachingMessage(Base):
+    """One turn in a coaching session's transcript -- same role/content
+    shape as JobBuddyMessage, scoped to a session rather than directly
+    to an application, since a person can run several sessions against
+    the same application over time."""
+    __tablename__ = "coaching_messages"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("coaching_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    # Same coarse, human-review-only signal as JobBuddyMessage -- a
+    # roleplay scenario in particular can venture into realistic
+    # workplace-conflict territory (an angry customer, a tense
+    # coworker conversation), so this matters here too, not just in
+    # the freeform chat.
+    flagged = Column(Boolean, default=False, server_default="false")
+    flag_reason = Column(String, default="", server_default="")
+
+
 class PointsEvent(Base):
     """One Rise Points award. Kept as a log (not just a running total) so
     the activity feed can show a real history — 'why do I have 340 points'

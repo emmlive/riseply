@@ -238,6 +238,49 @@ class JobBuddyChatRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+# --- Coaching (practical, role-specific training) ---
+
+class CoachingSessionOut(BaseModel):
+    id: int
+    application_id: int
+    session_type: str
+    topic: str
+    status: str
+    score: int | None
+    feedback: str
+    created_at: datetime
+    completed_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class CoachingMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CoachingSessionStartRequest(BaseModel):
+    session_type: str = Field(pattern="^(drill|walkthrough|roleplay)$")
+    topic: str = Field(default="", max_length=200)
+    # Left blank, the model picks a realistic topic for this role itself
+    # -- see services/coaching.py's start_coaching_session().
+
+
+class CoachingSessionStartResponse(BaseModel):
+    session: CoachingSessionOut
+    opening_message: CoachingMessageOut
+
+
+class CoachingMessageRequest(BaseModel):
+    message: str = Field(min_length=1)
+
+
 class AddCurrentJobRequest(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)
