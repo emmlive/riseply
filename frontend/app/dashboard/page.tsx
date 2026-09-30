@@ -155,25 +155,37 @@ export default function OverviewPage() {
     setMessage("");
     setNearMisses([]);
     try {
-      // Kick off a background discovery refresh but DON'T wait for it
-      // to finish -- the job pool is shared across every user, not
-      // scoped to this one click, so matching can proceed immediately
-      // against whatever's already in the pool from prior discovery
-      // runs (the nightly cron, other users' clicks) rather than
-      // blocking this click on a fresh pass across 7+ external sources
-      // completing first. That pass can genuinely take longer than
-      // someone should have to wait on a button; it enriches the pool
-      // for NEXT time; it was never strictly required before THIS
-      // time's matching can run. Best-effort -- if even starting it
-      // fails, matching against the existing pool still works fine, so
-      // nothing here should block the click or surface an error for
-      // what's just a background refresh.
-      api("/pipeline/discover", { method: "POST" }).catch(() => {});
-
+      // NOTE: discovery used to be kicked off here, fired-and-forgotten
+      // BEFORE awaiting match below, so it ran concurrently with the
+      // match request. That was a real bug, not just a stylistic
+      // choice: POST /pipeline/discover's own background task makes
+      // dozens of sequential external HTTP calls across 8 sources, and
+      // POST /pipeline/match runs a fully synchronous, sequential
+      // Claude-API scoring loop over up to `welcome_search_job_cap`
+      // (100) jobs on someone's very first search -- both are heavy,
+      // memory- and time-costly operations, both landing in the same
+      // backend process at the same time, on every single "Find new
+      // matches" click. That concurrent stacking is a real, standing
+      // contributor to this service's memory-limit restarts,
+      // independent of and in addition to the three discovery/batch
+      // fixes already made (see run_discovery's and
+      // run_scheduled_matching_batch's docstrings) -- it just showed up
+      // rarely in practice, because it requires a first-ever-search
+      // welcome search (the deepest, uncapped-relative-to-normal run)
+      // to land on someone's very first click, which most real users
+      // only ever do once. It stopped being rare once admin accounts
+      // could reach this same "first search ever" flow via "Preview as
+      // individual." Firing discovery AFTER match completes (still
+      // fire-and-forget/best-effort, still non-blocking for the user)
+      // keeps both features working exactly as before, just serialized
+      // instead of stacked.
       const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number }>(
         "/pipeline/match",
         { method: "POST" }
       );
+      // Best-effort refresh of the shared job pool for NEXT time --
+      // deliberately fired after match, not before (see note above).
+      api("/pipeline/discover", { method: "POST" }).catch(() => {});
       if (result.is_welcome_search) {
         // The one genuinely different message in this whole function --
         // deliberately leads with the depth number itself (100, not
