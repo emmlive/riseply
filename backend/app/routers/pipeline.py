@@ -127,7 +127,26 @@ def discover_status(
 # --- Matching + tailoring for the current user ---
 
 @router.post("/pipeline/match")
-def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+def match_and_tailor(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Returns 202 immediately with a run_id and does the actual
+    matching via BackgroundTasks, rather than blocking the request on
+    it. This used to run inline -- run_matching_for_user scores every
+    unseen job with a real, sequential Claude API call, which for most
+    runs (a tier's normal per-click cap) stayed under the platform's
+    request timeout, but NOT for a "welcome search" specifically (a
+    brand-new account's deliberately deeper first-ever run, see
+    models.User.used_welcome_search) -- up to 100 sequential API
+    calls, long enough in practice to 502 before a synchronous
+    response could ever be sent, which the browser reports as a CORS
+    failure (Render's own timeout page carries no CORS headers). Same
+    fix, same reasoning, as POST /pipeline/discover already got for
+    the identical underlying problem -- see that endpoint's and
+    run_single_user_matching_background's docstrings. Poll
+    GET /pipeline/match/{run_id} for completion."""
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before running matching.")
 
@@ -135,32 +154,37 @@ def match_and_tailor(db: Session = Depends(get_db), user: models.User = Depends(
     if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    # A brand-new user's very first click gets a deliberately deeper,
-    # unmetered "welcome search" instead of their tier's normal per-click
-    # cap -- see models.User.used_welcome_search and config.py's
-    # welcome_search_job_cap for the reasoning. Scoped to this
-    # interactive endpoint only, not the nightly scheduled job (which is
-    # already uncapped and always metered) -- someone's first real
-    # search realistically happens via this button, not an overnight
-    # cron that ran before they'd used the product at all.
-    is_welcome_search = not user.used_welcome_search
-    if is_welcome_search:
-        max_jobs = settings.welcome_search_job_cap
-    else:
-        max_jobs = settings.pro_tier_match_run_job_cap if usage.is_pro(user) else settings.free_tier_match_run_job_cap
+    log = models.ScheduledRunLog(run_type="interactive_match", status="running")
+    db.add(log)
+    db.commit()
+    db.refresh(log)
 
-    result = pipeline_runner.run_matching_for_user(db, user, max_jobs=max_jobs, skip_usage_metering=is_welcome_search)
+    background_tasks.add_task(pipeline_runner.run_single_user_matching_background, log.id, user.id)
 
-    if is_welcome_search:
-        user.used_welcome_search = True
-        db.commit()
+    return JSONResponse(status_code=202, content={"status": "started", "run_id": log.id})
+
+
+@router.get("/pipeline/match/{run_id}")
+def match_status(
+    run_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Polled by the dashboard after POST /pipeline/match returns 202.
+    Scoped to run_type="interactive_match" only (same as discover_status
+    above) -- not further scoped to the requesting user's own run,
+    same trust level reasoning as discover_status: nothing sensitive
+    in a status/result payload that a logged-in user couldn't already
+    see some version of."""
+    log = db.query(models.ScheduledRunLog).filter_by(id=run_id, run_type="interactive_match").first()
+    if log is None:
+        raise HTTPException(status_code=404, detail="No match run with that id.")
+
     return {
-        "queued_application_ids": result["queued_application_ids"],
-        "usage_limit_reached": result["usage_limit_reached"],
-        "near_misses": result["near_misses"],
-        "hit_job_cap": result["hit_job_cap"],
-        "is_welcome_search": is_welcome_search,
-        "jobs_searched": max_jobs,
+        "run_id": log.id,
+        "status": log.status,
+        "result": json.loads(log.result_json) if log.result_json else None,
+        "error": log.error,
     }
 
 

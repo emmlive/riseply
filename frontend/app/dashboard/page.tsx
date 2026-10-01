@@ -155,36 +155,44 @@ export default function OverviewPage() {
     setMessage("");
     setNearMisses([]);
     try {
-      // NOTE: discovery used to be kicked off here, fired-and-forgotten
-      // BEFORE awaiting match below, so it ran concurrently with the
-      // match request. That was a real bug, not just a stylistic
-      // choice: POST /pipeline/discover's own background task makes
-      // dozens of sequential external HTTP calls across 8 sources, and
-      // POST /pipeline/match runs a fully synchronous, sequential
-      // Claude-API scoring loop over up to `welcome_search_job_cap`
-      // (100) jobs on someone's very first search -- both are heavy,
-      // memory- and time-costly operations, both landing in the same
-      // backend process at the same time, on every single "Find new
-      // matches" click. That concurrent stacking is a real, standing
-      // contributor to this service's memory-limit restarts,
-      // independent of and in addition to the three discovery/batch
-      // fixes already made (see run_discovery's and
-      // run_scheduled_matching_batch's docstrings) -- it just showed up
-      // rarely in practice, because it requires a first-ever-search
-      // welcome search (the deepest, uncapped-relative-to-normal run)
-      // to land on someone's very first click, which most real users
-      // only ever do once. It stopped being rare once admin accounts
-      // could reach this same "first search ever" flow via "Preview as
-      // individual." Firing discovery AFTER match completes (still
-      // fire-and-forget/best-effort, still non-blocking for the user)
-      // keeps both features working exactly as before, just serialized
-      // instead of stacked.
-      const result = await api<{ queued_application_ids: number[]; usage_limit_reached: boolean; near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number }>(
-        "/pipeline/match",
-        { method: "POST" }
-      );
+      // POST /pipeline/match returns 202 immediately with a run_id --
+      // it used to return the real result directly, blocking this
+      // request on a fully synchronous, sequential Claude-API scoring
+      // loop over up to `welcome_search_job_cap` (100) jobs on
+      // someone's very first search. That stayed under the platform's
+      // request timeout for a normal tier-capped run, but not for a
+      // welcome search specifically -- long enough in practice to 502
+      // before a response could ever be sent back, which this browser
+      // reported as a CORS failure (a real production incident, not
+      // hypothetical -- see backend/app/services/pipeline_runner.py's
+      // run_single_user_matching_background docstring for the full
+      // story, including why this went from a rare edge case to a
+      // routine one once "Preview as individual" let an admin account
+      // reach its own first-ever "welcome search"). Poll for
+      // completion instead, same pattern POST /pipeline/discover
+      // already uses for the identical underlying reason.
+      type MatchResult = {
+        queued_application_ids: number[]; usage_limit_reached: boolean;
+        near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number;
+      };
+      const { run_id } = await api<{ status: string; run_id: number }>("/pipeline/match", { method: "POST" });
+
+      let result: MatchResult | null = null;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const poll = await api<{ status: string; result: MatchResult | null; error: string | null }>(
+          `/pipeline/match/${run_id}`
+        );
+        if (poll.status === "success") { result = poll.result; break; }
+        if (poll.status === "failed") throw new Error(poll.error || "Something went wrong running the search.");
+        // still "running" -- keep polling
+      }
+      if (!result) throw new Error("Something went wrong running the search.");
+
       // Best-effort refresh of the shared job pool for NEXT time --
-      // deliberately fired after match, not before (see note above).
+      // fired after match completes, not before/concurrently (see
+      // PR #88's fix for why firing it concurrently was its own
+      // separate bug).
       api("/pipeline/discover", { method: "POST" }).catch(() => {});
       if (result.is_welcome_search) {
         // The one genuinely different message in this whole function --

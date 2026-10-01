@@ -234,6 +234,86 @@ def run_discovery_background(run_log_id: int) -> None:
         db.close()
 
 
+def run_single_user_matching_background(run_log_id: int, user_id: int) -> None:
+    """BackgroundTasks entry point for POST /pipeline/match.
+
+    Same background+poll shape as run_discovery_background above, for
+    the identical underlying reason (see ScheduledRunLog's own
+    docstring, which already documents this exact failure mode for
+    discovery): run_matching_for_user scores every unseen job with a
+    real, sequential Claude API call, one at a time, with no way to
+    parallelize that without changing what gets scored first -- see
+    that function's own docstring. This endpoint used to call it
+    inline, synchronously, in the request handler. For most runs
+    (the free/pro tier per-click cap) that stayed under the platform's
+    request timeout. It did NOT stay under it for a "welcome search"
+    specifically (settings.welcome_search_job_cap, deliberately deeper
+    than either tier's normal per-click cap, for a brand-new account's
+    very first search ever) -- up to 100 sequential Claude calls,
+    comfortably long enough to 502 before the response could ever be
+    sent, which the browser reports as a CORS failure since Render's
+    own timeout page doesn't carry the CORS headers FastAPI's
+    middleware would have added to a real response. A real individual
+    account hits its own welcome search exactly once, ever, so this
+    stayed rare in practice -- until "Preview as individual" (see
+    frontend/lib/previewMode.ts) let an admin account reach that same
+    "first search ever" flow, turning a rare edge case into a
+    routinely-hit one."""
+    import json as _json
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is None:
+            return  # shouldn't happen; nothing sensible to update
+
+        user = db.get(models.User, user_id)
+        if user is None:
+            log.status = "failed"
+            log.error = "User no longer exists."
+            log.finished_at = datetime.utcnow()
+            db.commit()
+            return
+
+        # Same tier/welcome-search cap logic the router used to apply
+        # inline before this call -- moved here since the router no
+        # longer computes it itself (see POST /pipeline/match).
+        is_welcome_search = not user.used_welcome_search
+        if is_welcome_search:
+            max_jobs = settings.welcome_search_job_cap
+        else:
+            max_jobs = settings.pro_tier_match_run_job_cap if usage.is_pro(user) else settings.free_tier_match_run_job_cap
+
+        result = run_matching_for_user(db, user, max_jobs=max_jobs, skip_usage_metering=is_welcome_search)
+
+        if is_welcome_search:
+            user.used_welcome_search = True
+            db.commit()
+
+        log.status = "success"
+        log.result_json = _json.dumps({
+            "queued_application_ids": result["queued_application_ids"],
+            "usage_limit_reached": result["usage_limit_reached"],
+            "near_misses": result["near_misses"],
+            "hit_job_cap": result["hit_job_cap"],
+            "is_welcome_search": is_welcome_search,
+            "jobs_searched": max_jobs,
+        })
+        log.finished_at = datetime.utcnow()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log = db.get(models.ScheduledRunLog, run_log_id)
+        if log is not None:
+            log.status = "failed"
+            log.error = str(e)
+            log.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
 def run_discovery(db: Session) -> dict:
     """Pulls fresh postings into the shared job pool.
 
