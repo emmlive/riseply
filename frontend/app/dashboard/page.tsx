@@ -177,17 +177,44 @@ export default function OverviewPage() {
       };
       const { run_id } = await api<{ status: string; run_id: number }>("/pipeline/match", { method: "POST" });
 
+      // A welcome search can poll for several minutes (up to ~100
+      // sequential Claude calls server-side), and over that many
+      // requests a single transient network blip is expected, not
+      // exceptional -- a dropped connection, a brief Render hiccup, a
+      // laptop waking from sleep. Treating the FIRST failed poll as
+      // fatal was itself a real bug: it surfaced a raw, scary "Failed
+      // to fetch" (the browser's own message for a network-level
+      // failure, not an HTTP error status) even while the matching run
+      // kept going and finished successfully server-side moments
+      // later -- confirmed in production, where real matches had
+      // already been queued by the time the dashboard gave up and
+      // showed this error. So only treat the run as failed after
+      // several CONSECUTIVE poll failures in a row (a persistent
+      // problem), and cap the overall wait so a run that's genuinely
+      // stuck (e.g. its process died mid-run and nothing ever marks
+      // it "failed") doesn't poll forever.
+      const MAX_CONSECUTIVE_POLL_FAILURES = 5;
+      const MAX_POLL_ATTEMPTS = 300; // ~10 minutes at 2s/poll
       let result: MatchResult | null = null;
-      for (;;) {
+      let consecutiveFailures = 0;
+      for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
         await new Promise((r) => setTimeout(r, 2000));
-        const poll = await api<{ status: string; result: MatchResult | null; error: string | null }>(
-          `/pipeline/match/${run_id}`
-        );
+        let poll: { status: string; result: MatchResult | null; error: string | null };
+        try {
+          poll = await api<{ status: string; result: MatchResult | null; error: string | null }>(
+            `/pipeline/match/${run_id}`
+          );
+        } catch (pollErr) {
+          consecutiveFailures++;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_POLL_FAILURES) throw pollErr;
+          continue; // transient -- keep polling rather than failing the whole run
+        }
+        consecutiveFailures = 0;
         if (poll.status === "success") { result = poll.result; break; }
         if (poll.status === "failed") throw new Error(poll.error || "Something went wrong running the search.");
         // still "running" -- keep polling
       }
-      if (!result) throw new Error("Something went wrong running the search.");
+      if (!result) throw new Error("That search is taking longer than expected — check the Applications tab in a few minutes, or try again.");
 
       // Best-effort refresh of the shared job pool for NEXT time --
       // fired after match completes, not before/concurrently (see
