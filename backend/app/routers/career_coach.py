@@ -9,6 +9,7 @@ from app.security import get_current_user
 from app.services import career_coach as career_coach_service
 from app.services import usage, rise_index, safety_flags
 from app.services import library as library_service
+from app.services import visuals as visuals_service
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -48,9 +49,11 @@ def _messages_out(db: Session, rows: list[models.CareerCoachMessage]) -> list[sc
     out = []
     for m in rows:
         text, items = library_service.resolve(m.content or "", by_id)
+        text, visual = visuals_service.extract(text)
         out.append(schemas.CareerCoachMessageOut(
             id=m.id, role=m.role, content=text, created_at=m.created_at,
             resources=[schemas.LibraryItemOut.model_validate(i) for i in items],
+            visual=visual,
         ))
     return out
 
@@ -80,6 +83,7 @@ def start_session(
     try:
         result = career_coach_service.start_session(
             payload.session_type, target_role, payload.topic, user.resume_text, library=offered,
+            learning_style=payload.learning_style,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -92,12 +96,15 @@ def start_session(
     session = models.CareerCoachSession(
         user_id=user.id, session_type=payload.session_type,
         target_role=payload.target_role.strip(), topic=result["topic"],
+        learning_style=payload.learning_style,
     )
     db.add(session)
     db.commit()
     db.refresh(session)
 
-    opening_text = library_service.strip_unoffered_markers(result["opening_message"], {i.id for i in offered})
+    opening_text = visuals_service.sanitize(
+        library_service.strip_unoffered_markers(result["opening_message"], {i.id for i in offered})
+    )
     flag = safety_flags.scan(opening_text)
     opening = models.CareerCoachMessage(
         session_id=session.id, user_id=user.id, role="assistant",
@@ -135,7 +142,7 @@ def session_library(
 @router.post("/sessions/{session_id}/messages", response_model=schemas.CareerCoachMessageOut)
 def send_message(
     session_id: int,
-    payload: schemas.CoachingMessageRequest,
+    payload: schemas.CareerCoachMessageRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
@@ -161,8 +168,11 @@ def send_message(
         reply_text = career_coach_service.reply(
             session.session_type, session.target_role, session.topic,
             user.resume_text, history, payload.message, library=offered,
+            learning_style=session.learning_style or "auto", style=payload.style,
         )
-        reply_text = library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})
+        reply_text = visuals_service.sanitize(
+            library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})
+        )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
         print(f"[career-coach] Reply generation failed for session {session_id}: {e}")
