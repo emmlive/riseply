@@ -281,6 +281,34 @@ class CoachingMessageRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+# --- Career Coach (individual product) ---
+
+class CareerCoachSessionOut(BaseModel):
+    id: int
+    session_type: str
+    target_role: str
+    topic: str
+    status: str
+    score: int | None
+    feedback: str
+    created_at: datetime
+    completed_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class CareerCoachStartRequest(BaseModel):
+    session_type: str = Field(pattern="^(drill|walkthrough|interview|resume)$")
+    target_role: str = Field(min_length=2, max_length=120)
+    topic: str = Field(default="", max_length=200)
+
+
+class CareerCoachStartResponse(BaseModel):
+    session: CareerCoachSessionOut
+    opening_message: CoachingMessageOut
+
+
 class AddCurrentJobRequest(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)

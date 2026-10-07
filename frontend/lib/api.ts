@@ -582,6 +582,20 @@ export interface CoachingMessage {
   created_at: string;
 }
 
+export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume";
+
+export interface CareerCoachSession {
+  id: number;
+  session_type: CareerCoachSessionType;
+  target_role: string;
+  topic: string;
+  status: "in_progress" | "completed";
+  score: number | null;
+  feedback: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface CompanyStats {
   company: string;
   applied_count: number;
