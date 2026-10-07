@@ -40,7 +40,12 @@ def is_pro(user: models.User) -> bool:
     testing, not paying customers."""
     if user.is_admin:
         return True
-    return user.subscription_tier == "pro" and user.subscription_status == "active"
+    if user.subscription_tier == "pro" and user.subscription_status == "active":
+        return True
+    # Complimentary access from a free-days discount code. Checked here,
+    # at read time, so it simply lapses on its date -- nothing has to run
+    # to turn it off, and Stripe webhooks can't clobber it.
+    return bool(user.pro_until and user.pro_until > datetime.utcnow())
 
 
 def limits_for(user: models.User) -> dict:

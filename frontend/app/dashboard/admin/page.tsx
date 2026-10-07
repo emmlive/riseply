@@ -3,15 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import DiscountCodesTab from "@/components/DiscountCodesTab";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
   AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
-type Tab = "overview" | "users" | "organizations" | "health" | "moderation" | "support" | "admins";
+type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "admins";
 
 const ALL_TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: "overview", label: "Overview", roles: ["super", "billing", "readonly"] },
+  { id: "discounts", label: "Discount codes", roles: ["super", "billing", "readonly"] },
   { id: "users", label: "Users", roles: ["super", "support", "readonly"] },
   { id: "organizations", label: "Organizations", roles: ["super", "billing", "readonly"] },
   { id: "health", label: "System health", roles: ["super", "readonly"] },
@@ -77,6 +79,7 @@ export default function AdminPage() {
       </div>
 
       {activeTab === "overview" && <OverviewTab />}
+      {activeTab === "discounts" && <DiscountCodesTab canAct={role === "super" || role === "billing"} />}
       {activeTab === "users" && <UsersTab currentAdminId={user.id} role={role} />}
       {activeTab === "organizations" && <OrganizationsTab />}
       {activeTab === "health" && <SystemHealthTab />}

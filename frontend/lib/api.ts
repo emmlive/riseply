@@ -65,7 +65,11 @@ export async function api<T = any>(
     } catch {
       // response wasn't JSON — keep statusText
     }
-    if (res.status === 429 && onQuotaLimit) {
+    // The discount-code endpoints are rate limited (anti-guessing), and
+    // their 429 means "slow down", not "plan limit reached" -- so no
+    // upgrade modal for them; the Billing page words it itself.
+    const isCodeEndpoint = path.startsWith("/billing/check-code") || path.startsWith("/billing/redeem-code");
+    if (res.status === 429 && onQuotaLimit && !isCodeEndpoint) {
       onQuotaLimit(typeof detail === "string" ? detail : "You've reached your plan's limit for this.");
     }
     throw new Error(detail);
@@ -98,6 +102,8 @@ export interface User {
   admin_role: string;
   bookmarklet_token: string;
   used_welcome_search: boolean;
+  // Complimentary Pro access from a free-days discount code (ISO date).
+  pro_until?: string | null;
 }
 
 export interface SavedResume {
@@ -878,3 +884,36 @@ export const MEETING_AGENDA_TEMPLATES: { label: string; text: string }[] = [
     text: "How things have been going generally. Anything the mentee wants to raise that doesn't fit the other categories.",
   },
 ];
+
+// --- Discount codes ---
+
+export interface DiscountCode {
+  id: number;
+  code: string;
+  kind: "stripe" | "free_days";
+  percent_off: number | null;
+  amount_off_cents: number | null;
+  duration: "once" | "repeating" | "forever";
+  duration_months: number | null;
+  free_days: number | null;
+  max_redemptions: number | null;
+  expires_at: string | null;
+  active: boolean;
+  note: string;
+  created_at: string;
+  redemption_count: number;
+  status: "active" | "disabled" | "expired" | "exhausted";
+  description: string;
+}
+
+export interface DiscountRedemption {
+  email: string;
+  redeemed_at: string;
+  detail: string;
+}
+
+export interface DiscountCodeCheck {
+  valid: boolean;
+  kind: "stripe" | "free_days";
+  description: string;
+}

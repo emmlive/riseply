@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional
-from pydantic import field_validator, BaseModel, EmailStr, Field
+from pydantic import field_validator, model_validator, BaseModel, EmailStr, Field
 
 
 # --- Auth ---
@@ -74,6 +74,8 @@ class UserOut(BaseModel):
     admin_role: str
     bookmarklet_token: str = ""
     used_welcome_search: bool = False
+    # Complimentary Pro access from a free-days discount code, if any.
+    pro_until: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -1372,3 +1374,89 @@ class OrgAnalyticsOut(BaseModel):
     qa_gaps: list[QAGapStats]
     departments: list[DepartmentStats]
     mentorship: MentorshipStats
+
+
+# --- Discount codes ---
+
+class DiscountCodeCreate(BaseModel):
+    code: str = Field(pattern=r"^[A-Za-z0-9_-]{3,30}$")
+    kind: str = Field(pattern="^(stripe|free_days)$")
+    percent_off: int | None = Field(default=None, ge=1, le=100)
+    amount_off_cents: int | None = Field(default=None, ge=50, le=1_000_000)
+    duration: str = Field(default="once", pattern="^(once|repeating|forever)$")
+    duration_months: int | None = Field(default=None, ge=1, le=36)
+    free_days: int | None = Field(default=None, ge=1, le=365)
+    max_redemptions: int | None = Field(default=None, ge=1, le=1_000_000)
+    expires_at: datetime | None = None
+    note: str = Field(default="", max_length=200)
+
+    @field_validator("expires_at")
+    @classmethod
+    def _naive_utc(cls, v):
+        # Everything is stored as naive UTC; convert anything tz-aware.
+        if v is not None and v.tzinfo is not None:
+            from datetime import timezone
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
+    @model_validator(mode="after")
+    def _check_shape(self):
+        if self.kind == "stripe":
+            if (self.percent_off is None) == (self.amount_off_cents is None):
+                raise ValueError("Set either a percent off or a dollar amount off (not both).")
+            if self.free_days is not None:
+                raise ValueError("Free days only applies to free-days codes.")
+            if self.duration == "repeating" and not self.duration_months:
+                raise ValueError("Say how many months the discount lasts.")
+            if self.duration != "repeating":
+                self.duration_months = None
+        else:
+            if not self.free_days:
+                raise ValueError("Say how many free Pro days this code grants.")
+            if self.percent_off is not None or self.amount_off_cents is not None:
+                raise ValueError("Free-days codes don't take a percent or amount off.")
+            self.duration, self.duration_months = "once", None
+        return self
+
+
+class DiscountCodeActive(BaseModel):
+    active: bool
+
+
+class DiscountCodeOut(BaseModel):
+    id: int
+    code: str
+    kind: str
+    percent_off: int | None = None
+    amount_off_cents: int | None = None
+    duration: str = "once"
+    duration_months: int | None = None
+    free_days: int | None = None
+    max_redemptions: int | None = None
+    expires_at: datetime | None = None
+    active: bool
+    note: str = ""
+    created_at: datetime
+    redemption_count: int = 0
+    status: str = "active"  # active | disabled | expired | exhausted
+    description: str = ""
+
+
+class DiscountRedemptionOut(BaseModel):
+    email: str
+    redeemed_at: datetime
+    detail: str = ""
+
+
+class DiscountCodeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=60)
+
+
+class DiscountCodeCheckOut(BaseModel):
+    valid: bool = True
+    kind: str
+    description: str
+
+
+class SubscribeRequest(BaseModel):
+    code: str | None = Field(default=None, max_length=60)

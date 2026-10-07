@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.rate_limit import limiter
 from app.security import get_current_user
-from app import models
+from app.services import discounts as discount_service
+from app import models, schemas
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -32,8 +34,45 @@ def _get_or_create_stripe_customer(stripe, db: Session, user: models.User) -> st
 
 # --- Subscribe to Pro ---
 
+@router.post("/check-code", response_model=schemas.DiscountCodeCheckOut)
+@limiter.limit("30/hour")
+def check_code(
+    request: Request,
+    payload: schemas.DiscountCodeRequest,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Previews what a code does, without using it. Same uniform error as
+    redeeming, so it can't be used to enumerate codes (and it's rate
+    limited)."""
+    row = discount_service.find_usable(db, payload.code, user)
+    return schemas.DiscountCodeCheckOut(kind=row.kind, description=discount_service.describe(row))
+
+
+@router.post("/redeem-code")
+@limiter.limit("30/hour")
+def redeem_free_days_code(
+    request: Request,
+    payload: schemas.DiscountCodeRequest,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Redeems a free-days code: grants complimentary Pro right away, no
+    payment. Stripe-discount codes are applied at checkout instead
+    (see /subscribe)."""
+    row = discount_service.find_usable(db, payload.code, user, kind="free_days")
+    if user.subscription_tier == "pro" and user.subscription_status == "active":
+        raise HTTPException(status_code=400, detail="You already have an active Pro subscription, so there's nothing to add.")
+    if not discount_service.record_redemption(db, row, user, detail=f"{row.free_days} free Pro days"):
+        raise HTTPException(status_code=400, detail=discount_service.INVALID)
+    until = discount_service.grant_free_days(db, user, row.free_days)
+    db.commit()
+    return {"redeemed": True, "pro_until": until.isoformat(), "description": discount_service.describe(row)}
+
+
 @router.post("/subscribe")
 def create_subscription_checkout(
+    payload: schemas.SubscribeRequest | None = None,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -45,14 +84,33 @@ def create_subscription_checkout(
     stripe = _stripe()
     customer_id = _get_or_create_stripe_customer(stripe, db, user)
 
-    session = stripe.checkout.Session.create(
-        mode="subscription",
-        customer=customer_id,
-        line_items=[{"price": settings.stripe_price_id_pro, "quantity": 1}],
-        success_url=settings.stripe_success_url,
-        cancel_url=settings.stripe_cancel_url,
-        metadata={"user_id": str(user.id)},
-    )
+    metadata = {"user_id": str(user.id)}
+    extra = {}
+    if payload and payload.code and payload.code.strip():
+        row = discount_service.find_usable(db, payload.code, user, kind="stripe")
+        if not row.stripe_promotion_code_id:
+            raise HTTPException(status_code=400, detail=discount_service.INVALID)
+        extra["discounts"] = [{"promotion_code": row.stripe_promotion_code_id}]
+        # The redemption is recorded by the webhook once payment goes
+        # through (not now), keyed off this.
+        metadata["discount_code_id"] = str(row.id)
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            customer=customer_id,
+            line_items=[{"price": settings.stripe_price_id_pro, "quantity": 1}],
+            success_url=settings.stripe_success_url,
+            cancel_url=settings.stripe_cancel_url,
+            metadata=metadata,
+            **extra,
+        )
+    except Exception as e:
+        if extra:
+            # Stripe rejected the code (used up, expired on its side...).
+            print(f"[billing] Checkout with discount failed for user {user.id}: {e}")
+            raise HTTPException(status_code=400, detail=discount_service.INVALID)
+        raise
     return {"checkout_url": session.url}
 
 
@@ -150,6 +208,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             user.subscription_tier = "pro"
             user.subscription_status = "active"
             db.commit()
+            # A discount code used at checkout counts as redeemed only now
+            # that the payment went through. Idempotent on webhook retries.
+            code_id = metadata.get("discount_code_id") if isinstance(metadata, dict) else None
+            if code_id and str(code_id).isdigit():
+                code_row = db.query(models.DiscountCode).filter_by(id=int(code_id)).first()
+                if code_row:
+                    discount_service.record_redemption(db, code_row, user, detail="Applied at checkout")
 
         org = _find_org_by_customer(customer_id)
         if org and subscription_id:
