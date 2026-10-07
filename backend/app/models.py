@@ -453,6 +453,27 @@ class CareerCoachNote(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class LibraryItem(Base):
+    """One curated learning resource in the Library (a course, article,
+    video, practice site, reference...). Admin-managed. The Career Coach
+    may only recommend items from this table, by id -- it is never allowed
+    to produce its own links or resource names, so a learner is never sent
+    to something that doesn't exist. `fields` is a comma-separated list of
+    lowercase topic/field tags (e.g. "sql,data analysis")."""
+    __tablename__ = "library_items"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    description = Column(Text, default="")
+    resource_type = Column(String, default="course")  # course|article|video|book|practice|reference|tool
+    fields = Column(Text, default="")
+    level = Column(String, default="all")  # beginner|intermediate|advanced|all
+    cost = Column(String, default="free")  # free|freemium|paid
+    active = Column(Boolean, default=True, server_default="true")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class PointsEvent(Base):
     """One Rise Points award. Kept as a log (not just a running total) so
     the activity feed can show a real history — 'why do I have 340 points'
