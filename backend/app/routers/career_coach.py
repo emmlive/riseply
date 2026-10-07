@@ -175,3 +175,36 @@ def complete_session(
     db.refresh(session)
     rise_index.award_points(db, user, "career_coach_session_completed", "Completed a Career Coach session")
     return session
+
+
+@router.get("/sessions/{session_id}/notes", response_model=schemas.CareerCoachNoteOut)
+def get_notes(
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _get_owned_session(db, session_id, user.id)
+    note = db.query(models.CareerCoachNote).filter_by(session_id=session_id, user_id=user.id).first()
+    return note or schemas.CareerCoachNoteOut()
+
+
+@router.put("/sessions/{session_id}/notes", response_model=schemas.CareerCoachNoteOut)
+def save_notes(
+    session_id: int,
+    payload: schemas.CareerCoachNoteIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    # Not metered and works on completed sessions too -- people keep
+    # annotating after the score. The notes are never sent to the model.
+    _get_owned_session(db, session_id, user.id)
+    note = db.query(models.CareerCoachNote).filter_by(session_id=session_id, user_id=user.id).first()
+    if note:
+        note.content = payload.content
+        note.updated_at = datetime.utcnow()
+    else:
+        note = models.CareerCoachNote(session_id=session_id, user_id=user.id, content=payload.content)
+        db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note

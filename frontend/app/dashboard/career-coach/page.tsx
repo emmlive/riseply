@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, CareerCoachSession, CareerCoachSessionType, CoachingMessage } from "@/lib/api";
+import {
+  Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
+} from "@/lib/speech";
 
 // The individual-product AI Career Coach: practice for any role or field
 // the person types in (no employer or application needed), plus resume
@@ -41,6 +44,25 @@ export default function CareerCoachPage() {
   const [starting, setStarting] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Voice: dictation fills the reply box (you review it, then send);
+  // read-aloud speaks the coach's replies. Both use on-device browser
+  // APIs and are hidden where unsupported. Support is detected after
+  // mount so server and client render the same markup.
+  const [canDictate, setCanDictate] = useState(false);
+  const [canSpeak, setCanSpeak] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [readAloud, setReadAloud] = useState(false);
+  const [speakingId, setSpeakingId] = useState<number | null>(null);
+  const dictation = useRef<Dictation | null>(null);
+  const dictationBase = useRef("");
+
+  // Notepad: one note per session, autosaved shortly after you stop typing.
+  const [notes, setNotes] = useState("");
+  const [notesState, setNotesState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesDirty = useRef(false);
+  const notesSession = useRef<number | null>(null);
+
   useEffect(() => {
     api<CareerCoachSession[]>("/career-coach/sessions")
       .then(setSessions)
@@ -51,6 +73,88 @@ export default function CareerCoachPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  useEffect(() => {
+    setCanDictate(dictationSupported());
+    setCanSpeak(speechSynthesisSupported());
+    try {
+      setReadAloud(localStorage.getItem("cc-read-aloud") === "1");
+    } catch { /* storage unavailable -- default off */ }
+    return () => { dictation.current?.stop(); stopSpeaking(); };
+  }, []);
+
+  // Load the note whenever a different session is opened.
+  useEffect(() => {
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesDirty.current = false;
+    notesSession.current = active?.id ?? null;
+    setNotes("");
+    setNotesState("idle");
+    if (!active) return;
+    const id = active.id;
+    api<{ content: string }>(`/career-coach/sessions/${id}/notes`)
+      .then((n) => { if (notesSession.current === id && !notesDirty.current) setNotes(n.content || ""); })
+      .catch(() => {});
+  }, [active?.id]);
+
+  function onNotesChange(value: string) {
+    if (!active) return;
+    const id = active.id;
+    setNotes(value);
+    notesDirty.current = true;
+    setNotesState("saving");
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(async () => {
+      try {
+        await api(`/career-coach/sessions/${id}/notes`, { method: "PUT", body: JSON.stringify({ content: value }) });
+        if (notesSession.current === id) setNotesState("saved");
+      } catch {
+        if (notesSession.current === id) setNotesState("error");
+      }
+    }, 800);
+  }
+
+  function toggleDictation() {
+    if (listening) { dictation.current?.stop(); return; }
+    stopSpeaking();
+    setSpeakingId(null);
+    dictationBase.current = input.trim() ? input.trimEnd() + " " : "";
+    const d = startDictation(
+      (text) => setInput(dictationBase.current + text),
+      (err) => { setListening(false); dictation.current = null; if (err) setError(err); },
+    );
+    if (!d) { setError("Dictation isn't available in this browser — you can type instead."); return; }
+    dictation.current = d;
+    setListening(true);
+  }
+
+  function toggleReadAloud(on: boolean) {
+    setReadAloud(on);
+    try { localStorage.setItem("cc-read-aloud", on ? "1" : "0"); } catch { /* ignore */ }
+    if (!on) { stopSpeaking(); setSpeakingId(null); }
+  }
+
+  function playMessage(m: CoachingMessage) {
+    if (speakingId === m.id) { stopSpeaking(); setSpeakingId(null); return; }
+    setSpeakingId(m.id);
+    speak(m.content, () => setSpeakingId((cur) => (cur === m.id ? null : cur)));
+  }
+
+  function flushNotes() {
+    // Save immediately if an edit is still waiting on its debounce timer.
+    if (!active || !notesTimer.current || !notesDirty.current) return;
+    clearTimeout(notesTimer.current);
+    notesTimer.current = null;
+    api(`/career-coach/sessions/${active.id}/notes`, { method: "PUT", body: JSON.stringify({ content: notes }) }).catch(() => {});
+  }
+
+  function closeSession() {
+    flushNotes();
+    dictation.current?.stop();
+    stopSpeaking();
+    setSpeakingId(null);
+    setActive(null);
+  }
 
   async function start() {
     if (starting || role.trim().length < 2) return;
@@ -65,6 +169,7 @@ export default function CareerCoachPage() {
       setActive(r.session);
       setMessages([r.opening_message]);
       setTopic("");
+      if (readAloud) { setSpeakingId(r.opening_message.id); speak(r.opening_message.content, () => setSpeakingId(null)); }
     } catch (err: any) {
       setError(err.message || "Couldn't start a session — try again.");
     } finally {
@@ -73,6 +178,7 @@ export default function CareerCoachPage() {
   }
 
   async function open(s: CareerCoachSession) {
+    flushNotes();
     setError("");
     setActive(s);
     setMessages([]);
@@ -86,6 +192,7 @@ export default function CareerCoachPage() {
 
   async function send() {
     if (!input.trim() || sending || !active) return;
+    dictation.current?.stop();
     const text = input;
     setInput("");
     setSending(true);
@@ -96,6 +203,7 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify({ message: text }),
       });
       setMessages((m) => [...m, reply]);
+      if (readAloud) { setSpeakingId(reply.id); speak(reply.content, () => setSpeakingId(null)); }
     } catch (err: any) {
       setError(err.message || "Coach couldn't respond — your message was saved, try again.");
     } finally {
@@ -109,6 +217,7 @@ export default function CareerCoachPage() {
       setError("Send at least one reply before ending the session.");
       return;
     }
+    dictation.current?.stop();
     setCompleting(true);
     setError("");
     try {
@@ -171,12 +280,23 @@ export default function CareerCoachPage() {
               <strong>{active.topic}</strong>{" "}
               <span className="hint">{typeLabel(active.session_type)} · {active.target_role}</span>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setActive(null)}>Close</button>
+            <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close</button>
           </div>
 
           <div className="chat-window" style={{ maxHeight: 420, padding: "12px 0" }}>
             {messages.map((m) => (
-              <div key={m.id} className={`chat-bubble ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+              <div key={m.id} className={`chat-bubble ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>
+                {m.content}
+                {canSpeak && m.role === "assistant" && (
+                  <button
+                    className="btn btn-ghost btn-sm" style={{ display: "block", marginTop: 6 }}
+                    onClick={() => playMessage(m)}
+                    aria-label={speakingId === m.id ? "Stop reading aloud" : "Read this aloud"}
+                  >
+                    {speakingId === m.id ? "■ Stop" : "▶ Listen"}
+                  </button>
+                )}
+              </div>
             ))}
             {sending && <div className="chat-bubble assistant muted">Thinking…</div>}
             <div ref={endRef} />
@@ -200,13 +320,51 @@ export default function CareerCoachPage() {
                   }}
                   placeholder={active.session_type === "resume" ? "Paste a bullet or section to rewrite…" : "Your reply…"}
                 />
+                {canDictate && (
+                  <button
+                    className={`btn ${listening ? "btn-primary" : "btn-ghost"}`}
+                    onClick={toggleDictation} aria-pressed={listening}
+                    aria-label={listening ? "Stop dictating" : "Dictate your reply"}
+                    title={listening ? "Stop dictating" : "Dictate your reply"}
+                  >
+                    {listening ? "● Listening…" : "🎤"}
+                  </button>
+                )}
                 <button className="btn btn-primary" onClick={send} disabled={sending || !input.trim()}>Send</button>
               </div>
+              {canSpeak && (
+                <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} />
+                  Read the coach&apos;s replies aloud
+                </label>
+              )}
               <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={end} disabled={completing}>
                 {completing ? "Scoring…" : "End session & get feedback"}
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {active && (
+        <div className="card">
+          <div className="card-row" style={{ marginBottom: 6 }}>
+            <h3 style={{ margin: 0 }}>Notepad</h3>
+            <span className="hint">
+              {notesState === "saving" && "Saving…"}
+              {notesState === "saved" && "Saved"}
+              {notesState === "error" && "Couldn't save — keep this tab open and try typing again"}
+            </span>
+          </div>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Your own space for answers worth keeping, stories to reuse, and things to study. Only you see
+            it, and the coach doesn&apos;t read it.
+          </p>
+          <textarea
+            value={notes} onChange={(e) => onNotesChange(e.target.value)} maxLength={20000}
+            placeholder="Jot down takeaways, follow-ups, phrases to practice…"
+            style={{ width: "100%", minHeight: 140 }}
+          />
         </div>
       )}
 

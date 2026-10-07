@@ -309,6 +309,15 @@ class CareerCoachStartResponse(BaseModel):
     opening_message: CoachingMessageOut
 
 
+class CareerCoachNoteIn(BaseModel):
+    content: str = Field(max_length=20000)
+
+
+class CareerCoachNoteOut(BaseModel):
+    content: str = ""
+    updated_at: datetime | None = None
+
+
 class AddCurrentJobRequest(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)

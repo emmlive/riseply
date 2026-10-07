@@ -221,6 +221,36 @@ def test_complete_failure_refunds_and_leaves_session_open(db):
     assert db.get(models.CareerCoachSession, sid).status == "in_progress"
 
 
+def test_notes_roundtrip_unmetered_and_never_sent_to_model(db):
+    user = _make_user(db)
+    sid = _start(user).json()["session"]["id"]
+    _login_as(user)
+    assert client.get(f"/career-coach/sessions/{sid}/notes").json()["content"] == ""
+    used = _used(db, user)
+    assert client.put(f"/career-coach/sessions/{sid}/notes", json={"content": "v1"}).status_code == 200
+    resp = client.put(f"/career-coach/sessions/{sid}/notes", json={"content": "v2 – STAR story"})
+    assert resp.json()["content"] == "v2 – STAR story"
+    assert client.get(f"/career-coach/sessions/{sid}/notes").json()["content"] == "v2 – STAR story"
+    assert _used(db, user) == used
+    assert db.query(models.CareerCoachNote).filter_by(session_id=sid).count() == 1  # upsert, not append
+
+
+def test_notes_work_after_completion_and_enforce_ownership_and_size(db):
+    owner = _make_user(db)
+    outsider = _make_user(db)
+    sid = _start(owner).json()["session"]["id"]
+    _login_as(owner)
+    with patch(f"{SVC}.reply", return_value="ok"):
+        client.post(f"/career-coach/sessions/{sid}/messages", json={"message": "a"})
+    with patch(f"{SVC}.finish_session", return_value={"score": 70, "feedback": "f"}):
+        client.post(f"/career-coach/sessions/{sid}/complete")
+    assert client.put(f"/career-coach/sessions/{sid}/notes", json={"content": "after"}).status_code == 200
+    assert client.put(f"/career-coach/sessions/{sid}/notes", json={"content": "x" * 20001}).status_code == 422
+    _login_as(outsider)
+    assert client.get(f"/career-coach/sessions/{sid}/notes").status_code == 404
+    assert client.put(f"/career-coach/sessions/{sid}/notes", json={"content": "hax"}).status_code == 404
+
+
 # ---- service-level parsing -------------------------------------------------
 
 def _fake(text):

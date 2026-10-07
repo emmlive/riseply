@@ -438,6 +438,21 @@ class CareerCoachMessage(Base):
     flag_reason = Column(String, default="", server_default="")
 
 
+class CareerCoachNote(Base):
+    """The person's own notepad for one career coach session. A separate
+    table (one row per session) rather than a column on the session so
+    deploys stay purely additive -- run_migration() creates new tables
+    but doesn't alter existing ones. Never sent to the model: it's their
+    scratch space, not coaching context."""
+    __tablename__ = "career_coach_notes"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("career_coach_sessions.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class PointsEvent(Base):
     """One Rise Points award. Kept as a log (not just a running total) so
     the activity feed can show a real history — 'why do I have 340 points'
