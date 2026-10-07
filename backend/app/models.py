@@ -395,6 +395,64 @@ class CoachingMessage(Base):
     flag_reason = Column(String, default="", server_default="")
 
 
+class CareerCoachSession(Base):
+    """One practice session with the individual-product AI Career Coach.
+
+    Deliberately NOT tied to an Application or an employer (unlike
+    CoachingSession, which is the Enterprise Job Buddy's role-specific
+    practice for an accepted job): the person names any target role or
+    field they want to get good at, whether or not a matching job
+    exists yet. session_type is one of drill | walkthrough | interview |
+    resume. Same shape otherwise -- a defined start/end and an
+    AI-assessed score at the end, so progress is concrete."""
+    __tablename__ = "career_coach_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    session_type = Column(String, nullable=False)  # drill | walkthrough | interview | resume
+    target_role = Column(String, nullable=False)  # free text the person typed, e.g. "IT Auditor"
+    topic = Column(String, default="", server_default="")
+
+    status = Column(String, default="in_progress", server_default="in_progress")  # in_progress | completed
+    score = Column(Integer, nullable=True)
+    feedback = Column(Text, default="", server_default="")
+
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+
+class CareerCoachMessage(Base):
+    """One turn in a career coach session's transcript."""
+    __tablename__ = "career_coach_messages"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("career_coach_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+    flagged = Column(Boolean, default=False, server_default="false")
+    flag_reason = Column(String, default="", server_default="")
+
+
+class CareerCoachNote(Base):
+    """The person's own notepad for one career coach session. A separate
+    table (one row per session) rather than a column on the session so
+    deploys stay purely additive -- run_migration() creates new tables
+    but doesn't alter existing ones. Never sent to the model: it's their
+    scratch space, not coaching context."""
+    __tablename__ = "career_coach_notes"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("career_coach_sessions.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class PointsEvent(Base):
     """One Rise Points award. Kept as a log (not just a running total) so
     the activity feed can show a real history — 'why do I have 340 points'

@@ -34,6 +34,7 @@ const ALWAYS_NAV = [
 const INDIVIDUAL_NAV = [
   { href: "/dashboard/rise-index", label: "Rise Index" },
   { href: "/dashboard/profiles", label: "Search profiles" },
+  { href: "/dashboard/career-coach", label: "Career Coach" },
   { href: "/dashboard/resume", label: "Resume" },
   { href: "/dashboard/applications", label: "Applications" },
   { href: "/dashboard/billing", label: "Billing" },
