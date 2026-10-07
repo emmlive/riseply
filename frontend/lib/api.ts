@@ -582,6 +582,27 @@ export interface CoachingMessage {
   created_at: string;
 }
 
+export type LibraryResourceType = "course" | "article" | "video" | "book" | "practice" | "reference" | "tool";
+
+export interface LibraryItem {
+  id: number;
+  title: string;
+  url: string;
+  description: string;
+  resource_type: LibraryResourceType;
+  fields: string[];
+  level: "beginner" | "intermediate" | "advanced" | "all";
+  cost: "free" | "freemium" | "paid";
+  active: boolean;
+}
+
+export type LibraryItemInput = Omit<LibraryItem, "id">;
+
+export interface CareerCoachMessage extends CoachingMessage {
+  // Library resources the coach recommended in this message.
+  resources?: LibraryItem[];
+}
+
 export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume";
 
 export interface CareerCoachSession {

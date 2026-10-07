@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CareerCoachSession, CareerCoachSessionType, CoachingMessage } from "@/lib/api";
+import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, LibraryItem } from "@/lib/api";
+import ResourceCard from "@/components/ResourceCard";
 import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
 } from "@/lib/speech";
@@ -32,7 +33,9 @@ export default function CareerCoachPage() {
   const [sessions, setSessions] = useState<CareerCoachSession[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [active, setActive] = useState<CareerCoachSession | null>(null);
-  const [messages, setMessages] = useState<CoachingMessage[]>([]);
+  const [messages, setMessages] = useState<CareerCoachMessage[]>([]);
+  // "Extra learning" shelf: Library resources relevant to this session.
+  const [shelf, setShelf] = useState<LibraryItem[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -82,6 +85,16 @@ export default function CareerCoachPage() {
     } catch { /* storage unavailable -- default off */ }
     return () => { dictation.current?.stop(); stopSpeaking(); };
   }, []);
+
+  useEffect(() => {
+    setShelf([]);
+    if (!active) return;
+    let cancelled = false;
+    api<LibraryItem[]>(`/career-coach/sessions/${active.id}/library`)
+      .then((rows) => { if (!cancelled) setShelf(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [active?.id]);
 
   // Load the note whenever a different session is opened.
   useEffect(() => {
@@ -134,7 +147,7 @@ export default function CareerCoachPage() {
     if (!on) { stopSpeaking(); setSpeakingId(null); }
   }
 
-  function playMessage(m: CoachingMessage) {
+  function playMessage(m: CareerCoachMessage) {
     if (speakingId === m.id) { stopSpeaking(); setSpeakingId(null); return; }
     setSpeakingId(m.id);
     speak(m.content, () => setSpeakingId((cur) => (cur === m.id ? null : cur)));
@@ -161,7 +174,7 @@ export default function CareerCoachPage() {
     setStarting(true);
     setError("");
     try {
-      const r = await api<{ session: CareerCoachSession; opening_message: CoachingMessage }>(
+      const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
         { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim() }) }
       );
@@ -183,7 +196,7 @@ export default function CareerCoachPage() {
     setActive(s);
     setMessages([]);
     try {
-      setMessages(await api<CoachingMessage[]>(`/career-coach/sessions/${s.id}/messages`));
+      setMessages(await api<CareerCoachMessage[]>(`/career-coach/sessions/${s.id}/messages`));
     } catch (err: any) {
       setError(err.message || "Couldn't load that session.");
       setActive(null);
@@ -199,7 +212,7 @@ export default function CareerCoachPage() {
     setError("");
     setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString() }]);
     try {
-      const reply = await api<CoachingMessage>(`/career-coach/sessions/${active.id}/messages`, {
+      const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
         method: "POST", body: JSON.stringify({ message: text }),
       });
       setMessages((m) => [...m, reply]);
@@ -287,6 +300,11 @@ export default function CareerCoachPage() {
             {messages.map((m) => (
               <div key={m.id} className={`chat-bubble ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>
                 {m.content}
+                {m.resources && m.resources.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}
+                  </div>
+                )}
                 {canSpeak && m.role === "assistant" && (
                   <button
                     className="btn btn-ghost btn-sm" style={{ display: "block", marginTop: 6 }}
@@ -343,6 +361,17 @@ export default function CareerCoachPage() {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {active && shelf.length > 0 && (
+        <div className="card">
+          <div className="card-row" style={{ marginBottom: 4 }}>
+            <h3 style={{ margin: 0 }}>Go deeper</h3>
+            <Link href="/dashboard/library" className="hint">Browse the Library</Link>
+          </div>
+          <p className="hint" style={{ marginTop: 0 }}>Hand-picked reading and practice for {active.target_role}.</p>
+          {shelf.map((r) => <ResourceCard key={r.id} item={r} />)}
         </div>
       )}
 

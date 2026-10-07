@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import field_validator, BaseModel, EmailStr, Field
 
 
 # --- Auth ---
@@ -304,9 +304,68 @@ class CareerCoachStartRequest(BaseModel):
     topic: str = Field(default="", max_length=200)
 
 
+RESOURCE_TYPES = "course|article|video|book|practice|reference|tool"
+
+
+class LibraryItemIn(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    # http(s) only -- the frontend renders this as a link, and a
+    # javascript: or data: URL must never be storable.
+    url: str = Field(pattern=r"^https?://\S+$", max_length=500)
+    description: str = Field(default="", max_length=1000)
+    resource_type: str = Field(default="course", pattern=f"^({RESOURCE_TYPES})$")
+    fields: list[str] = Field(default_factory=list, max_length=8)
+    level: str = Field(default="all", pattern="^(beginner|intermediate|advanced|all)$")
+    cost: str = Field(default="free", pattern="^(free|freemium|paid)$")
+    active: bool = True
+
+    @field_validator("fields")
+    @classmethod
+    def _clean_fields(cls, v):
+        out = []
+        for f in v:
+            f = f.strip().lower().replace(",", " ")
+            if f and len(f) <= 40 and f not in out:
+                out.append(f)
+        return out
+
+
+class LibraryItemOut(BaseModel):
+    id: int
+    title: str
+    url: str
+    description: str = ""
+    resource_type: str
+    fields: list[str] = []
+    level: str
+    cost: str
+    active: bool = True
+
+    @field_validator("fields", mode="before")
+    @classmethod
+    def _split_fields(cls, v):
+        if isinstance(v, str):
+            return [f for f in v.split(",") if f]
+        return v or []
+
+    class Config:
+        from_attributes = True
+
+
+class CareerCoachMessageOut(BaseModel):
+    """A coach transcript message plus any Library resources the coach
+    recommended in it (resolved from [[lib:ID]] markers; content is
+    returned with those markers already removed)."""
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+    resources: list[LibraryItemOut] = []
+
+
 class CareerCoachStartResponse(BaseModel):
     session: CareerCoachSessionOut
-    opening_message: CoachingMessageOut
+    opening_message: CareerCoachMessageOut
 
 
 class CareerCoachNoteIn(BaseModel):
