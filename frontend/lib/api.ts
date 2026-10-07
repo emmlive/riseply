@@ -598,9 +598,24 @@ export interface LibraryItem {
 
 export type LibraryItemInput = Omit<LibraryItem, "id">;
 
+export type LearningStyle = "auto" | "visual" | "handson" | "story" | "stepbystep";
+
+// A diagram the coach drew while teaching. Data only -- the frontend
+// draws it (components/VisualDiagram.tsx).
+export interface CareerCoachVisual {
+  kind: "flow" | "compare" | "map";
+  title: string;
+  steps: { label: string; detail: string }[];
+  columns: string[];
+  rows: { label: string; cells: string[] }[];
+  center: string;
+  branches: { label: string; items: string[] }[];
+}
+
 export interface CareerCoachMessage extends CoachingMessage {
   // Library resources the coach recommended in this message.
   resources?: LibraryItem[];
+  visual?: CareerCoachVisual | null;
 }
 
 export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume";
@@ -610,6 +625,7 @@ export interface CareerCoachSession {
   session_type: CareerCoachSessionType;
   target_role: string;
   topic: string;
+  learning_style?: LearningStyle;
   status: "in_progress" | "completed";
   score: number | null;
   feedback: string;

@@ -413,6 +413,10 @@ class CareerCoachSession(Base):
     session_type = Column(String, nullable=False)  # drill | walkthrough | interview | resume
     target_role = Column(String, nullable=False)  # free text the person typed, e.g. "IT Auditor"
     topic = Column(String, default="", server_default="")
+    # How the person likes to learn: auto | visual | handson | story |
+    # stepbystep. "auto" lets the coach adapt. Can be overridden for a
+    # single reply ("explain it differently") without changing this.
+    learning_style = Column(String, default="auto", server_default="auto")
 
     status = Column(String, default="in_progress", server_default="in_progress")  # in_progress | completed
     score = Column(Integer, nullable=True)

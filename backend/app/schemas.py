@@ -293,15 +293,58 @@ class CareerCoachSessionOut(BaseModel):
     feedback: str
     created_at: datetime
     completed_at: datetime | None
+    learning_style: str = "auto"
 
     class Config:
         from_attributes = True
+
+
+LEARNING_STYLES = "auto|visual|handson|story|stepbystep"
 
 
 class CareerCoachStartRequest(BaseModel):
     session_type: str = Field(pattern="^(drill|walkthrough|interview|resume)$")
     target_role: str = Field(min_length=2, max_length=120)
     topic: str = Field(default="", max_length=200)
+    learning_style: str = Field(default="auto", pattern=f"^({LEARNING_STYLES})$")
+
+
+class CareerCoachMessageRequest(BaseModel):
+    message: str = Field(min_length=1)
+    # One-off teaching style for just this reply ("explain it differently");
+    # does not change the session's own learning_style.
+    style: str | None = Field(default=None, pattern="^(visual|handson|story|stepbystep)$")
+
+
+class VisualStep(BaseModel):
+    label: str = Field(max_length=80)
+    detail: str = Field(default="", max_length=240)
+
+
+class VisualRow(BaseModel):
+    label: str = Field(max_length=80)
+    cells: list[str] = Field(default_factory=list, max_length=4)
+
+
+class VisualBranch(BaseModel):
+    label: str = Field(max_length=80)
+    items: list[str] = Field(default_factory=list, max_length=5)
+
+
+class VisualOut(BaseModel):
+    """A diagram the coach drew to teach with. The model supplies only
+    structured data (never HTML/SVG); the frontend draws it. kind:
+      flow    -- ordered steps (a process, a timeline)
+      compare -- a table: columns across, labelled rows down
+      map     -- a center idea with labelled branches of short items
+    """
+    kind: str = Field(pattern="^(flow|compare|map)$")
+    title: str = Field(default="", max_length=120)
+    steps: list[VisualStep] = Field(default_factory=list, max_length=8)
+    columns: list[str] = Field(default_factory=list, max_length=4)
+    rows: list[VisualRow] = Field(default_factory=list, max_length=8)
+    center: str = Field(default="", max_length=80)
+    branches: list[VisualBranch] = Field(default_factory=list, max_length=6)
 
 
 RESOURCE_TYPES = "course|article|video|book|practice|reference|tool"
@@ -361,6 +404,7 @@ class CareerCoachMessageOut(BaseModel):
     content: str
     created_at: datetime
     resources: list[LibraryItemOut] = []
+    visual: VisualOut | None = None
 
 
 class CareerCoachStartResponse(BaseModel):

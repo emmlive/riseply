@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, LibraryItem } from "@/lib/api";
+import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
+import VisualDiagram from "@/components/VisualDiagram";
 import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
 } from "@/lib/speech";
@@ -20,6 +21,24 @@ const SESSION_TYPES: { value: CareerCoachSessionType; label: string; hint: strin
   { value: "walkthrough", label: "Task walkthrough", hint: "Work through a realistic task from the job, step by step" },
   { value: "interview", label: "Mock interview", hint: "A hiring manager interviews you for this role" },
   { value: "resume", label: "Resume coaching", hint: "Gap analysis for this role, then bullet-by-bullet rewrites" },
+];
+
+// How the person likes to learn. "auto" lets the coach adapt; the others
+// pin a teaching approach for the whole session. Any single reply can
+// also be re-taught another way with the "Explain it differently" buttons.
+const LEARNING_STYLES: { value: LearningStyle; label: string; hint: string }[] = [
+  { value: "auto", label: "Let the coach adapt", hint: "Switches approach when something isn't landing" },
+  { value: "visual", label: "Visual", hint: "Diagrams and pictures first" },
+  { value: "handson", label: "Hands-on", hint: "Try a small task first, explain after" },
+  { value: "story", label: "Stories & analogies", hint: "Real-world comparisons and scenarios" },
+  { value: "stepbystep", label: "Step by step", hint: "Worked examples, one step at a time" },
+];
+
+const REEXPLAIN: { style: "visual" | "stepbystep" | "story" | "handson"; label: string; message: string }[] = [
+  { style: "visual", label: "Show me", message: "Can you show me that visually, with a diagram?" },
+  { style: "stepbystep", label: "Step by step", message: "Can you walk me through that step by step with an example?" },
+  { style: "story", label: "Analogy", message: "Can you explain that with an analogy or a real-world example?" },
+  { style: "handson", label: "Let me try", message: "Can you give me something to try hands-on instead?" },
 ];
 
 const typeLabel = (t: CareerCoachSessionType) => SESSION_TYPES.find((x) => x.value === t)?.label ?? t;
@@ -44,6 +63,7 @@ export default function CareerCoachPage() {
   const [role, setRole] = useState("");
   const [type, setType] = useState<CareerCoachSessionType>("drill");
   const [topic, setTopic] = useState("");
+  const [learningStyle, setLearningStyle] = useState<LearningStyle>("auto");
   const [starting, setStarting] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -176,7 +196,7 @@ export default function CareerCoachPage() {
     try {
       const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
-        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim() }) }
+        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle }) }
       );
       setSessions((s) => [r.session, ...s]);
       setActive(r.session);
@@ -203,17 +223,17 @@ export default function CareerCoachPage() {
     }
   }
 
-  async function send() {
-    if (!input.trim() || sending || !active) return;
+  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson" }) {
+    const text = override ? override.text : input;
+    if (!text.trim() || sending || !active) return;
     dictation.current?.stop();
-    const text = input;
-    setInput("");
+    if (!override) setInput("");
     setSending(true);
     setError("");
     setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString() }]);
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify({ message: text }),
+        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style } : { message: text }),
       });
       setMessages((m) => [...m, reply]);
       if (readAloud) { setSpeakingId(reply.id); speak(reply.content, () => setSpeakingId(null)); }
@@ -243,6 +263,8 @@ export default function CareerCoachPage() {
       setCompleting(false);
     }
   }
+
+  const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
     <div>
@@ -275,6 +297,12 @@ export default function CareerCoachPage() {
               </label>
             ))}
           </div>
+          <div style={{ marginBottom: 12 }}>
+            <label className="hint" htmlFor="cc-style" style={{ display: "block", marginBottom: 4 }}>How do you like to learn?</label>
+            <select id="cc-style" value={learningStyle} onChange={(e) => setLearningStyle(e.target.value as LearningStyle)}>
+              {LEARNING_STYLES.map((l) => <option key={l.value} value={l.value}>{l.label} — {l.hint}</option>)}
+            </select>
+          </div>
           <input
             placeholder={type === "resume" ? "Section to focus on (optional)" : "Topic (optional — leave blank and the coach picks one)"}
             value={topic} maxLength={200} onChange={(e) => setTopic(e.target.value)}
@@ -300,9 +328,24 @@ export default function CareerCoachPage() {
             {messages.map((m) => (
               <div key={m.id} className={`chat-bubble ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>
                 {m.content}
+                {m.visual && <VisualDiagram visual={m.visual} />}
                 {m.resources && m.resources.length > 0 && (
                   <div style={{ marginTop: 6 }}>
                     {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}
+                  </div>
+                )}
+                {m.role === "assistant" && m.id === lastCoachId && active?.status === "in_progress" &&
+                  active.session_type !== "interview" && !sending && messages.length > 1 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="hint" style={{ marginBottom: 4 }}>Explain it differently:</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {REEXPLAIN.map((r) => (
+                        <button key={r.style} className="btn btn-ghost btn-sm"
+                                onClick={() => send({ text: r.message, style: r.style })}>
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {canSpeak && m.role === "assistant" && (
@@ -348,7 +391,7 @@ export default function CareerCoachPage() {
                     {listening ? "● Listening…" : "🎤"}
                   </button>
                 )}
-                <button className="btn btn-primary" onClick={send} disabled={sending || !input.trim()}>Send</button>
+                <button className="btn btn-primary" onClick={() => send()} disabled={sending || !input.trim()}>Send</button>
               </div>
               {canSpeak && (
                 <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>

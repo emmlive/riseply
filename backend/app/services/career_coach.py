@@ -2,6 +2,7 @@ import re
 
 from app.services.job_buddy import client, MODEL
 from app.services import library as library_service
+from app.services import visuals as visuals_service
 from app.services.coaching import _split_marker_response, TOPIC_MARKER, SCORE_MARKER, SEPARATOR
 
 # The individual-product AI Career Coach: practice-based training for a
@@ -80,7 +81,7 @@ rewrite next. Do not rewrite the whole resume unprompted. Keep it tight.""",
 }
 
 
-def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None) -> dict:
+def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto") -> dict:
     """Returns {"topic": str, "opening_message": str}. Same TOPIC: marker
     contract as services/coaching.py so the topic is persisted without a
     second round trip."""
@@ -103,12 +104,14 @@ a few words, even if one was given to you above):
 
 {CAREER_GUARDRAILS}
 
+{visuals_service.teaching_block(learning_style, None, session_type)}
+
 {library_service.prompt_block(library or [])}
 
 {_context(resume_text, target_role)}
 """
     resp = client.messages.create(
-        model=MODEL, max_tokens=900,
+        model=MODEL, max_tokens=1100,
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
@@ -144,7 +147,8 @@ it has run its natural course, say so and let them know they can end the
 session for a score and feedback whenever they're ready."""
 
 
-def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None) -> str:
+def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None,
+          learning_style: str = "auto", style: str | None = None) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -155,6 +159,8 @@ above.
 
 {CAREER_GUARDRAILS}
 
+{visuals_service.teaching_block(learning_style, style, session_type)}
+
 {library_service.prompt_block(library or [])}
 
 {_context(resume_text, target_role)}
@@ -162,7 +168,7 @@ above.
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": new_message})
     resp = client.messages.create(
-        model=MODEL, max_tokens=900, system=system_prompt, messages=messages,
+        model=MODEL, max_tokens=1100, system=system_prompt, messages=messages,
     )
     return resp.content[0].text.strip()
 
