@@ -98,6 +98,10 @@ class User(Base):
     subscription_tier = Column(String, default="free", server_default="free")  # free | pro
     subscription_status = Column(String, default="", server_default="")  # active | past_due | canceled | ""
     stripe_customer_id = Column(String, nullable=True)
+    # Complimentary Pro access granted by redeeming a free-days discount
+    # code. Independent of Stripe: the webhook never touches it, and
+    # usage.is_pro() treats a future date here as Pro.
+    pro_until = Column(DateTime, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
 
     # Rise Index — effort-based gamification, never tied to outcomes
@@ -476,6 +480,50 @@ class LibraryItem(Base):
     cost = Column(String, default="free")  # free|freemium|paid
     active = Column(Boolean, default=True, server_default="true")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class DiscountCode(Base):
+    """An admin-created discount code. kind:
+      stripe    -- percent/amount off the Pro subscription at checkout,
+                   backed by a Stripe Coupon + Promotion Code (Stripe
+                   enforces max_redemptions/expiry and the discount
+                   duration; we mirror ids so we can pass it to Checkout)
+      free_days -- redeeming grants Pro for `free_days` days with no
+                   payment (sets User.pro_until); entirely ours.
+    Codes are never deleted, only deactivated, so redemption history
+    stays intact."""
+    __tablename__ = "discount_codes"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String, nullable=False, unique=True)  # stored uppercase
+    kind = Column(String, nullable=False)  # stripe | free_days
+    percent_off = Column(Integer, nullable=True)
+    amount_off_cents = Column(Integer, nullable=True)
+    duration = Column(String, default="once")  # once | repeating | forever (stripe kind)
+    duration_months = Column(Integer, nullable=True)
+    free_days = Column(Integer, nullable=True)
+    max_redemptions = Column(Integer, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    active = Column(Boolean, default=True, server_default="true")
+    note = Column(String, default="", server_default="")
+    stripe_coupon_id = Column(String, nullable=True)
+    stripe_promotion_code_id = Column(String, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class DiscountRedemption(Base):
+    """One user redeeming one code. Unique per (code, user): a person can
+    use a given code once. For stripe-kind codes this is recorded when the
+    checkout completes (webhook), not when the session is merely created."""
+    __tablename__ = "discount_redemptions"
+    __table_args__ = (UniqueConstraint("code_id", "user_id", name="uq_discount_redemption_code_user"),)
+
+    id = Column(Integer, primary_key=True)
+    code_id = Column(Integer, ForeignKey("discount_codes.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    redeemed_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    detail = Column(String, default="", server_default="")
 
 
 class PointsEvent(Base):
