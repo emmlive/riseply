@@ -568,13 +568,32 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # backlog -- the nightly scheduled job (max_jobs=None) still clears
     # the full backlog regardless of order, so nothing is lost, just
     # reprioritized for the interactive, capped case.
-    unseen_jobs = db.query(models.Job).filter(
+    # Deliberately a LIGHTWEIGHT query -- only id/title, not full Job
+    # objects (which include the full posting description, often
+    # several KB each). This is a real, confirmed production memory
+    # problem: Render's "ran out of memory (used over 512MB)" restarts
+    # correlated directly with matching runs, and this query is why --
+    # the old version below loaded the ENTIRE shared unseen-job
+    # backlog (every source combined, ~2,800+ from Greenhouse alone
+    # per the comment above) as full ORM objects with complete
+    # descriptions, just to sort/filter it down to a `max_jobs` cap of
+    # 25-100 on an ordinary interactive click. That backlog only grows
+    # over time as discovery keeps running, so the memory spike on
+    # every single "Find new matches" click got worse the longer this
+    # service has been live -- consistent with the OOM restarts
+    # clustering later in the day rather than right after a deploy.
+    #   unseen_jobs = db.query(models.Job).filter(...).order_by(...).all()
+    # Now: pick which job ids are in scope using only id+title (cheap),
+    # THEN fetch full Job rows for just those ids below -- so peak
+    # memory for a capped run is bounded by max_jobs full postings,
+    # not the whole backlog.
+    unseen_rows = db.query(models.Job.id, models.Job.title).filter(
         not_(models.Job.id.in_(already_applied_subq)),
         not_(models.Job.id.in_(already_scored_subq)),
     ).order_by(models.Job.discovered_at.desc()).all()
 
     hit_job_cap = False
-    if max_jobs is not None and len(unseen_jobs) > max_jobs:
+    if max_jobs is not None and len(unseen_rows) > max_jobs:
         hit_job_cap = True
         # Prioritize jobs whose title has some keyword overlap with what
         # any active profile is actually looking for, before falling
@@ -595,15 +614,25 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 keyword_terms.update(w for w in re.split(r"[\s\-/]+", term.lower()) if len(w) >= 2)
 
         if keyword_terms:
-            def _title_is_relevant(job_row) -> bool:
-                title_words = set(re.split(r"[\s\-/]+", job_row.title.lower()))
+            def _title_is_relevant(row) -> bool:
+                title_words = set(re.split(r"[\s\-/]+", row.title.lower()))
                 return not title_words.isdisjoint(keyword_terms)
 
-            relevant = [j for j in unseen_jobs if _title_is_relevant(j)]
-            rest = [j for j in unseen_jobs if not _title_is_relevant(j)]
-            unseen_jobs = relevant + rest  # each half keeps its original recency order
+            relevant = [r for r in unseen_rows if _title_is_relevant(r)]
+            rest = [r for r in unseen_rows if not _title_is_relevant(r)]
+            unseen_rows = relevant + rest  # each half keeps its original recency order
 
-        unseen_jobs = unseen_jobs[:max_jobs]
+        unseen_rows = unseen_rows[:max_jobs]
+
+    # Fetch full Job rows (description, salary, etc.) only for the ids
+    # actually selected above -- for the common capped/interactive
+    # case this is `max_jobs` rows, not the whole backlog. .in_() does
+    # not preserve order, so re-sort to match the order already
+    # decided (recency, or recency-within-relevance-bucket) by
+    # unseen_rows.
+    selected_ids = [r.id for r in unseen_rows]
+    jobs_by_id = {j.id: j for j in db.query(models.Job).filter(models.Job.id.in_(selected_ids)).all()}
+    unseen_jobs = [jobs_by_id[i] for i in selected_ids if i in jobs_by_id]
 
     queued = []
     near_miss_candidates = []  # (score, {title, company, url, score, reason, matched_profile})
