@@ -917,3 +917,19 @@ export interface DiscountCodeCheck {
   kind: "stripe" | "free_days";
   description: string;
 }
+
+// --- Discord notifications ---
+
+export interface DiscordStatus {
+  connected: boolean;
+  webhook_hint: string;
+  enabled: boolean;
+  nudge_enabled: boolean;
+  progress_enabled: boolean;
+  followup_enabled: boolean;
+  matches_enabled: boolean;
+  nudge_hour: number;
+  timezone: string;
+  last_error: string;
+  last_success_at: string | null;
+}

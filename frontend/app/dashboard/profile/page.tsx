@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, User, API_URL, CalendarConnection, Organization, Application } from "@/lib/api";
+import DiscordSettings from "@/components/DiscordSettings";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -354,6 +355,7 @@ export default function ProfilePage() {
         </p>
         </div>
       )}
+      {isOrgAffiliated === false && <DiscordSettings />}
     </div>
   );
 }

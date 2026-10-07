@@ -200,6 +200,21 @@ day a match actually landed — a manual "Find new matches" click at 2pm
 still gets swept into that day's digest, not lost or double-counted the
 next day.
 
+### Discord momentum notifications
+
+Users can connect a Discord webhook (Profile → Discord momentum) to get
+practice nudges, streak warnings, a weekly recap, session follow-ups, and
+optionally job matches. Two server-side requirements:
+
+- `CALENDAR_TOKEN_ENCRYPTION_KEY` must be set (webhook URLs are stored
+  encrypted with the same key as calendar tokens; connecting fails with a
+  clear 503 if it's missing).
+- `.github/workflows/discord-nudges.yml` triggers `POST
+  /internal/discord-nudges` hourly using the same `CRON_SECRET` and
+  `BACKEND_URL` secrets as daily matching. The backend decides who is due
+  (each user's own hour and timezone), so a late or doubled run is
+  harmless.
+
 ## Email (Resend)
 
 All outbound email — welcome, match alerts, digests, password resets,

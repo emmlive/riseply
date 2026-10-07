@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs
 from app.services import discovery_sources
 from app.config import settings
@@ -780,6 +780,13 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                     sms.notify_new_match_sms(user.phone, job_notify)
                 except Exception as e:
                     print(f"[pipeline] New match SMS failed for user {user.id}, application {application.id}: {e}")
+            # Discord is an additive channel (opt-in via its own
+            # matches_enabled toggle), governed by the same preference and
+            # score floor as email/SMS above.
+            try:
+                discord_notify.notify_new_match(db, user, {**job_notify, "url": job.get("url", "")})
+            except Exception as e:
+                print(f"[pipeline] New match Discord failed for user {user.id}, application {application.id}: {e}")
         queued.append(application.id)
 
     # Location fallback: the hard location filter in best_profile_match
@@ -931,6 +938,10 @@ def send_daily_digests(db: Session) -> dict:
                     sent += 1
                 except Exception as e:
                     print(f"[pipeline] Digest SMS failed for user {user.id}: {e}")
+            try:
+                discord_notify.notify_digest(db, user, matches)
+            except Exception as e:
+                print(f"[pipeline] Digest Discord failed for user {user.id}: {e}")
 
         user.last_digest_sent_at = datetime.utcnow()
         db.commit()

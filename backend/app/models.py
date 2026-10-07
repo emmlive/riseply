@@ -526,6 +526,36 @@ class DiscountRedemption(Base):
     detail = Column(String, default="", server_default="")
 
 
+class DiscordConnection(Base):
+    """A user's Discord webhook for 'keep your momentum' messages: coaching
+    nudges, streak and weekly progress, session follow-ups, and (optionally)
+    job-match alerts. The webhook URL is a write-only credential to one
+    channel, so it is stored encrypted (same Fernet key as calendar tokens)
+    and never returned by the API -- only a masked hint is. One row per user."""
+    __tablename__ = "discord_connections"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    webhook_url_enc = Column(Text, nullable=False)
+    webhook_hint = Column(String, default="", server_default="")
+
+    enabled = Column(Boolean, default=True, server_default="true")
+    nudge_enabled = Column(Boolean, default=True, server_default="true")      # daily practice nudge + streak warning
+    progress_enabled = Column(Boolean, default=True, server_default="true")   # weekly recap
+    followup_enabled = Column(Boolean, default=True, server_default="true")   # after a scored coaching session
+    matches_enabled = Column(Boolean, default=False, server_default="false")  # new matches / digest
+
+    nudge_hour = Column(Integer, default=18, server_default="18")  # local hour 0-23
+    timezone = Column(String, default="UTC", server_default="UTC")  # IANA name
+    last_nudge_date = Column(Date, nullable=True)       # local date of the last nudge decision
+    last_recap_week = Column(String, default="", server_default="")  # ISO year-week of the last recap
+
+    consecutive_failures = Column(Integer, default=0, server_default="0")
+    last_error = Column(String, default="", server_default="")
+    last_success_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class PointsEvent(Base):
     """One Rise Points award. Kept as a log (not just a running total) so
     the activity feed can show a real history — 'why do I have 340 points'
