@@ -180,6 +180,16 @@ def match_status(
     if log is None:
         raise HTTPException(status_code=404, detail="No match run with that id.")
 
+    # A run lives inside the web process; if that process restarts
+    # mid-run (a deploy, a memory restart) nothing ever marks the row
+    # finished and it would read "running" forever. No healthy run takes
+    # this long, so past the cutoff report it as failed.
+    if log.status == "running" and log.started_at and datetime.utcnow() - log.started_at > timedelta(minutes=45):
+        log.status = "failed"
+        log.error = "This search was interrupted (the server restarted while it was running). Please try again."
+        log.finished_at = datetime.utcnow()
+        db.commit()
+
     return {
         "run_id": log.id,
         "status": log.status,

@@ -639,6 +639,29 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     NEAR_MISS_CAP = 6
     limit_hit = False
 
+    # Three phases instead of one job-at-a-time loop, because scoring is
+    # network-bound (one Claude call per job per profile) and doing it
+    # strictly sequentially made a 100-job search take ~20 minutes:
+    #   1. meter usage, in the original order, stopping at the limit
+    #   2. score the metered jobs a few at a time (no DB access in the
+    #      worker threads -- only the main thread ever touches `db`)
+    #   3. walk the results in the ORIGINAL order doing the same DB
+    #      writes, tailoring and notifications as before
+    # Job dicts are built up front, before any commit can expire the ORM
+    # rows, so worker threads only ever read plain dicts.
+    def _job_dict(job_row) -> dict:
+        return {
+            "title": job_row.title, "company": job_row.company,
+            "location": job_row.location, "url": job_row.url,
+            "description": job_row.description,
+            "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
+            "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
+        }
+
+    job_dicts = {job_row.id: _job_dict(job_row) for job_row in unseen_jobs}
+    resume_text = user.resume_text
+
+    to_score = []
     for job_row in unseen_jobs:
         if not skip_usage_metering:
             try:
@@ -646,17 +669,38 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             except HTTPException:
                 limit_hit = True
                 break
+        to_score.append(job_row)
 
-        job = {
-            "title": job_row.title, "company": job_row.company,
-            "location": job_row.location, "url": job_row.url,
-            "description": job_row.description,
-            "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
-            "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
-        }
+    def _score_one(job_row_id: int):
         try:
-            best = matcher.best_profile_match(job, user.resume_text, profiles)
-        except Exception as e:
+            return matcher.best_profile_match(job_dicts[job_row_id], resume_text, profiles), None
+        except Exception as e:  # reported + refunded in phase 3, on the main thread
+            return None, e
+
+    ids_to_score = [r.id for r in to_score]
+    workers = max(1, min(settings.matching_concurrency, len(ids_to_score) or 1))
+    if workers == 1:
+        scored_results = [_score_one(i) for i in ids_to_score]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            scored_results = list(pool.map(_score_one, ids_to_score))  # keeps input order
+
+    # Only the best few matches of a run get a full resume rewrite (a
+    # Claude call + .docx each); the rest keep the base resume and can
+    # be tailored on demand (POST /applications/{id}/retailor).
+    tailor_job_ids = set()
+    if settings.auto_tailor_top_n > 0:
+        accepted = [
+            (res[0]["score"], jid) for jid, res in zip(ids_to_score, scored_results)
+            if res[0] is not None and res[0]["meets_threshold"]
+        ]
+        accepted.sort(key=lambda t: t[0], reverse=True)
+        tailor_job_ids = {jid for _, jid in accepted[:settings.auto_tailor_top_n]}
+
+    for job_row, (best, score_error) in zip(to_score, scored_results):
+        job = job_dicts[job_row.id]
+        if score_error is not None:
             # This was previously silent -- caught, refunded, skipped,
             # with zero trace of *why*. That made a real failure (bad
             # API key, rate limit, model returning malformed JSON) look
@@ -664,7 +708,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             # exactly the ambiguity that made this bug hard to diagnose
             # from the outside. Printed so it shows up in Render's log
             # stream without needing a new logging dependency.
-            print(f"[matcher] scoring failed for job {job_row.id} ({job_row.company} — {job_row.title}): {e}")
+            print(f"[matcher] scoring failed for job {job_row.id} ({job_row.company} — {job_row.title}): {score_error}")
             usage.decrement(db, user.id, "match", 1)
             continue
 
@@ -731,25 +775,33 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
 
         resume_path = ""
         resume_bytes = None
-        try:
-            usage.check_and_increment(db, user, "tailor_resume", 1)
-            job["matched_profile"] = best["profile_name"]
-            job["match_score"] = best["score"]
-            resume_path, resume_bytes, rationale = resume_customizer.customize_for_job(
-                user.id, user.resume_text, job, application.id
-            )
-            application.tailored_resume_path = resume_path
-            application.tailored_resume_data = resume_bytes
-            application.tailoring_rationale = rationale
+        if job_row.id not in tailor_job_ids:
+            # Outside this run's top matches: skip the (costly) automatic
+            # rewrite. Nothing is lost -- "Re-tailor" on the application
+            # does it on demand, and counts against the tailoring quota
+            # only when actually used.
+            application.notes = "Using your base resume — click Re-tailor to customize it for this job."
             db.commit()
-        except HTTPException:
-            application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
-            db.commit()
-        except Exception as e:
-            print(f"[resume_customizer] tailoring failed for application {application.id}: {e}")
-            usage.decrement(db, user.id, "tailor_resume", 1)
-            application.notes = "Resume tailoring failed this run — using base resume. You can retry from the dashboard later."
-            db.commit()
+        else:
+            try:
+                usage.check_and_increment(db, user, "tailor_resume", 1)
+                job["matched_profile"] = best["profile_name"]
+                job["match_score"] = best["score"]
+                resume_path, resume_bytes, rationale = resume_customizer.customize_for_job(
+                    user.id, user.resume_text, job, application.id
+                )
+                application.tailored_resume_path = resume_path
+                application.tailored_resume_data = resume_bytes
+                application.tailoring_rationale = rationale
+                db.commit()
+            except HTTPException:
+                application.notes = "Resume not tailored — monthly tailoring limit reached; using base resume."
+                db.commit()
+            except Exception as e:
+                print(f"[resume_customizer] tailoring failed for application {application.id}: {e}")
+                usage.decrement(db, user.id, "tailor_resume", 1)
+                application.notes = "Resume tailoring failed this run — using base resume. You can retry from the dashboard later."
+                db.commit()
 
         notify_addr = user.notify_email or user.email
         preference = user.notification_preference or "every_match"
