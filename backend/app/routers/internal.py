@@ -116,6 +116,20 @@ def culture_bot_run(
     return result
 
 
+@router.post("/discord-nudges")
+def discord_nudges(
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Hourly: sends Discord practice nudges, streak warnings and weekly
+    recaps to connections whose local time is inside their chosen window.
+    Idempotent within a day (one nudge decision per local day, one recap
+    per ISO week), so an extra or late run is harmless."""
+    _check_cron_secret(x_cron_secret, "Discord nudges aren't configured (CRON_SECRET unset).")
+    from app.services import discord_notify
+    return discord_notify.run_nudges(db)
+
+
 @router.post("/send-digests")
 def send_digests(
     db: Session = Depends(get_db),

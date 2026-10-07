@@ -10,7 +10,7 @@ from app.migrate import run_migration
 from app.kb_seed import seed_kb_if_empty
 from app.library_seed import seed_library_if_empty
 from app.rate_limit import limiter
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension, resumes, sso, bookmarklet, calendar, career_coach, library, discounts
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension, resumes, sso, bookmarklet, calendar, career_coach, library, discounts, discord
 
 # Adds any columns/tables that are new in the code but missing from the
 # live database, so every deploy self-heals instead of needing a manual
@@ -60,6 +60,7 @@ app.include_router(job_buddy.router)
 app.include_router(career_coach.router)
 app.include_router(library.router)
 app.include_router(discounts.router)
+app.include_router(discord.router)
 app.include_router(rise_index.router)
 app.include_router(support.router)
 app.include_router(admin.router)

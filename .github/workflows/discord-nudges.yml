@@ -1,0 +1,35 @@
+name: Discord nudges
+
+# Hourly trigger for Discord practice nudges, streak reminders and weekly
+# recaps. Each connection chooses its own local hour and timezone; this job
+# just runs every hour and the backend decides who is due (at most one
+# nudge per person per local day, one recap per week), so a late, skipped
+# or doubled run is harmless. GitHub's scheduler can be delayed by many
+# minutes, and the backend allows a 3-hour window after the chosen hour
+# for exactly that reason.
+#
+# Uses the same two repo secrets as daily-matching.yml (CRON_SECRET and
+# BACKEND_URL) -- nothing new to configure.
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  send-nudges:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send due Discord nudges
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.BACKEND_URL }}/internal/discord-nudges" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 120)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if [ "$http_code" -ne 200 ]; then
+            echo "Discord nudges failed with HTTP $http_code"
+            exit 1
+          fi

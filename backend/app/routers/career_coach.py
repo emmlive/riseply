@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,6 +10,7 @@ from app.services import career_coach as career_coach_service
 from app.services import usage, rise_index, safety_flags
 from app.services import library as library_service
 from app.services import visuals as visuals_service
+from app.services import discord_notify
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -195,6 +196,7 @@ def send_message(
 @router.post("/sessions/{session_id}/complete", response_model=schemas.CareerCoachSessionOut)
 def complete_session(
     session_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
@@ -227,6 +229,8 @@ def complete_session(
     db.commit()
     db.refresh(session)
     rise_index.award_points(db, user, "career_coach_session_completed", "Completed a Career Coach session")
+    # Optional Discord follow-up (no-op unless they've connected Discord).
+    background_tasks.add_task(discord_notify.send_session_followup, session.id)
     return session
 
 

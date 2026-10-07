@@ -1460,3 +1460,34 @@ class DiscountCodeCheckOut(BaseModel):
 
 class SubscribeRequest(BaseModel):
     code: str | None = Field(default=None, max_length=60)
+
+
+# --- Discord notifications ---
+
+class DiscordConnectRequest(BaseModel):
+    webhook_url: str = Field(min_length=20, max_length=300)
+    timezone: str = Field(default="UTC", max_length=64)
+
+
+class DiscordSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    nudge_enabled: bool | None = None
+    progress_enabled: bool | None = None
+    followup_enabled: bool | None = None
+    matches_enabled: bool | None = None
+    nudge_hour: int | None = Field(default=None, ge=0, le=23)
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+class DiscordStatusOut(BaseModel):
+    connected: bool = False
+    webhook_hint: str = ""
+    enabled: bool = False
+    nudge_enabled: bool = True
+    progress_enabled: bool = True
+    followup_enabled: bool = True
+    matches_enabled: bool = False
+    nudge_hour: int = 18
+    timezone: str = "UTC"
+    last_error: str = ""
+    last_success_at: datetime | None = None
