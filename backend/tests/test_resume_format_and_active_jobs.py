@@ -84,13 +84,14 @@ def test_old_style_docx_still_previews():
     from docx import Document
     import io
     d = Document()
+    d.add_heading("Jane Doe", level=2)
     d.add_heading("Experience", level=2)
     d.add_paragraph("Did things", style="List Bullet")
     d.add_paragraph("Plain line")
     buf = io.BytesIO()
     d.save(buf)
     types = [b["type"] for b in rc.docx_to_blocks(buf.getvalue())]
-    assert types == ["heading", "bullet", "text"]
+    assert types == ["name", "heading", "bullet", "text"]
 
 
 def test_tailor_uses_json_and_falls_back_to_text():
@@ -251,3 +252,69 @@ def test_discovery_closes_jobs_missing_from_their_company_board(db):
     assert gone.is_active is False         # no longer on acme's board
     assert still.is_active is True and still.last_seen_at > datetime.utcnow() - timedelta(minutes=5)
     assert other_company.is_active is not False  # company wasn't fetched, so nothing is assumed
+
+
+# --- editing a tailored resume -------------------------------------------
+
+def _app_with_resume(db, user):
+    job = models.Job(source="t", external_id=uuid.uuid4().hex, company="Acme", title="Auditor",
+                     description="d", discovered_at=datetime.utcnow())
+    db.add(job)
+    db.commit()
+    a = models.Application(user_id=user.id, job_id=job.id, status="pending_approval", tailored_resume_path="Acme.docx",
+                           tailored_resume_data=rc.build_docx_from_blocks(rc.structure_to_blocks(SAMPLE)))
+    db.add(a)
+    db.commit()
+    return a
+
+
+def test_saving_edits_rebuilds_the_document(db):
+    user = _user(db)
+    a = _app_with_resume(db, user)
+    client = _client_as(user.id)
+
+    blocks = client.get(f"/applications/{a.id}/tailored-resume/preview").json()["blocks"]
+    edited = [b for b in blocks if b.get("text") != "Cut findings 30%."]       # remove a bullet
+    edited.append({"type": "heading", "text": "Projects"})                      # add a section
+    edited.append({"type": "bullet", "text": "Built a SOC 2 readiness tracker."})
+    edited.append({"type": "bullet", "text": "   "})                            # blank rows are dropped
+
+    res = client.put(f"/applications/{a.id}/tailored-resume", json={"blocks": edited})
+    assert res.status_code == 200
+    texts = [b.get("text") or b.get("left") for b in res.json()["blocks"]]
+    assert "Cut findings 30%." not in texts
+    assert texts[-2:] == ["Projects", "Built a SOC 2 readiness tracker."]
+
+    db.expire_all()
+    stored = rc.docx_to_blocks(db.get(models.Application, a.id).tailored_resume_data)
+    assert stored == res.json()["blocks"]                                      # the download matches what was saved
+
+
+def test_saving_edits_validation_and_ownership(db):
+    user, other = _user(db), _user(db)
+    a = _app_with_resume(db, user)
+    client = _client_as(user.id)
+    url = f"/applications/{a.id}/tailored-resume"
+
+    assert client.put(url, json={"blocks": []}).status_code == 422
+    assert client.put(url, json={"blocks": [{"type": "bullet", "text": " "}]}).status_code == 422
+    assert client.put(url, json={"blocks": [{"type": "evil", "text": "x"}]}).status_code == 422
+    assert client.put(url, json={"blocks": [{"type": "text", "text": "x"}] * 401}).status_code == 422
+
+    client = _client_as(other.id)
+    assert client.put(url, json={"blocks": [{"type": "text", "text": "hijack"}]}).status_code == 404
+
+
+def test_legacy_resume_gets_a_name_and_contact_line():
+    from docx import Document
+    import io
+    d = Document()
+    d.add_heading("Jane Doe", level=2)
+    d.add_paragraph("Security Architect | GRC")
+    d.add_paragraph("Plainfield, IL • (555) 123-4567 • jane@x.com")
+    d.add_heading("Summary", level=2)
+    d.add_paragraph("Auditor.")
+    buf = io.BytesIO()
+    d.save(buf)
+    types = [b["type"] for b in rc.docx_to_blocks(buf.getvalue())]
+    assert types == ["name", "headline", "contact", "heading", "text"]

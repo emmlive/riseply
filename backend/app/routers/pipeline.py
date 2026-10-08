@@ -1,7 +1,9 @@
 import json
 import os
 from datetime import datetime, timedelta
+from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, not_, exists
@@ -355,6 +357,39 @@ def download_tailored_resume(
     )
 
 
+class ResumeBlockIn(BaseModel):
+    type: Literal["name", "headline", "contact", "heading", "entry", "sub", "bullet", "skills", "text"]
+    text: str = Field("", max_length=2500)
+    left: str = Field("", max_length=300)
+    right: str = Field("", max_length=100)
+    label: str = Field("", max_length=100)
+
+
+class TailoredResumeIn(BaseModel):
+    blocks: list[ResumeBlockIn] = Field(max_length=400)
+
+
+def _resume_preview_payload(app_row: models.Application) -> dict:
+    try:
+        blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="This resume couldn't be previewed. You can still download it.")
+    return {
+        "filename": app_row.tailored_resume_path or "tailored_resume.docx",
+        "blocks": blocks,
+        "rationale": app_row.tailoring_rationale or "",
+    }
+
+
+def _own_application_with_resume(db: Session, user: models.User, application_id: int) -> models.Application:
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app_row.tailored_resume_data:
+        raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
+    return app_row
+
+
 @router.get("/applications/{application_id}/tailored-resume/preview")
 def preview_tailored_resume(
     application_id: int,
@@ -366,20 +401,40 @@ def preview_tailored_resume(
     downloads it. Read straight from the stored .docx, so it shows exactly
     what the download contains -- including resumes made before the new
     layout existed."""
-    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
-    if not app_row:
-        raise HTTPException(status_code=404, detail="Application not found")
-    if not app_row.tailored_resume_data:
-        raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
-    try:
-        blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
-    except Exception:
-        raise HTTPException(status_code=422, detail="This resume couldn't be previewed. You can still download it.")
-    return {
-        "filename": app_row.tailored_resume_path or "tailored_resume.docx",
-        "blocks": blocks,
-        "rationale": app_row.tailoring_rationale or "",
-    }
+    return _resume_preview_payload(_own_application_with_resume(db, user, application_id))
+
+
+@router.put("/applications/{application_id}/tailored-resume")
+def save_tailored_resume_edits(
+    application_id: int,
+    payload: TailoredResumeIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Saves the person's own edits to a tailored resume. The edited
+    blocks are rebuilt into the same formatted .docx, so Download gives
+    exactly what they saw. Free: no Claude call, nothing metered."""
+    app_row = _own_application_with_resume(db, user, application_id)
+
+    blocks = []
+    for b in payload.blocks:
+        d = b.model_dump()
+        if b.type == "entry":
+            if not d["left"].strip():
+                continue
+        elif b.type == "skills":
+            if not d["text"].strip():
+                continue
+        elif not d["text"].strip():
+            continue
+        blocks.append({k: (v.strip() if isinstance(v, str) else v) for k, v in d.items() if v != "" or k == "type"})
+    if not blocks:
+        raise HTTPException(status_code=422, detail="Your resume can't be empty. Add some text, or cancel your edits.")
+
+    app_row.tailored_resume_data = resume_customizer.build_docx_from_blocks(blocks)
+    db.commit()
+    db.refresh(app_row)
+    return _resume_preview_payload(app_row)
 
 
 @router.post("/applications/{application_id}/retailor", response_model=schemas.ApplicationOut)

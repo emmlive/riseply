@@ -377,6 +377,7 @@ def docx_to_blocks(docx_bytes: bytes) -> list[dict]:
     used Word's Heading 2 / List Bullet / Normal."""
     doc = Document(io.BytesIO(docx_bytes))
     blocks: list[dict] = []
+    is_legacy = not any((p.style is not None and p.style.name == STYLE_NAME) for p in doc.paragraphs)
     for p in doc.paragraphs:
         text = p.text.strip("\n")
         if not text.strip():
@@ -405,7 +406,23 @@ def docx_to_blocks(docx_bytes: bytes) -> list[dict]:
                 blocks.append({"type": "skills", "label": "", "text": text.strip()})
         else:
             blocks.append({"type": "text", "text": text.strip()})
-    return blocks
+    return _upgrade_legacy(blocks) if is_legacy else blocks
+
+
+def _upgrade_legacy(blocks: list[dict]) -> list[dict]:
+    """Resumes made before the new layout stored their first line (the
+    person's name) as an ordinary section heading, with the contact lines
+    as plain text underneath. Recognize that top-of-page pattern so the
+    preview and editor show a name, headline and contact line."""
+    if not blocks or blocks[0]["type"] != "heading":
+        return blocks
+    out = [{"type": "name", "text": blocks[0]["text"]}]
+    i = 1
+    while i < len(blocks) and blocks[i]["type"] == "text":
+        line = blocks[i]["text"]
+        out.append({"type": "contact" if _CONTACT_HINT.search(line) else "headline", "text": line})
+        i += 1
+    return out + blocks[i:]
 
 
 def customize_for_job(user_id: int, base_resume_text: str, job: dict, application_id: int) -> tuple[str, bytes, str]:

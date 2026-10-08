@@ -421,6 +421,7 @@ export default function ApplicationsPage() {
           applicationId={previewApp.id}
           company={previewApp.job_company}
           onClose={() => setPreviewApp(null)}
+          onSaved={() => load(filter)}
         />
       )}
     </div>
