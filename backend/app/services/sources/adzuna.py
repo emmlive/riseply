@@ -111,6 +111,7 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
                 "location": location_name,
                 "url": j.get("redirect_url", ""),
                 "description": j.get("description", ""),
+                "posted": j.get("created"),  # ISO timestamp from Adzuna
                 "salary_min": round(salary_min) if salary_min is not None else None,
                 "salary_max": round(salary_max) if salary_max is not None else None,
                 # Adzuna's search endpoint doesn't return a per-job

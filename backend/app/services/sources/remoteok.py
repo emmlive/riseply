@@ -101,6 +101,7 @@ def fetch_jobs() -> list[dict]:
             # when the field happens to be populated.
             "location": entry.get("location") or "Remote",
             "url": entry.get("url", ""),
+            "posted": entry.get("epoch") or entry.get("date"),
             "description": entry.get("description", "") + (
                 f"\n\nTags: {', '.join(tags)}" if tags else ""
             ),

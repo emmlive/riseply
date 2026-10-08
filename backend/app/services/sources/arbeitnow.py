@@ -130,6 +130,7 @@ def fetch_jobs() -> list[dict]:
             "location": location,
             "url": entry.get("url", ""),
             "description": description,
+            "posted": entry.get("created_at"),  # unix seconds per their docs; parsed defensively
             # Arbeitnow's documented fields don't include a structured
             # salary range (per the Apify listing's own caveat: "does
             # not consistently publish structured salary ranges") --

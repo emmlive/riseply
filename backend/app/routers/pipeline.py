@@ -355,6 +355,33 @@ def download_tailored_resume(
     )
 
 
+@router.get("/applications/{application_id}/tailored-resume/preview")
+def preview_tailored_resume(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The tailored resume as structured blocks (name, headings, roles,
+    bullets...) so the app can show it as a page BEFORE the person
+    downloads it. Read straight from the stored .docx, so it shows exactly
+    what the download contains -- including resumes made before the new
+    layout existed."""
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app_row.tailored_resume_data:
+        raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
+    try:
+        blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="This resume couldn't be previewed. You can still download it.")
+    return {
+        "filename": app_row.tailored_resume_path or "tailored_resume.docx",
+        "blocks": blocks,
+        "rationale": app_row.tailoring_rationale or "",
+    }
+
+
 @router.post("/applications/{application_id}/retailor", response_model=schemas.ApplicationOut)
 def retailor_resume(
     application_id: int,

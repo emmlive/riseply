@@ -178,6 +178,19 @@ class Job(Base):
     description = Column(Text, default="")
     discovered_at = Column(DateTime, default=datetime.utcnow)
 
+    # --- Is this posting still open? ---
+    # last_seen_at: stamped every time a discovery run sees the posting
+    # in its source's feed. posted_at: the source's own posting date,
+    # when it gives one (Adzuna, Arbeitnow, RemoteOK). is_active: set to
+    # False when the posting is confirmed gone -- missing from its
+    # employer's own job board (Greenhouse/Lever list every open role,
+    # so absence means closed) or its link says it's closed/404. All
+    # nullable, and NULL is_active counts as active, so rows from before
+    # this column existed keep working.
+    last_seen_at = Column(DateTime, nullable=True)
+    posted_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, nullable=True, default=True)
+
     # --- Salary (currently only populated by the Adzuna source --
     # Greenhouse/Lever/RSS postings essentially never state a salary in
     # a structured field, so these stay NULL/False for those rows;
@@ -243,7 +256,7 @@ class Application(Base):
     # Short, honest explanation of what changed in the tailored resume
     # and why -- generated in the same Claude call as the tailoring
     # itself, so this costs nothing extra. See resume_customizer.py's
-    # tailor_resume_text() for how it's produced. Empty string if the
+    # tailor_resume() for how it's produced. Empty string if the
     # model's response didn't follow the expected format -- the
     # tailoring itself still succeeds either way, this is additive.
     tailoring_rationale = Column(Text, default="", server_default="")
