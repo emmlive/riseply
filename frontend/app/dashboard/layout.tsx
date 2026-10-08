@@ -41,6 +41,10 @@ const INDIVIDUAL_NAV = [
   { href: "/dashboard/billing", label: "Billing" },
 ];
 
+// Pages built as a two-column workspace get a wider content area than the
+// default reading width.
+const WIDE_ROUTES = ["/dashboard/career-coach"];
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -200,7 +204,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           Log out
         </button>
       </aside>
-      <main className="main">
+      <main className={`main ${WIDE_ROUTES.includes(pathname) ? "main-wide" : ""}`}>
         {isPreviewActive && (
           <div style={{
             background: "var(--amber-soft, #FBEEE0)", color: "var(--amber, #C97A2B)",
