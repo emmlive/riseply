@@ -1,3 +1,4 @@
+import { cuesToSpeech } from "@/lib/cues";
 // Thin wrappers over the browser's built-in speech APIs. Everything runs
 // on the person's device (no server cost, no audio uploaded), and every
 // entry point feature-detects: Firefox has no speech recognition, for
@@ -66,7 +67,7 @@ export function startDictation(
 // A speech voice reads every symbol out loud ("asterisk asterisk", "arrow").
 // Turn the coach's on-screen text into something that sounds natural.
 export function cleanForSpeech(text: string): string {
-  let t = text || "";
+  let t = cuesToSpeech(text || "");
   t = t.replace(/```[\s\S]*?```/g, " ").replace(/`/g, "");
   t = t.replace(/https?:\/\/\S+/g, "the link");
   t = t.replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,}|={3,})[ \t]*$/gm, "");          // horizontal rules

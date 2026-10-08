@@ -55,9 +55,73 @@ VOICE MODE -- THE PERSON IS LISTENING TO THIS REPLY, NOT READING IT:
   instead of the percent sign.
 - Do not read out URLs. Keep any diagram block exactly as instructed;
   the app draws it and does not speak it.
+- Keep any memory cue marker exactly as instructed; the app turns it into
+  a card and says "Remember" (or the matching label) aloud.
 """
 
-_KEEP = re.compile(r"(\[\[visual\]\].*?\[\[/visual\]\]|\[\[lib:\d+\]\])", re.DOTALL)
+# Memory cues: now and then the coach pins ONE line worth remembering to a
+# coloured card with an object beside it (an elephant for "remember this").
+# The coach marks the line; the app draws the card and offers "Save to my
+# notes". The marker is parsed by the frontend, so the format is strict.
+CUE_KINDS = ("remember", "write", "watch", "try")
+CUE_LABELS = {
+    "remember": "Remember",
+    "write": "Write this down",
+    "watch": "Watch out",
+    "try": "Try this",
+}
+MAX_CUES_PER_REPLY = 2
+
+CUE_NOTE = """
+MEMORY CUES -- USE SPARINGLY:
+Occasionally pin ONE short line worth keeping to a memory card. Put the card
+on its own line, starting the line with exactly one of these markers, then
+the line itself (one sentence, under 160 characters, plain words):
+[[cue:remember]]  a fact, rule or idea to lock in (shown with an elephant)
+[[cue:write]]     a phrase, formula or answer they should write down
+[[cue:watch]]     a common trap or mistake to avoid
+[[cue:try]]       a small thing to practice before next time
+Rules: at most TWO cues in a reply and most replies should have NONE, so they
+stand out when they appear. Never use one in your very first question, never
+in the middle of an interview, and never to repeat a cue you already gave.
+A cue line does not replace your normal explanation; write it in addition.
+"""
+
+_CUE_LINE = re.compile(r"^[ \t]*\[\[cue:([a-z]+)\]\][ \t]*(.*)$", re.IGNORECASE)
+_CUE_ANY = re.compile(r"\[\[/?cue[^\]]*\]\]", re.IGNORECASE)
+
+
+def limit_cues(text: str) -> str:
+    """Keeps at most MAX_CUES_PER_REPLY well-formed cue lines. A marker is
+    only valid at the start of a line, with a known kind and some text after
+    it. Anything else loses its marker but keeps its words, so the person
+    never sees a stray [[cue:...]] tag."""
+    out, kept = [], 0
+    for line in (text or "").split("\n"):
+        m = _CUE_LINE.match(line)
+        if m:
+            kind, body = m.group(1).lower(), _CUE_ANY.sub("", m.group(2)).strip()
+            if kind in CUE_KINDS and body and kept < MAX_CUES_PER_REPLY:
+                out.append(f"[[cue:{kind}]] {body}")
+                kept += 1
+                continue
+            line = body
+        else:
+            line = _CUE_ANY.sub("", line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def cues_as_text(text: str) -> str:
+    """The reply with each cue marker spelled out ("Remember: ...") for places
+    that show plain text, such as the transcript used to score a session."""
+    def spell(m):
+        kind = m.group(1).lower()
+        return f"{CUE_LABELS.get(kind, 'Note')}: {m.group(2).strip()}"
+    return "\n".join(_CUE_LINE.sub(spell, line) for line in (text or "").split("\n"))
+
+
+_KEEP = re.compile(r"(\[\[visual\]\].*?\[\[/visual\]\]|\[\[lib:\d+\]\]|\[\[cue:[a-z]+\]\])", re.DOTALL | re.IGNORECASE)
 _EMOJI = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\U0000FE0F\U0000200D\U00002B00-\U00002BFF]"
 )
@@ -89,6 +153,11 @@ def plain_for_voice(text: str) -> str:
     Diagram and library markers pass through untouched."""
     parts = _KEEP.split(text or "")
     return "".join(p if i % 2 else _plain_segment(p) for i, p in enumerate(parts)).strip()
+
+
+def _cue_note(session_type: str) -> str:
+    # An interviewer stays in character, so no coaching cards there.
+    return "" if session_type == "interview" else CUE_NOTE
 
 
 def _context(resume_text: str, target_role: str) -> str:
@@ -155,6 +224,7 @@ a few words, even if one was given to you above):
 
 {CAREER_GUARDRAILS}
 {VOICE_NOTE if voice else ""}
+{_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, None, session_type)}
 
 {library_service.prompt_block(library or [])}
@@ -210,6 +280,7 @@ above.
 
 {CAREER_GUARDRAILS}
 {VOICE_NOTE if voice else ""}
+{_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, style, session_type)}
 
 {library_service.prompt_block(library or [])}
@@ -229,7 +300,7 @@ def finish_session(session_type: str, target_role: str, topic: str, resume_text:
     the model didn't follow the format -- stored as "not scored" rather
     than a guessed number."""
     transcript = "\n\n".join(
-        f"{'COACH' if m['role'] == 'assistant' else 'PERSON'}: {m['content']}"
+        f"{'COACH' if m['role'] == 'assistant' else 'PERSON'}: {cues_as_text(m['content'])}"
         for m in history
     )
     if session_type == "resume":

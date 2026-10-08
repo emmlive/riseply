@@ -7,6 +7,8 @@ import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
+import MemoryCue, { CueKey } from "@/components/MemoryCue";
+import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed, parseCueLine } from "@/lib/cues";
 import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
 } from "@/lib/speech";
@@ -180,9 +182,20 @@ export default function CareerCoachPage() {
     setSaveDraft({ title: `${active.topic} notes`, content: notes.trim(), source: "notepad", sourceLabel: sessionLabel(active), sessionId: active.id });
   }
 
+  // "Save to my notes" on a memory cue: the line goes straight into the
+  // notepad below, object included, and autosaves like anything typed there.
+  function saveCue(style: CueStyle, text: string) {
+    if (!active) return;
+    const line = cueNoteLine(style, text);
+    if (notes.includes(line)) return;
+    const next = notes.trim() ? `${notes.replace(/\s+$/, "")}\n\n${line}` : line;
+    if (next.length > 20000) { setError("Your notepad is full. Clear some space, then save this again."); return; }
+    onNotesChange(next);
+  }
+
   function saveReply(m: CareerCoachMessage) {
     if (!active) return;
-    setSaveDraft({ title: active.topic, content: m.content.replace(/\*\*/g, "").replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim(), source: "coach_reply", sourceLabel: sessionLabel(active), sessionId: active.id });
+    setSaveDraft({ title: active.topic, content: cuesToNoteText(m.content).replace(/\*\*/g, "").replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim(), source: "coach_reply", sourceLabel: sessionLabel(active), sessionId: active.id });
   }
 
   function saveFeedback() {
@@ -291,6 +304,7 @@ export default function CareerCoachPage() {
     }
   }
 
+  const usedCues = cuesUsed(messages.filter((m) => m.role === "assistant").map((m) => m.content));
   const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   const completedSessions = sessions.filter((s) => s.status === "completed");
@@ -417,12 +431,13 @@ export default function CareerCoachPage() {
                 <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close session</button>
               </div>
 
+              <CueKey used={usedCues} />
               <div className="cc-chat-window" aria-live="polite">
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>
                     {m.role === "assistant" && <span className="cc-avatar" aria-hidden>C</span>}
                     <div className="cc-bubble">
-                      {m.role === "assistant" ? <CoachText text={m.content} /> : m.content}
+                      {m.role === "assistant" ? <CoachText text={m.content} notes={notes} onSaveCue={saveCue} /> : m.content}
                       {m.visual && <VisualDiagram visual={m.visual} />}
                       {m.resources && m.resources.length > 0 && (
                         <div style={{ marginTop: 6, whiteSpace: "normal" }}>
@@ -627,7 +642,9 @@ export default function CareerCoachPage() {
 
 // The coach sometimes writes **bold** and --- rules. Show them as real
 // formatting instead of raw symbols.
-function CoachText({ text }: { text: string }) {
+function CoachText({ text, notes, onSaveCue }: {
+  text: string; notes: string; onSaveCue: (style: CueStyle, text: string) => void;
+}) {
   const lines = text.split("\n");
   return (
     <>
@@ -635,6 +652,14 @@ function CoachText({ text }: { text: string }) {
         const last = i === lines.length - 1;
         if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
           return <span key={i} className="cc-rule" aria-hidden />;
+        }
+        const cue = parseCueLine(line);
+        if (cue) {
+          return (
+            <MemoryCue key={i} style={cue.style} text={cue.text}
+              saved={notes.includes(cueNoteLine(cue.style, cue.text))}
+              onSave={() => onSaveCue(cue.style, cue.text)} />
+          );
         }
         const parts = line.split(/\*\*(.+?)\*\*/g);
         return (
