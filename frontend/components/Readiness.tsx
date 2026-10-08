@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Fold from "@/components/Fold";
 import { api, CareerCoachSessionType, ReadinessDimension, ReadinessLevel, ReadinessRole } from "@/lib/api";
 
 // "Am I ready to get this job, and to do it?" answered from the coach's own
@@ -100,11 +101,11 @@ export function ReadinessCard({ activeRole, refreshKey, onPractice }: {
   const mine = key ? roles.find((r) => r.target_role.trim().toLowerCase() === key) : roles[0];
 
   return (
-    <div className="card">
-      <h3 className="cc-list-title" style={{ margin: 0 }}>Your readiness</h3>
+    <Fold id="readiness" title="Your readiness" defaultOpen
+          note={mine ? `${mine.get_job.score ?? "–"} / ${mine.do_job.score ?? "–"}` : undefined}>
       {mine ? (
         <>
-          <p className="hint" style={{ margin: "2px 0 10px" }}>For {mine.target_role}, from your scored sessions.</p>
+          <p className="hint" style={{ margin: "0 0 10px" }}>For {mine.target_role}, from your scored sessions.</p>
           <RoleReadiness role={mine} onPractice={onPractice} compact />
           <p className="hint" style={{ margin: "10px 0 0" }}>
             <Link href="/dashboard/progress">See all your progress</Link>
@@ -117,6 +118,6 @@ export function ReadinessCard({ activeRole, refreshKey, onPractice }: {
             : "Finish a scored session and your readiness for that role appears here: whether you're ready to get the job, and ready to do it."}
         </p>
       )}
-    </div>
+    </Fold>
   );
 }

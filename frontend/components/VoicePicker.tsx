@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Fold from "@/components/Fold";
 import { getVoicePrefs, listVoices, setVoicePrefs, speak, stopSpeaking, VoiceInfo } from "@/lib/speech";
 
 const SPEEDS = [
@@ -56,9 +57,9 @@ export default function VoicePicker() {
   }
 
   return (
-    <div className="card cc-voice">
-      <h3 className="cc-list-title" style={{ margin: 0 }}>Coach voice</h3>
-      <p className="hint" style={{ margin: "4px 0 10px" }}>
+    <Fold id="voice" title="Coach voice" defaultOpen={false}>
+      <div className="cc-voice">
+      <p className="hint" style={{ margin: "0 0 10px" }}>
         Pick an accent and speed for read-aloud and the Listen buttons.
       </p>
 
@@ -97,6 +98,7 @@ export default function VoicePicker() {
           </p>
         </>
       )}
-    </div>
+      </div>
+    </Fold>
   );
 }
