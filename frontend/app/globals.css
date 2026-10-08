@@ -748,3 +748,46 @@ textarea.cc-input { resize: vertical; }
   .rp-paper { padding: 26px 20px 32px; }
   .rp-entry { flex-direction: column; gap: 0; }
 }
+
+/* ---- Resume editor ---- */
+.rp-row { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; border-radius: 6px; }
+.rp-row:hover, .rp-row:focus-within { background: rgba(31, 122, 108, 0.06); }
+.rp-fields { flex: 1; min-width: 0; display: flex; gap: 8px; }
+.rp-input {
+  flex: 1; min-width: 0; width: 100%; resize: none; overflow: hidden;
+  font: inherit; color: inherit; line-height: 1.4;
+  padding: 3px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent;
+}
+.rp-input:hover { border-color: rgba(22, 35, 61, 0.18); }
+.rp-input:focus { outline: none; border-color: #1F7A6C; background: #fff; box-shadow: 0 0 0 2px rgba(31, 122, 108, 0.18); }
+.rp-input::placeholder { color: #9AA3B2; }
+.rp-in-name { font-size: 1.6rem; font-weight: 700; }
+.rp-in-headline { color: #1F7A6C; font-size: 1.02rem; }
+.rp-in-contact, .rp-in-sub { color: #5B6472; font-size: 0.86rem; }
+.rp-in-sub { font-style: italic; }
+.rp-in-heading { color: #1F7A6C; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.rp-row-heading { margin-top: 14px; border-bottom: 1.5px solid #1F7A6C; }
+.rp-row-entry { margin-top: 6px; }
+.rp-in-entry { font-weight: 700; flex: 3; }
+.rp-in-dates { flex: 1.1; text-align: right; color: #5B6472; font-size: 0.86rem; }
+.rp-in-label { flex: 0 0 28%; font-weight: 700; }
+.rp-in-bullet { font-size: 0.9rem; }
+.rp-row-bullet .rp-fields { padding-left: 14px; position: relative; }
+.rp-row-bullet .rp-fields::before { content: "•"; position: absolute; left: 3px; top: 3px; }
+.rp-tools { display: flex; gap: 2px; opacity: 0.35; flex-shrink: 0; padding-top: 2px; }
+.rp-row:hover .rp-tools, .rp-row:focus-within .rp-tools { opacity: 1; }
+.rp-tools button {
+  border: 1px solid rgba(22, 35, 61, 0.18); background: #fff; color: #16233D; cursor: pointer;
+  border-radius: 4px; font-size: 0.75rem; line-height: 1; padding: 4px 6px; font-family: inherit;
+}
+.rp-tools button:hover:not(:disabled) { border-color: #1F7A6C; color: #1F7A6C; }
+.rp-tools button:disabled { opacity: 0.35; cursor: default; }
+.rp-tools .rp-del:hover:not(:disabled) { border-color: #B3402F; color: #B3402F; }
+.rp-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 760px; margin: 16px auto 0; }
+@media (max-width: 640px) {
+  .rp-row { flex-direction: column; }
+  .rp-tools { opacity: 1; }
+  .rp-fields { flex-direction: column; gap: 0; width: 100%; }
+  .rp-in-label { flex: 1; }
+  .rp-in-dates { text-align: left; }
+}
