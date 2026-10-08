@@ -842,3 +842,19 @@ textarea.cc-input { resize: vertical; }
 
 .cc-voice .cc-label { display: block; margin-bottom: 6px; }
 .cc-voice-actions { display: flex; gap: 8px; margin: 12px 0; }
+
+/* Memory cues: a coloured card with an object beside the line */
+.mc { display: flex; gap: 12px; align-items: flex-start; margin: 10px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid; white-space: normal; }
+.mc-object { font-size: 28px; line-height: 1; flex: none; }
+.mc-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mc-label { font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.mc-text { font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.mc-save { align-self: flex-start; margin-top: 4px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; color: var(--ink); background: rgba(255, 255, 255, 0.7); border: 1px solid var(--border-strong); border-radius: 6px; cursor: pointer; }
+.mc-save:hover:not(:disabled) { background: #fff; }
+.mc-save:disabled { color: var(--accent-hover); cursor: default; border-color: transparent; background: transparent; padding-left: 0; }
+.mc-remember { background: var(--amber-soft); border-color: #E9C9A4; }
+.mc-write { background: var(--accent-soft); border-color: #B5D7CE; }
+.mc-watch { background: var(--danger-soft); border-color: #EBC1C1; }
+.mc-try { background: #E8EFFA; border-color: #BCCDE8; }
+.mc-key { list-style: none; margin: 0 0 10px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-muted); background: var(--paper); border-radius: 8px; }
+.mc-key strong { color: var(--ink); font-weight: 600; }
