@@ -8,6 +8,7 @@ import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
 import { ReadinessCard } from "@/components/Readiness";
+import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
 import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed, parseCueLine } from "@/lib/cues";
 import {
@@ -70,7 +71,7 @@ export default function CareerCoachPage() {
   const [topic, setTopic] = useState("");
   const [learningStyle, setLearningStyle] = useState<LearningStyle>("auto");
   const [starting, setStarting] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const winRef = useRef<HTMLDivElement>(null);
 
   // Voice: dictation fills the reply box (you review it, then send);
   // read-aloud speaks the coach's replies. Both use on-device browser
@@ -100,7 +101,10 @@ export default function CareerCoachPage() {
   }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Scroll the conversation itself, not the whole page, so the header and
+    // side column stay where they are.
+    const el = winRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
   useEffect(() => {
@@ -265,6 +269,8 @@ export default function CareerCoachPage() {
     setError("");
     setActive(s);
     setMessages([]);
+    // On a phone the session list sits below the chat; bring the chat into view.
+    if (typeof window !== "undefined" && window.innerWidth <= 1040) window.scrollTo({ top: 0, behavior: "smooth" });
     try {
       setMessages(await api<CareerCoachMessage[]>(`/career-coach/sessions/${s.id}/messages`));
     } catch (err: any) {
@@ -326,8 +332,7 @@ export default function CareerCoachPage() {
   const activeStyleLabel = LEARNING_STYLES.find((l) => l.value === (active?.learning_style ?? "auto"))?.label ?? "Let the coach adapt";
 
   const sessionList = (
-    <div className="card">
-      <h3 className="cc-list-title">Past sessions</h3>
+    <Fold id="sessions" title="Past sessions" defaultOpen={!active} note={sessions.length ? `${sessions.length}` : undefined}>
       {!loaded ? (
         <p className="cc-empty">Loading…</p>
       ) : sessions.length === 0 ? (
@@ -348,12 +353,12 @@ export default function CareerCoachPage() {
           </button>
         ))
       )}
-    </div>
+    </Fold>
   );
 
   return (
     <div>
-      <div className="cc-head">
+      <div className={`cc-head ${active ? "is-compact" : ""}`}>
         <h1>Career Coach</h1>
         <p>
           Practice for any role you&apos;re aiming for with drills, real tasks, mock interviews and resume
@@ -361,6 +366,12 @@ export default function CareerCoachPage() {
           (<Link href="/dashboard/resume">edit it here</Link>) and never invents experience for you.{" "}
           <Link href="/dashboard/career-coach/study">Open your study folders</Link> to review notes you&apos;ve saved.
         </p>
+        {active && (
+          <p className="cc-head-links">
+            <Link href="/dashboard/resume">Edit resume</Link>
+            <Link href="/dashboard/career-coach/study">Study folders</Link>
+          </p>
+        )}
       </div>
 
       {error && <div className="cc-error" role="alert">{error}</div>}
@@ -430,7 +441,7 @@ export default function CareerCoachPage() {
           )}
 
           {active && (
-            <div className="card cc-chat">
+            <div className={`card cc-chat ${active.status !== "completed" ? "is-live" : ""}`}>
               <div className="cc-chat-head">
                 <div>
                   <h2>{active.topic}</h2>
@@ -442,7 +453,7 @@ export default function CareerCoachPage() {
               </div>
 
               <CueKey used={usedCues} />
-              <div className="cc-chat-window" aria-live="polite">
+              <div className="cc-chat-window" aria-live="polite" ref={winRef}>
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>
                     {m.role === "assistant" && <span className="cc-avatar" aria-hidden>C</span>}
@@ -492,7 +503,6 @@ export default function CareerCoachPage() {
                     <div className="cc-bubble cc-thinking">Thinking…</div>
                   </div>
                 )}
-                <div ref={endRef} />
               </div>
 
               {active.status === "completed" ? (
@@ -584,26 +594,24 @@ export default function CareerCoachPage() {
           )}
 
           {active && (
-            <div className="card">
-              <h3 className="cc-list-title">Session details</h3>
+            <Fold id="details" title="Session details" defaultOpen={false} note={typeLabel(active.session_type)}>
               <dl className="cc-dl">
                 <dt>Role</dt><dd>{active.target_role}</dd>
                 <dt>Practice</dt><dd>{typeLabel(active.session_type)}</dd>
                 <dt>Learning style</dt><dd>{activeStyleLabel}</dd>
                 <dt>Status</dt><dd>{active.status === "completed" ? "Completed" : "In progress"}</dd>
               </dl>
-            </div>
+            </Fold>
           )}
 
           {active && shelf.length > 0 && (
-            <div className="card">
-              <div className="card-row" style={{ marginBottom: 4 }}>
-                <h3 className="cc-list-title" style={{ margin: 0 }}>Go deeper</h3>
-                <Link href="/dashboard/library" className="hint">Browse the Library</Link>
-              </div>
-              <p className="hint" style={{ marginTop: 0 }}>Hand-picked reading and practice for {active.target_role}.</p>
+            <Fold id="deeper" title="Go deeper" defaultOpen={false} note={`${shelf.length} pick${shelf.length === 1 ? "" : "s"}`}>
+              <p className="hint" style={{ marginTop: 0 }}>
+                Hand-picked reading and practice for {active.target_role}.{" "}
+                <Link href="/dashboard/library">Browse the Library</Link>
+              </p>
               {shelf.map((r) => <ResourceCard key={r.id} item={r} />)}
-            </div>
+            </Fold>
           )}
 
           <ReadinessCard
@@ -613,15 +621,15 @@ export default function CareerCoachPage() {
           />
 
           {active && (
-            <div className="card">
-              <div className="card-row" style={{ marginBottom: 6 }}>
-                <h3 className="cc-list-title" style={{ margin: 0 }}>Notepad</h3>
+            <Fold id="notepad" title="Notepad" defaultOpen
+              aside={
                 <span className="cc-notes-state" aria-live="polite">
                   {notesState === "saving" && "Saving…"}
                   {notesState === "saved" && "Saved"}
-                  {notesState === "error" && "Couldn't save. Keep this tab open and keep typing to retry."}
+                  {notesState === "error" && "Couldn't save"}
                 </span>
-              </div>
+              }>
+              {notesState === "error" && <p className="cc-error" role="alert">Couldn&apos;t save. Keep this tab open and keep typing to retry.</p>}
               <p className="hint" style={{ marginTop: 0 }}>
                 Your own space for answers worth keeping, stories to reuse and things to study. Only you can
                 see it, and the coach doesn&apos;t read it.
@@ -641,7 +649,7 @@ export default function CareerCoachPage() {
               <p className="hint" style={{ marginBottom: 0 }}>
                 This notepad is kept with the session. Saving to a folder files a copy you can review any time.
               </p>
-            </div>
+            </Fold>
           )}
 
           {canSpeak && <VoicePicker />}
