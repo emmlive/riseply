@@ -311,10 +311,14 @@ class CareerCoachStartRequest(BaseModel):
     target_role: str = Field(min_length=2, max_length=120)
     topic: str = Field(default="", max_length=200)
     learning_style: str = Field(default="auto", pattern=f"^({LEARNING_STYLES})$")
+    # True when "read the coach's replies aloud" is on: the coach writes for
+    # the ear (no markdown or symbols a speech voice would read out).
+    voice: bool = False
 
 
 class CareerCoachMessageRequest(BaseModel):
     message: str = Field(min_length=1)
+    voice: bool = False
     # One-off teaching style for just this reply ("explain it differently");
     # does not change the session's own learning_style.
     style: str | None = Field(default=None, pattern="^(visual|handson|story|stepbystep)$")

@@ -84,7 +84,7 @@ def start_session(
     try:
         result = career_coach_service.start_session(
             payload.session_type, target_role, payload.topic, user.resume_text, library=offered,
-            learning_style=payload.learning_style,
+            learning_style=payload.learning_style, voice=payload.voice,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -106,6 +106,8 @@ def start_session(
     opening_text = visuals_service.sanitize(
         library_service.strip_unoffered_markers(result["opening_message"], {i.id for i in offered})
     )
+    if payload.voice:
+        opening_text = career_coach_service.plain_for_voice(opening_text)
     flag = safety_flags.scan(opening_text)
     opening = models.CareerCoachMessage(
         session_id=session.id, user_id=user.id, role="assistant",
@@ -169,11 +171,13 @@ def send_message(
         reply_text = career_coach_service.reply(
             session.session_type, session.target_role, session.topic,
             user.resume_text, history, payload.message, library=offered,
-            learning_style=session.learning_style or "auto", style=payload.style,
+            learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
         )
         reply_text = visuals_service.sanitize(
             library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})
         )
+        if payload.voice:
+            reply_text = career_coach_service.plain_for_voice(reply_text)
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
         print(f"[career-coach] Reply generation failed for session {session_id}: {e}")

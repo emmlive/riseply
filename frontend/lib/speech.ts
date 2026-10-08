@@ -63,11 +63,32 @@ export function startDictation(
   return { stop: () => { try { rec.stop(); } catch { /* already stopped */ } } };
 }
 
+// A speech voice reads every symbol out loud ("asterisk asterisk", "arrow").
+// Turn the coach's on-screen text into something that sounds natural.
+export function cleanForSpeech(text: string): string {
+  let t = text || "";
+  t = t.replace(/```[\s\S]*?```/g, " ").replace(/`/g, "");
+  t = t.replace(/https?:\/\/\S+/g, "the link");
+  t = t.replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,}|={3,})[ \t]*$/gm, "");          // horizontal rules
+  t = t.replace(/^[ \t]{0,3}#{1,6}[ \t]*/gm, "");                              // headings
+  t = t.replace(/^[ \t]*(?:[-*\u2022\u25AA\u25CF\u25E6\u2013])[ \t]+/gm, "");  // bullet markers
+  t = t.replace(/\*+/g, "");                                                   // bold / italic stars
+  t = t.replace(/(^|[\s(])_+|_+(?=[\s).,!?:;]|$)/gm, "$1");                    // emphasis underscores
+  t = t.replace(/\s*(?:\u2192|\u21D2|\u279C|\u2794|\u27A1\uFE0F?|->|=>|\u2190|<-)\s*/g, ", ");
+  t = t.replace(/\s*\|\s*/g, ", ");
+  t = t.replace(/\s*[\u2014\u2013]\s*/g, ", ");
+  t = t.replace(/&/g, " and ").replace(/%/g, " percent").replace(/~/g, "");
+  t = t.replace(/([A-Za-z0-9])\/(?=[A-Za-z0-9])/g, "$1 ");
+  t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{FE0F}\u{200D}\u{2B00}-\u{2BFF}]/gu, "");
+  t = t.replace(/[ \t]{2,}/g, " ").replace(/ +([,.;:!?])/g, "$1").replace(/,\s*,/g, ",");
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function speak(text: string, onEnd?: () => void): void {
   if (!speechSynthesisSupported()) return;
   const synth = window.speechSynthesis;
   synth.cancel();
-  const u = new SpeechSynthesisUtterance(text);
+  const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
   u.rate = 1;
   u.onend = () => onEnd?.();
   u.onerror = () => onEnd?.();
