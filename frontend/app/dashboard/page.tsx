@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, DirectReport, InternalJobApplication } from "@/lib/api";
+import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, formatWhen, DirectReport, InternalJobApplication } from "@/lib/api";
 import { isPreviewingAsIndividual } from "@/lib/previewMode";
 
 export default function OverviewPage() {
@@ -360,6 +360,7 @@ export default function OverviewPage() {
                 )}
                 <div className="hint">{nm.reason}</div>
                 {formatSalary(nm) && <div className="hint">{formatSalary(nm)}</div>}
+                {nm.found_at && <div className="hint">Found {formatWhen(nm.found_at)}</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span className="ticket">match <span className="score">{nm.score}%</span></span>
@@ -412,6 +413,7 @@ export default function OverviewPage() {
               <div>
                 <h3>{app.job_title} — {app.job_company}</h3>
                 <p className="muted" style={{ margin: 0 }}>{app.job_location}</p>
+                <p className="hint" style={{ margin: "2px 0 0" }}>Found {formatWhen(app.created_at)}</p>
               </div>
               <span className={`ticket ${app.match_score >= 80 ? "high" : ""}`}>
                 match <span className="score">{app.match_score}%</span>

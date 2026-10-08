@@ -102,7 +102,7 @@ def test_only_top_n_matches_are_auto_tailored(db):
     apps = db.query(models.Application).filter(models.Application.user_id == user.id).all()
     untailored = [a for a in apps if not a.tailored_resume_path]
     assert len(untailored) == 5
-    assert all("Re-tailor" in (a.notes or "") for a in untailored)
+    assert all("Tailor resume" in (a.notes or "") for a in untailored)
 
 
 def test_scoring_runs_concurrently_but_results_keep_order(db):
@@ -181,3 +181,60 @@ def test_stale_running_match_is_reported_failed(db):
     assert "interrupted" in stale["error"]
 
     assert client.get(f"/pipeline/match/{fresh_id}").json()["status"] == "running"
+
+
+# --- one search at a time per user ------------------------------------
+
+def _client_as(user_id):
+    from app.database import get_db
+    from fastapi import Depends
+
+    def _u(db=Depends(get_db)):
+        return db.get(models.User, user_id)
+
+    app.dependency_overrides[get_current_user] = _u
+    return TestClient(app)
+
+
+def test_second_search_is_rejected_while_one_is_running(db):
+    user = _user(db)
+    client = _client_as(user.id)
+
+    with patch("app.routers.pipeline.pipeline_runner.run_single_user_matching_background") as bg:
+        first = client.post("/pipeline/match")
+        assert first.status_code == 202
+        second = client.post("/pipeline/match")
+        assert second.status_code == 409
+        assert "already running" in second.json()["detail"]
+        assert bg.call_count == 1  # the rejected request started nothing
+
+    running = db.query(models.ScheduledRunLog).filter_by(
+        run_type="interactive_match", user_id=user.id, status="running").count()
+    assert running == 1  # the rejected attempt left no extra row behind
+
+
+def test_other_users_and_finished_or_stale_runs_do_not_block(db):
+    user, other = _user(db), _user(db)
+    db.add_all([
+        models.ScheduledRunLog(run_type="interactive_match", status="running", user_id=other.id),
+        models.ScheduledRunLog(run_type="interactive_match", status="success", user_id=user.id),
+        models.ScheduledRunLog(run_type="interactive_match", status="running", user_id=user.id,
+                               started_at=datetime.utcnow() - timedelta(minutes=60)),
+    ])
+    db.commit()
+    client = _client_as(user.id)
+
+    with patch("app.routers.pipeline.pipeline_runner.run_single_user_matching_background"):
+        assert client.post("/pipeline/match").status_code == 202
+
+
+def test_near_misses_carry_a_found_time(db):
+    user = _user(db)
+    job = _jobs(db, 1)[0]
+    db.add(models.NearMissResult(user_id=user.id, job_id=job.id, score=55, reason="r", matched_profile="P"))
+    db.commit()
+    client = _client_as(user.id)
+
+    rows = client.get("/pipeline/near-misses").json()
+    assert len(rows) == 1
+    assert rows[0]["found_at"]  # an ISO timestamp the dashboard formats for display

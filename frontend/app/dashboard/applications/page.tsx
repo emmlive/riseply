@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary } from "@/lib/api";
+import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -287,6 +287,7 @@ export default function ApplicationsPage() {
                 <span className={`ticket ${app.match_score >= 80 ? "high" : ""}`}>
                   match <span className="score">{app.match_score}%</span>
                 </span>
+                <span className="hint" style={{ fontSize: "0.8rem" }}>Found {formatWhen(app.created_at)}</span>
 
                 {app.status === "pending_approval" && (
                   <div style={{ display: "flex", gap: 6 }}>

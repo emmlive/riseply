@@ -759,6 +759,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                     "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
                     "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
                     "location_mismatch": False,
+                    "found_at": datetime.utcnow().isoformat() + "Z",
                 }))
                 near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
                 near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
@@ -780,7 +781,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             # rewrite. Nothing is lost -- "Re-tailor" on the application
             # does it on demand, and counts against the tailoring quota
             # only when actually used.
-            application.notes = "Using your base resume — click Re-tailor to customize it for this job."
+            application.notes = "Using your base resume — click Tailor resume to customize it for this job."
             db.commit()
         else:
             try:
@@ -908,6 +909,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 "salary_min": job_row.salary_min, "salary_max": job_row.salary_max,
                 "salary_currency": job_row.salary_currency, "salary_is_predicted": job_row.salary_is_predicted,
                 "location_mismatch": True,
+                "found_at": datetime.utcnow().isoformat() + "Z",
             }))
             near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
             near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
