@@ -6,6 +6,7 @@ import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, fo
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
+import VoicePicker from "@/components/VoicePicker";
 import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
 } from "@/lib/speech";
@@ -611,6 +612,8 @@ export default function CareerCoachPage() {
               </p>
             </div>
           )}
+
+          {canSpeak && <VoicePicker />}
 
           {sessionList}
         </div>
