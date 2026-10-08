@@ -40,6 +40,56 @@ IMPORTANT -- SCOPE AND SAFETY:
 
 SESSION_TYPES = ("drill", "walkthrough", "interview", "resume")
 
+# When the person has "read the coach's replies aloud" switched on, the
+# words are spoken by a text-to-speech voice, which reads every symbol out
+# loud ("asterisk asterisk", "arrow"). So the coach writes for the ear.
+VOICE_NOTE = """
+VOICE MODE -- THE PERSON IS LISTENING TO THIS REPLY, NOT READING IT:
+- Write plain, natural spoken sentences in short paragraphs, the way you
+  would talk to them across a table.
+- Use NO markdown and NO special symbols: no asterisks, no pound signs, no
+  underscores, no backticks, no tables or pipes, no arrows, no emoji, no
+  horizontal rules, no bullet characters, and no dashes used as decoration.
+- Do not use bullet or numbered lists. Say "first", "next", "then" and
+  "finally" instead. Write "and" instead of an ampersand and "percent"
+  instead of the percent sign.
+- Do not read out URLs. Keep any diagram block exactly as instructed;
+  the app draws it and does not speak it.
+"""
+
+_KEEP = re.compile(r"(\[\[visual\]\].*?\[\[/visual\]\]|\[\[lib:\d+\]\])", re.DOTALL)
+_EMOJI = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\U0000FE0F\U0000200D\U00002B00-\U00002BFF]"
+)
+
+
+def _plain_segment(text: str) -> str:
+    t = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    t = t.replace("`", "")
+    t = re.sub(r"https?://\S+", "the link", t)
+    t = re.sub(r"(?m)^[ \t]*(?:-{3,}|\*{3,}|_{3,}|={3,})[ \t]*$", "", t)   # horizontal rules
+    t = re.sub(r"(?m)^[ \t]{0,3}#{1,6}[ \t]*", "", t)                   # headings
+    t = re.sub(r"(?m)^[ \t]*(?:[-*\u2022\u25AA\u25CF\u25E6]|\u2013)[ \t]+", "", t)  # bullet markers
+    t = re.sub(r"[*]+", "", t)                                          # bold / italic stars
+    t = re.sub(r"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])", "", t)         # emphasis underscores
+    t = re.sub(r"\s*(?:\u2192|\u21D2|\u279C|\u2794|\u27A1\uFE0F?|->|=>|\u2190|<-)\s*", ", ", t)
+    t = re.sub(r"\s*\|\s*", ", ", t)
+    t = re.sub(r"\s*[\u2014\u2013]\s*", ", ", t)
+    t = t.replace("&", " and ").replace("%", " percent").replace("~", "")
+    t = re.sub(r"(?<=[A-Za-z0-9])/(?=[A-Za-z0-9])", " ", t)
+    t = _EMOJI.sub("", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r" +([,.;:!?])", r"\1", t)
+    t = re.sub(r",\s*,", ",", t)
+    return re.sub(r"\n{3,}", "\n\n", t)
+
+
+def plain_for_voice(text: str) -> str:
+    """Strips markdown and symbols a speech voice would read out loud.
+    Diagram and library markers pass through untouched."""
+    parts = _KEEP.split(text or "")
+    return "".join(p if i % 2 else _plain_segment(p) for i, p in enumerate(parts)).strip()
+
 
 def _context(resume_text: str, target_role: str) -> str:
     return f"""TARGET ROLE OR FIELD (person-supplied data):
@@ -81,7 +131,8 @@ rewrite next. Do not rewrite the whole resume unprompted. Keep it tight.""",
 }
 
 
-def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto") -> dict:
+def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto",
+                  voice: bool = False) -> dict:
     """Returns {"topic": str, "opening_message": str}. Same TOPIC: marker
     contract as services/coaching.py so the topic is persisted without a
     second round trip."""
@@ -103,7 +154,7 @@ a few words, even if one was given to you above):
 <your opening message to the person, following the instructions above>
 
 {CAREER_GUARDRAILS}
-
+{VOICE_NOTE if voice else ""}
 {visuals_service.teaching_block(learning_style, None, session_type)}
 
 {library_service.prompt_block(library or [])}
@@ -148,7 +199,7 @@ session for a score and feedback whenever they're ready."""
 
 
 def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None,
-          learning_style: str = "auto", style: str | None = None) -> str:
+          learning_style: str = "auto", style: str | None = None, voice: bool = False) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -158,7 +209,7 @@ above.
 {_WRAP_UP_NOTE}
 
 {CAREER_GUARDRAILS}
-
+{VOICE_NOTE if voice else ""}
 {visuals_service.teaching_block(learning_style, style, session_type)}
 
 {library_service.prompt_block(library or [])}

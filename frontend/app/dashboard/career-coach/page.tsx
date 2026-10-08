@@ -196,7 +196,7 @@ export default function CareerCoachPage() {
     try {
       const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
-        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle }) }
+        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle, voice: readAloud }) }
       );
       setSessions((s) => [r.session, ...s]);
       setActive(r.session);
@@ -233,7 +233,7 @@ export default function CareerCoachPage() {
     setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString() }]);
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style } : { message: text }),
+        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud } : { message: text, voice: readAloud }),
       });
       setMessages((m) => [...m, reply]);
       if (readAloud) { setSpeakingId(reply.id); speak(reply.content, () => setSpeakingId(null)); }
@@ -394,7 +394,7 @@ export default function CareerCoachPage() {
                   <div key={m.id} className={`cc-msg ${m.role}`}>
                     {m.role === "assistant" && <span className="cc-avatar" aria-hidden>C</span>}
                     <div className="cc-bubble">
-                      {m.content}
+                      {m.role === "assistant" ? <CoachText text={m.content} /> : m.content}
                       {m.visual && <VisualDiagram visual={m.visual} />}
                       {m.resources && m.resources.length > 0 && (
                         <div style={{ marginTop: 6, whiteSpace: "normal" }}>
@@ -571,5 +571,29 @@ export default function CareerCoachPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+
+// The coach sometimes writes **bold** and --- rules. Show them as real
+// formatting instead of raw symbols.
+function CoachText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <>
+      {lines.map((line, i) => {
+        const last = i === lines.length - 1;
+        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+          return <span key={i} className="cc-rule" aria-hidden />;
+        }
+        const parts = line.split(/\*\*(.+?)\*\*/g);
+        return (
+          <span key={i}>
+            {parts.map((part, j) => (j % 2 === 1 ? <strong key={j}>{part}</strong> : part))}
+            {!last && "\n"}
+          </span>
+        );
+      })}
+    </>
   );
 }
