@@ -853,6 +853,17 @@ export interface OrgAskResponse {
   sources: string[];
 }
 
+export type ResumeBlock =
+  | { type: "name" | "headline" | "contact" | "heading" | "sub" | "bullet" | "text"; text: string }
+  | { type: "entry"; left: string; right: string }
+  | { type: "skills"; label: string; text: string };
+
+export interface ResumePreviewData {
+  filename: string;
+  blocks: ResumeBlock[];
+  rationale: string;
+}
+
 export async function downloadFile(path: string, fallbackFilename: string) {
   const token = getToken();
   const res = await fetch(`${API_URL}${path}`, {

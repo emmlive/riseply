@@ -8,14 +8,14 @@ first time either one got a bugfix.
 import json
 import re
 from datetime import datetime, timedelta
-from sqlalchemy import not_
+from sqlalchemy import not_, or_, and_, func
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs
 from app.services import discovery_sources
 from app.config import settings
@@ -314,6 +314,37 @@ def run_single_user_matching_background(run_log_id: int, user_id: int) -> None:
         db.close()
 
 
+def _parse_posted(value):
+    """A source's raw posting date (unix seconds, ISO text, or nothing)
+    -> naive UTC datetime, or None. Never raises: a source changing its
+    date format must not break discovery."""
+    if value in (None, "", 0):
+        return None
+    try:
+        if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
+            return datetime.utcfromtimestamp(int(value))
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            from datetime import timezone
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def _open_job_filters():
+    """SQL conditions for 'worth showing': not marked closed, and not
+    older than settings.job_max_age_days (by the source's own posted
+    date if it gave one, else when discovery last saw it, else when we
+    first found it). NULL is_active counts as active so rows from before
+    the column existed keep working."""
+    conds = [or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True))]
+    if settings.job_max_age_days and settings.job_max_age_days > 0:
+        cutoff = datetime.utcnow() - timedelta(days=settings.job_max_age_days)
+        conds.append(func.coalesce(models.Job.posted_at, models.Job.last_seen_at, models.Job.discovered_at) >= cutoff)
+    return conds
+
+
 def run_discovery(db: Session) -> dict:
     """Pulls fresh postings into the shared job pool.
 
@@ -367,26 +398,65 @@ def run_discovery(db: Session) -> dict:
                 salary_min=j.get("salary_min"), salary_max=j.get("salary_max"),
                 salary_currency=j.get("salary_currency", ""),
                 salary_is_predicted=j.get("salary_is_predicted", False),
+                last_seen_at=run_started, posted_at=_parse_posted(j.get("posted")),
+                is_active=True,
             ).on_conflict_do_nothing(index_elements=["source", "external_id"])
             result = db.execute(stmt)
             if result.rowcount > 0:
                 new_count += 1
         db.commit()
+        _mark_seen(jobs)
         return new_count
+
+    def _mark_seen(jobs: list[dict]) -> None:
+        """Postings that were already in the pool: record that the source
+        still lists them (and re-open one that had been marked closed)."""
+        by_source: dict[str, list[str]] = {}
+        for j in jobs:
+            by_source.setdefault(j["source"], []).append(j["external_id"])
+        for source, ids in by_source.items():
+            for i in range(0, len(ids), 500):
+                db.query(models.Job).filter(
+                    models.Job.source == source,
+                    models.Job.external_id.in_(ids[i:i + 500]),
+                ).update({models.Job.last_seen_at: run_started, models.Job.is_active: True},
+                         synchronize_session=False)
+        db.commit()
+
+    def _close_unlisted(source: str, jobs: list[dict]) -> int:
+        """Greenhouse and Lever return EVERY open role for a company, so a
+        role we stored earlier that is missing from a successful fetch has
+        been closed or filled. Only companies that returned at least one
+        posting this run are touched, so a failed or empty fetch can never
+        wipe a company's jobs."""
+        companies = {j["company"] for j in jobs if j.get("company")}
+        if not companies:
+            return 0
+        closed = db.query(models.Job).filter(
+            models.Job.source == source,
+            models.Job.company.in_(companies),
+            or_(models.Job.last_seen_at.is_(None), models.Job.last_seen_at < run_started),
+            or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True)),
+        ).update({models.Job.is_active: False}, synchronize_session=False)
+        db.commit()
+        return closed
 
     total_discovered = 0
     total_new = 0
+    run_started = datetime.utcnow()
 
     gh_jobs = greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
     total_discovered += len(gh_jobs)
     total_new += _write_and_commit(gh_jobs)
-    print(f"[discovery] greenhouse: {len(gh_jobs)} raw postings, written and committed")
+    gh_closed = _close_unlisted("greenhouse", gh_jobs)
+    print(f"[discovery] greenhouse: {len(gh_jobs)} raw postings, written and committed; {gh_closed} no longer listed (closed)")
     del gh_jobs
 
     lever_jobs = lever.fetch_all(discovery_sources.LEVER_COMPANIES)
     total_discovered += len(lever_jobs)
     total_new += _write_and_commit(lever_jobs)
-    print(f"[discovery] lever: {len(lever_jobs)} raw postings, written and committed")
+    lever_closed = _close_unlisted("lever", lever_jobs)
+    print(f"[discovery] lever: {len(lever_jobs)} raw postings, written and committed; {lever_closed} no longer listed (closed)")
     del lever_jobs
 
     rss_jobs = rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
@@ -590,6 +660,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     unseen_rows = db.query(models.Job.id, models.Job.title).filter(
         not_(models.Job.id.in_(already_applied_subq)),
         not_(models.Job.id.in_(already_scored_subq)),
+        *_open_job_filters(),
     ).order_by(models.Job.discovered_at.desc()).all()
 
     hit_job_cap = False
@@ -673,7 +744,13 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
 
     def _score_one(job_row_id: int):
         try:
-            return matcher.best_profile_match(job_dicts[job_row_id], resume_text, profiles), None
+            best = matcher.best_profile_match(job_dicts[job_row_id], resume_text, profiles)
+            # Only a job that is about to be shown to the person is worth a
+            # network round-trip: confirm its posting is still open.
+            # True/None keep it; False (clearly closed) drops it in phase 3.
+            if settings.verify_posting_live and best and best.get("meets_threshold"):
+                best["posting_live"] = posting_check.check_posting(job_dicts[job_row_id].get("url", ""))
+            return best, None
         except Exception as e:  # reported + refunded in phase 3, on the main thread
             return None, e
 
@@ -693,7 +770,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     if settings.auto_tailor_top_n > 0:
         accepted = [
             (res[0]["score"], jid) for jid, res in zip(ids_to_score, scored_results)
-            if res[0] is not None and res[0]["meets_threshold"]
+            if res[0] is not None and res[0]["meets_threshold"] and res[0].get("posting_live") is not False
         ]
         accepted.sort(key=lambda t: t[0], reverse=True)
         tailor_job_ids = {jid for _, jid in accepted[:settings.auto_tailor_top_n]}
@@ -763,6 +840,14 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 }))
                 near_miss_candidates.sort(key=lambda t: t[0], reverse=True)
                 near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
+            continue
+
+        if best.get("posting_live") is False:
+            # The posting's own page says it's closed -- don't show it, and
+            # take it out of the pool so nobody else is matched to it.
+            print(f"[pipeline] skipping closed posting {job_row.id} ({job_row.company} — {job_row.title})")
+            job_row.is_active = False
+            db.commit()
             continue
 
         application = models.Application(
@@ -864,6 +949,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         fallback_jobs = db.query(models.Job).filter(
             not_(models.Job.id.in_(already_applied_subq)),
             not_(models.Job.id.in_(already_scored_now_subq)),
+            *_open_job_filters(),
         ).order_by(models.Job.discovered_at.desc()).limit(FALLBACK_LOCATION_JOB_CAP).all()
 
         for job_row in fallback_jobs:

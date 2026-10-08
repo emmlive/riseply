@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import ResumePreview from "@/components/ResumePreview";
 import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
@@ -29,6 +30,7 @@ export default function ApplicationsPage() {
   const [followups, setFollowups] = useState<Record<number, Followup | "loading" | "none">>({});
   const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
   const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
+  const [previewApp, setPreviewApp] = useState<Application | null>(null);
 
   async function load(status: string) {
     if (status === ARCHIVED_FILTER) {
@@ -240,6 +242,15 @@ export default function ApplicationsPage() {
                     {app.is_archived ? "Unarchive" : "Archive"}
                   </button>
                   {app.has_tailored_resume_data && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: "2px 8px" }}
+                      onClick={() => setPreviewApp(app)}
+                    >
+                      Preview resume
+                    </button>
+                  )}
+                  {app.has_tailored_resume_data && (
                     <a
                       href="#"
                       onClick={(e) => {
@@ -405,6 +416,13 @@ export default function ApplicationsPage() {
           </div>
         );
       })}
+      {previewApp && (
+        <ResumePreview
+          applicationId={previewApp.id}
+          company={previewApp.job_company}
+          onClose={() => setPreviewApp(null)}
+        />
+      )}
     </div>
   );
 }

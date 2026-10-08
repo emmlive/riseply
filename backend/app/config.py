@@ -200,6 +200,13 @@ class Settings(BaseSettings):
     # fine; kept low enough to stay well inside API rate limits and
     # Render's 512MB memory.
     matching_concurrency: int = 4
+    # A posting older than this (by its own posted date when the source
+    # gives one, otherwise by when discovery last saw it) is treated as
+    # probably filled and never scored. Set to 0 to turn the age cut-off off.
+    job_max_age_days: int = 30
+    # Before a match is shown, fetch its posting link and drop it if the
+    # page says the job is closed (404/410 or "no longer accepting").
+    verify_posting_live: bool = True
     # Only the best N matches of a run get their resume auto-tailored
     # (a full Claude rewrite + .docx each). The rest keep the base
     # resume and can be tailored on demand via POST
