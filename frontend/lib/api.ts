@@ -1009,6 +1009,7 @@ export interface ProgressWeek {
 }
 
 export interface ProgressData {
+  readiness: ReadinessRole[];
   practice: {
     sessions_completed: number;
     sessions_in_progress: number;
@@ -1035,3 +1036,24 @@ export interface ProgressData {
 
 // Weeks start on the person's own Monday, so tell the server their offset.
 export const fetchProgress = () => api<ProgressData>(`/progress?tz_offset=${new Date().getTimezoneOffset()}`);
+
+// ---- Readiness (per target role) ------------------------------------------
+
+export type ReadinessLevel = "none" | "starting" | "building" | "close" | "ready";
+
+export interface ReadinessDimension {
+  score: number | null;
+  level: ReadinessLevel;
+  sessions: number;
+  early: boolean;
+  parts: { session_type: string; sessions: number; score: number | null }[];
+}
+
+export interface ReadinessRole {
+  target_role: string;
+  scored_sessions: number;
+  get_job: ReadinessDimension;
+  do_job: ReadinessDimension;
+  next_type: CareerCoachSessionType;
+  next_reason: string;
+}

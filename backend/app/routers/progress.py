@@ -18,3 +18,13 @@ def get_progress(
     """The person's own progress: Career Coach scores and the job-search funnel.
     Read-only and computed from existing rows; costs no AI calls and is not metered."""
     return progress_service.build_progress(db, user, tz_offset=tz_offset)
+
+
+@router.get("/readiness", response_model=list[schemas.ReadinessRole])
+def get_readiness(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Per-role readiness to get the job and to do the job, from the coach's
+    scored sessions. A lighter call for the Career Coach page."""
+    return progress_service.build_readiness(db, user)

@@ -1601,7 +1601,31 @@ class ProgressJobSearch(BaseModel):
     weeks: list[ProgressWeek]
 
 
+class ReadinessPart(BaseModel):
+    session_type: str
+    sessions: int
+    score: Optional[int] = None   # average of the latest three scored sessions of this type
+
+
+class ReadinessDimension(BaseModel):
+    score: Optional[int] = None   # None until there is at least one scored session
+    level: str                    # none | starting | building | close | ready
+    sessions: int                 # scored sessions behind the score
+    early: bool                   # fewer than 3 sessions: an early read, not a verdict
+    parts: list[ReadinessPart]
+
+
+class ReadinessRole(BaseModel):
+    target_role: str
+    scored_sessions: int
+    get_job: ReadinessDimension
+    do_job: ReadinessDimension
+    next_type: str                # which kind of session would help most
+    next_reason: str
+
+
 class ProgressOut(BaseModel):
+    readiness: list[ReadinessRole]
     practice: ProgressPractice
     job_search: ProgressJobSearch
     current_streak: int

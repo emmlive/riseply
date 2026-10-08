@@ -7,6 +7,7 @@ import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
+import { ReadinessCard } from "@/components/Readiness";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
 import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed, parseCueLine } from "@/lib/cues";
 import {
@@ -219,6 +220,15 @@ export default function CareerCoachPage() {
     clearTimeout(notesTimer.current);
     notesTimer.current = null;
     api(`/career-coach/sessions/${active.id}/notes`, { method: "PUT", body: JSON.stringify({ content: notes }) }).catch(() => {});
+  }
+
+  // "Practice this now" on the readiness card: set up the start form for the
+  // suggested role and session type, ready to press Start.
+  function startPractice(roleName: string, sessionType: CareerCoachSessionType) {
+    closeSession();
+    setRole(roleName);
+    setType(sessionType);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function closeSession() {
@@ -595,6 +605,12 @@ export default function CareerCoachPage() {
               {shelf.map((r) => <ResourceCard key={r.id} item={r} />)}
             </div>
           )}
+
+          <ReadinessCard
+            activeRole={active?.target_role}
+            refreshKey={`${active?.id ?? 0}-${active?.status ?? ""}-${active?.score ?? ""}`}
+            onPractice={startPractice}
+          />
 
           {active && (
             <div className="card">
