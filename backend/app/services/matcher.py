@@ -178,13 +178,13 @@ Title: {job['title']}
 Company: {job['company']}
 Location: {job['location']}
 Description:
-{job['description'][:6000]}
+{job['description'][:3500]}
 
 Respond ONLY with JSON, no other text, in this exact shape:
 {{"score": <0-100 integer>, "reason": "<one sentence>"}}
 """
     resp = client.messages.create(
-        model=MODEL,
+        model=settings.matching_model,
         max_tokens=350,  # headroom above the tiny expected response, so a
                           # longer-than-usual "reason" sentence can't get
                           # truncated mid-JSON and silently look like a

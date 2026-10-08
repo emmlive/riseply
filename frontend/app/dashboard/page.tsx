@@ -194,7 +194,7 @@ export default function OverviewPage() {
       // stuck (e.g. its process died mid-run and nothing ever marks
       // it "failed") doesn't poll forever.
       const MAX_CONSECUTIVE_POLL_FAILURES = 5;
-      const MAX_POLL_ATTEMPTS = 300; // ~10 minutes at 2s/poll
+      const MAX_POLL_ATTEMPTS = 900; // ~30 minutes at 2s/poll
       let result: MatchResult | null = null;
       let consecutiveFailures = 0;
       for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
@@ -214,7 +214,13 @@ export default function OverviewPage() {
         if (poll.status === "failed") throw new Error(poll.error || "Something went wrong running the search.");
         // still "running" -- keep polling
       }
-      if (!result) throw new Error("That search is taking longer than expected — check the Applications tab in a few minutes, or try again.");
+      if (!result) {
+        // Not an error: the run is still going on the server. Matches show
+        // up in Applications as they finish.
+        setMessage("Your search is still running in the background — new matches will appear in the Applications tab as they're found.");
+        load();
+        return;
+      }
 
       // Best-effort refresh of the shared job pool for NEXT time --
       // fired after match completes, not before/concurrently (see

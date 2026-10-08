@@ -190,6 +190,22 @@ class Settings(BaseSettings):
     # real preview of what Pro-depth search feels like.
     welcome_search_job_cap: int = 100
 
+    # --- Matching cost/speed knobs ---
+    # Scoring one job is a small, structured judgment (a 0-100 score plus
+    # one sentence), which is exactly what a small model does well at a
+    # fraction of the cost and latency of the flagship one. Override with
+    # MATCHING_MODEL if scoring quality ever needs to go back up.
+    matching_model: str = "claude-haiku-4-5-20251001"
+    # How many jobs are scored at once. Network-bound, so threads are
+    # fine; kept low enough to stay well inside API rate limits and
+    # Render's 512MB memory.
+    matching_concurrency: int = 4
+    # Only the best N matches of a run get their resume auto-tailored
+    # (a full Claude rewrite + .docx each). The rest keep the base
+    # resume and can be tailored on demand via POST
+    # /applications/{id}/retailor. 0 disables auto-tailoring entirely.
+    auto_tailor_top_n: int = 5
+
 
     # --- Org Buddy as a Service: hybrid pricing (base plan + overage) ---
     # Real prices live in Stripe (like the individual Pro plan) -- these
