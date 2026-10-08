@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import DiscountCodesTab from "@/components/DiscountCodesTab";
+import FeedbackTab from "@/components/FeedbackTab";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
   AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
-type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "admins";
+type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "feedback" | "admins";
 
 const ALL_TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: "overview", label: "Overview", roles: ["super", "billing", "readonly"] },
@@ -19,6 +20,7 @@ const ALL_TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: "health", label: "System health", roles: ["super", "readonly"] },
   { id: "moderation", label: "Moderation", roles: ["super", "support", "readonly"] },
   { id: "support", label: "Support inbox", roles: ["super", "support", "readonly"] },
+  { id: "feedback", label: "Feedback", roles: ["super", "support", "readonly"] },
   { id: "admins", label: "Admins", roles: ["super"] },
 ];
 
@@ -85,6 +87,7 @@ export default function AdminPage() {
       {activeTab === "health" && <SystemHealthTab />}
       {activeTab === "moderation" && <ModerationTab />}
       {activeTab === "support" && <SupportTab role={role} />}
+      {activeTab === "feedback" && <FeedbackTab canAct={role === "super" || role === "support"} />}
       {activeTab === "admins" && <AdminsTab currentAdminId={user.id} />}
     </div>
   );

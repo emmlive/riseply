@@ -1631,3 +1631,73 @@ class ProgressOut(BaseModel):
     current_streak: int
     longest_streak: int
     rise_points: int
+
+
+# ---- Feedback ---------------------------------------------------------------
+
+FEEDBACK_CATEGORIES = ("idea", "problem", "praise")
+
+
+class FeedbackIn(BaseModel):
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
+    category: str = ""
+    message: str = Field(default="", max_length=2000)
+    page: str = Field(default="", max_length=200)
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v and v not in FEEDBACK_CATEGORIES:
+            raise ValueError("Choose idea, problem or praise.")
+        return v
+
+    @field_validator("message", "page")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return (v or "").strip()
+
+    @model_validator(mode="after")
+    def _something_to_say(self):
+        if self.rating is None and not self.message:
+            raise ValueError("Add a rating or a few words.")
+        return self
+
+
+class CoachReplyFeedbackIn(BaseModel):
+    message_id: int
+    helpful: bool
+    note: str = Field(default="", max_length=1000)
+
+    @field_validator("note")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return (v or "").strip()
+
+
+class CoachReplyFeedbackOut(BaseModel):
+    message_id: int
+    helpful: bool
+
+
+class AdminFeedbackOut(BaseModel):
+    id: int
+    user_email: str
+    kind: str
+    rating: Optional[int] = None
+    helpful: Optional[bool] = None
+    category: str = ""
+    message: str = ""
+    page: str = ""
+    reply_excerpt: str = ""      # coach_reply: the coach's own reply that was rated
+    status: str
+    created_at: datetime
+
+
+class AdminFeedbackSummary(BaseModel):
+    total: int
+    new: int
+    avg_rating: Optional[float] = None       # general feedback, 1-5
+    rated: int
+    thumbs_up: int
+    thumbs_down: int

@@ -1623,3 +1623,29 @@ class UsageLog(Base):
     period = Column(String, nullable=False)   # "YYYY-MM"
     action = Column(String, nullable=False)   # "match" | "tailor_resume"
     count = Column(Integer, default=0)
+
+
+class Feedback(Base):
+    """In-product feedback. Two kinds share one table so Admin reads one list:
+    "general" (the Give feedback button: a 1-5 rating, a type and a comment,
+    plus the page it was sent from) and "coach_reply" (thumbs up/down on one
+    Career Coach reply, with an optional note). A person has at most one
+    thumbs per reply; changing their mind updates it."""
+    __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("user_id", "message_id", name="uq_feedback_user_message"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    kind = Column(String, nullable=False, default="general", server_default="general")  # general | coach_reply
+    rating = Column(Integer, nullable=True)        # 1-5, general only
+    helpful = Column(Boolean, nullable=True)       # thumbs, coach_reply only
+    category = Column(String, default="", server_default="")   # idea | problem | praise | ""
+    message = Column(Text, default="", server_default="")
+    page = Column(String, default="", server_default="")
+
+    session_id = Column(Integer, nullable=True)    # coach_reply: the Career Coach session
+    message_id = Column(Integer, nullable=True)    # coach_reply: the rated reply
+
+    status = Column(String, default="new", server_default="new")   # new | reviewed
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
