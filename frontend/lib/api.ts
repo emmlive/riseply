@@ -980,3 +980,58 @@ export interface DiscordStatus {
   last_error: string;
   last_success_at: string | null;
 }
+
+// ---- Progress ------------------------------------------------------------
+
+export interface ProgressScorePoint {
+  session_id: number;
+  date: string;
+  target_role: string;
+  session_type: string;
+  topic: string;
+  score: number;
+}
+
+export interface ProgressRole {
+  target_role: string;
+  sessions: number;
+  scored: number;
+  first_score: number | null;
+  latest_score: number | null;
+  change: number | null;
+}
+
+export interface ProgressWeek {
+  week_start: string;
+  matches: number;
+  applied: number;
+  practice: number;
+}
+
+export interface ProgressData {
+  practice: {
+    sessions_completed: number;
+    sessions_in_progress: number;
+    scored_sessions: number;
+    avg_score: number | null;
+    best_score: number | null;
+    latest_score: number | null;
+    change: number | null;
+    scores: ProgressScorePoint[];
+    by_role: ProgressRole[];
+    weakest_topics: { topic: string; sessions: number; avg_score: number }[];
+    notes_saved: number;
+    folders: number;
+  };
+  job_search: {
+    funnel: { matched: number; approved: number; applied: number; interviewing: number; offers: number };
+    interview_rate: number | null;
+    weeks: ProgressWeek[];
+  };
+  current_streak: number;
+  longest_streak: number;
+  rise_points: number;
+}
+
+// Weeks start on the person's own Monday, so tell the server their offset.
+export const fetchProgress = () => api<ProgressData>(`/progress?tz_offset=${new Date().getTimezoneOffset()}`);

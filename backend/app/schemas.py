@@ -1537,3 +1537,73 @@ class DiscordStatusOut(BaseModel):
     timezone: str = "UTC"
     last_error: str = ""
     last_success_at: datetime | None = None
+
+
+# ---- Progress -------------------------------------------------------------
+
+class ProgressScorePoint(BaseModel):
+    session_id: int
+    date: datetime
+    target_role: str
+    session_type: str
+    topic: str
+    score: int
+
+
+class ProgressRole(BaseModel):
+    target_role: str
+    sessions: int
+    scored: int
+    first_score: Optional[int] = None
+    latest_score: Optional[int] = None
+    change: Optional[int] = None   # latest minus first, needs two scored sessions
+
+
+class ProgressTopic(BaseModel):
+    topic: str
+    sessions: int
+    avg_score: float
+
+
+class ProgressPractice(BaseModel):
+    sessions_completed: int
+    sessions_in_progress: int
+    scored_sessions: int
+    avg_score: Optional[float] = None
+    best_score: Optional[int] = None
+    latest_score: Optional[int] = None
+    change: Optional[int] = None   # recent scores vs the ones before them
+    scores: list[ProgressScorePoint]
+    by_role: list[ProgressRole]
+    weakest_topics: list[ProgressTopic]
+    notes_saved: int
+    folders: int
+
+
+class ProgressFunnel(BaseModel):
+    matched: int
+    approved: int
+    applied: int
+    interviewing: int
+    offers: int
+
+
+class ProgressWeek(BaseModel):
+    week_start: date
+    matches: int
+    applied: int
+    practice: int
+
+
+class ProgressJobSearch(BaseModel):
+    funnel: ProgressFunnel
+    interview_rate: Optional[int] = None   # percent of applications that reached an interview
+    weeks: list[ProgressWeek]
+
+
+class ProgressOut(BaseModel):
+    practice: ProgressPractice
+    job_search: ProgressJobSearch
+    current_streak: int
+    longest_streak: int
+    rise_points: int

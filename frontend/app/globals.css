@@ -858,3 +858,50 @@ textarea.cc-input { resize: vertical; }
 .mc-try { background: #E8EFFA; border-color: #BCCDE8; }
 .mc-key { list-style: none; margin: 0 0 10px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-muted); background: var(--paper); border-radius: 8px; }
 .mc-key strong { color: var(--ink); font-weight: 600; }
+
+/* Progress page */
+.pg-h2 { margin: 28px 0 10px; }
+.pg-card-title { margin: 0; font-size: 1rem; }
+.pg-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); gap: 12px; margin: 18px 0 4px; }
+.pg-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.pg-tile-link { text-decoration: none; color: inherit; display: block; }
+.pg-tile-link:hover { border-color: var(--border-strong); }
+.pg-tile-label { font-size: 13px; color: var(--ink-muted); }
+.pg-tile-value { font-size: 28px; font-weight: 600; line-height: 1.15; margin: 4px 0 2px; }
+.pg-tile-sub { font-size: 12.5px; color: var(--ink-muted); min-height: 1.2em; }
+.pg-tile-sub.up { color: var(--accent-hover); font-weight: 600; }
+.pg-tile-sub.down { color: var(--danger); font-weight: 600; }
+.pg-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.pg-two > .card { margin-bottom: 0; }
+.pg-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.pg-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
+.pg-list li:first-child { border-top: 0; }
+.pg-list li > div:first-child { display: flex; flex-direction: column; min-width: 0; }
+.pg-list-right { text-align: right; white-space: nowrap; font-weight: 500; }
+.pg-up { color: var(--accent-hover); font-weight: 600; }
+.pg-down { color: var(--danger); font-weight: 600; }
+.pg-chart { position: relative; }
+.pg-svg-wrap { position: relative; }
+.pg-svg-wrap svg { display: block; max-width: 100%; overflow: visible; }
+.pg-svg-wrap circle:focus-visible, .pg-svg-wrap rect:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg-tip { position: absolute; transform: translate(-50%, calc(-100% - 12px)); background: var(--ink); color: #fff; font-size: 12.5px; line-height: 1.4; padding: 7px 10px; border-radius: 8px; pointer-events: none; display: flex; flex-direction: column; white-space: nowrap; z-index: 2; }
+.pg-tip span { color: rgba(255, 255, 255, 0.78); }
+.pg-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; margin-bottom: 10px; flex-wrap: wrap; }
+.pg-seg button { font: inherit; font-size: 13px; padding: 6px 12px; background: var(--surface); color: var(--ink); border: 0; border-left: 1px solid var(--border); cursor: pointer; }
+.pg-seg button:first-child { border-left: 0; }
+.pg-seg button.on { background: var(--accent); color: #fff; }
+.pg-table-toggle { margin-top: 10px; font-size: 13px; }
+.pg-table-toggle summary { cursor: pointer; color: var(--ink-muted); width: fit-content; }
+.pg-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.pg-table th, .pg-table td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--border); }
+.pg-table th { font-weight: 600; color: var(--ink-muted); }
+.pg-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.pg-funnel { list-style: none; margin: 0; padding: 0; }
+.pg-funnel li { display: grid; grid-template-columns: minmax(150px, 220px) 1fr 44px; gap: 14px; align-items: center; padding: 7px 0; }
+.pg-funnel-label { display: flex; flex-direction: column; font-size: 13px; }
+.pg-funnel-label span { color: var(--ink-muted); font-size: 12px; }
+.pg-funnel-track { height: 14px; background: var(--paper); border-radius: 4px; }
+.pg-funnel-fill { height: 14px; background: var(--accent); border-radius: 0 4px 4px 0; }
+.pg-funnel-value { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pg-glance { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+@media (max-width: 560px) { .pg-funnel li { grid-template-columns: 1fr 44px; } .pg-funnel-track { grid-column: 1 / -1; order: 3; } }
