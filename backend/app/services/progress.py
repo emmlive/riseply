@@ -48,6 +48,81 @@ def recent_change(scores: list[int]) -> int | None:
     return round(_avg(scores[-k:]) - _avg(scores[-2 * k:-k]))
 
 
+# --- Readiness -------------------------------------------------------------
+# Two questions the person cares about, answered per target role from the
+# coach's own scores: "Am I ready to GET this job?" (mock interviews and
+# resume coaching) and "Am I ready to DO this job?" (task walkthroughs and
+# knowledge drills). It is the coach's assessment of practice, not a
+# prediction of a hiring outcome, and the page says so.
+GET_JOB = (("interview", 0.6), ("resume", 0.4))
+DO_JOB = (("walkthrough", 0.6), ("drill", 0.4))
+RECENT = 3          # each session type counts its latest few scores
+EARLY_UNDER = 3     # fewer scored sessions than this is an "early read"
+# (minimum score, level). Checked top to bottom.
+LEVELS = ((80, "ready"), (65, "close"), (50, "building"), (0, "starting"))
+NEXT_ORDER = ("interview", "walkthrough", "drill", "resume")   # what to try first if untouched
+NEXT_NAMES = {"interview": "a mock interview", "walkthrough": "a task walkthrough",
+              "drill": "a knowledge drill", "resume": "resume coaching"}
+
+
+def level_for(score: int | None) -> str:
+    if score is None:
+        return "none"
+    return next(name for floor, name in LEVELS if score >= floor)
+
+
+def _dimension(by_type: dict[str, list[int]], weights: tuple) -> dict:
+    parts, num, den, total = [], 0.0, 0.0, 0
+    for stype, weight in weights:
+        vals = by_type.get(stype, [])
+        score = round(_avg(vals[-RECENT:])) if vals else None
+        parts.append({"session_type": stype, "sessions": len(vals), "score": score})
+        total += len(vals)
+        if score is not None:
+            num += weight * score
+            den += weight
+    score = round(num / den) if den else None   # a missing part doesn't count as zero
+    early = total < EARLY_UNDER
+    level = level_for(score)
+    if early and level == "ready":
+        level = "close"   # "Ready" needs enough sessions behind it; one good score is a promising start
+    return {"score": score, "level": level, "sessions": total, "early": early, "parts": parts}
+
+
+def readiness_from_sessions(sessions: list) -> list[dict]:
+    """sessions: CareerCoachSession rows (any status). Only scored, completed
+    sessions count. Roles are grouped ignoring case and spacing."""
+    scored = [s for s in sessions if s.status == "completed" and s.score is not None]
+    scored.sort(key=lambda s: (s.completed_at or s.created_at, s.id))
+    roles: dict[str, dict] = {}
+    for s in scored:
+        key = s.target_role.strip().lower()
+        r = roles.setdefault(key, {"name": s.target_role.strip(), "by_type": defaultdict(list), "n": 0, "last": None})
+        r["by_type"][s.session_type].append(s.score)
+        r["n"] += 1
+        r["last"] = s.completed_at or s.created_at
+    out = []
+    for r in sorted(roles.values(), key=lambda r: r["last"], reverse=True)[:6]:
+        by_type = r["by_type"]
+        untouched = [t for t in NEXT_ORDER if not by_type.get(t)]
+        if untouched:
+            nxt, reason = untouched[0], f"You haven't tried {NEXT_NAMES[untouched[0]]} for this role yet."
+        else:
+            nxt = min(NEXT_ORDER, key=lambda t: (_avg(by_type[t][-RECENT:]), NEXT_ORDER.index(t)))
+            reason = f"{NEXT_NAMES[nxt].capitalize()} is your lowest area right now."
+        out.append({
+            "target_role": r["name"], "scored_sessions": r["n"],
+            "get_job": _dimension(by_type, GET_JOB), "do_job": _dimension(by_type, DO_JOB),
+            "next_type": nxt, "next_reason": reason,
+        })
+    return out
+
+
+def build_readiness(db: Session, user: models.User) -> list[dict]:
+    rows = db.query(models.CareerCoachSession).filter(models.CareerCoachSession.user_id == user.id).all()
+    return readiness_from_sessions(rows)
+
+
 def build_progress(db: Session, user: models.User, tz_offset: int = 0, now: datetime | None = None) -> dict:
     now = now or datetime.utcnow()
     today = _local(now, tz_offset).date()
@@ -162,6 +237,7 @@ def build_progress(db: Session, user: models.User, tz_offset: int = 0, now: date
         bump(s.completed_at or s.created_at, "practice")
 
     return {
+        "readiness": readiness_from_sessions(sessions),
         "practice": practice,
         "job_search": {
             "funnel": funnel,

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchProgress, ProgressData } from "@/lib/api";
 import { Funnel, ScoreChart, WeekChart } from "@/components/ProgressCharts";
+import { RoleReadiness, THRESHOLDS } from "@/components/Readiness";
 
 function changeText(change: number | null, scored: number): string {
   if (change === null) return scored < 2 ? "Finish two scored sessions to see a trend" : "";
@@ -62,6 +63,29 @@ export default function ProgressPage() {
           <div className="pg-tile-sub">Longest {data.longest_streak}. See Rise Index</div>
         </Link>
       </div>
+
+      {data.readiness.length > 0 && (
+        <>
+          <h2 className="pg-h2">Readiness</h2>
+          <p className="hint" style={{ margin: "-4px 0 10px" }}>
+            How ready you are for each role you have practiced, from the Career Coach&apos;s scores.
+            It is the coach&apos;s read on your practice, not a prediction of whether you will be hired.
+            {" "}{THRESHOLDS}
+          </p>
+          {data.readiness.map((r) => (
+            <div className="card" key={r.target_role}>
+              <h3 className="pg-card-title" style={{ marginBottom: 12 }}>
+                {r.target_role}
+                <span className="hint" style={{ fontWeight: 400 }}> ({r.scored_sessions} scored session{r.scored_sessions === 1 ? "" : "s"})</span>
+              </h3>
+              <RoleReadiness role={r} />
+              <p className="hint" style={{ margin: "10px 0 0" }}>
+                <Link href="/dashboard/career-coach">Open the Career Coach</Link> to practice.
+              </p>
+            </div>
+          ))}
+        </>
+      )}
 
       <h2 className="pg-h2">Practice</h2>
       {!hasPractice ? (

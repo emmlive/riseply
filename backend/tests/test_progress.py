@@ -181,3 +181,108 @@ def test_empty_account_returns_zeros_not_errors():
     assert out["practice"]["scores"] == [] and out["practice"]["change"] is None
     assert out["job_search"]["funnel"]["matched"] == 0 and len(out["job_search"]["weeks"]) == 8
     db.close()
+
+
+# ---- Readiness -------------------------------------------------------------
+
+def _sc(db, uid, stype, score, days_ago=1, role="IT Auditor"):
+    return _session(db, uid, score, days_ago, role=role, stype=stype)
+
+
+def test_levels():
+    assert [pg.level_for(s) for s in (None, 0, 49, 50, 64, 65, 79, 80, 100)] == \
+        ["none", "starting", "starting", "building", "building", "close", "close", "ready", "ready"]
+
+
+def test_readiness_weights_each_half_and_ignores_missing_parts():
+    db = SessionLocal()
+    u = _user(db)
+    _sc(db, u.id, "interview", 70, 5)
+    _sc(db, u.id, "resume", 90, 4)
+    _sc(db, u.id, "walkthrough", 60, 3)
+    r = pg.build_readiness(db, u)
+    assert len(r) == 1
+    # get the job: interview 70 * .6 + resume 90 * .4 = 78
+    assert r[0]["get_job"]["score"] == 78 and r[0]["get_job"]["level"] == "close"
+    # do the job: only a walkthrough exists, so it stands alone (drill is NOT counted as zero)
+    assert r[0]["do_job"]["score"] == 60 and r[0]["do_job"]["level"] == "building"
+    assert r[0]["get_job"]["sessions"] == 2 and r[0]["get_job"]["early"] is True
+    db.close()
+
+
+def test_readiness_uses_only_the_latest_three_of_each_type():
+    db = SessionLocal()
+    u = _user(db)
+    for score, days in [(20, 9), (30, 8), (70, 3), (80, 2), (90, 1)]:
+        _sc(db, u.id, "interview", score, days)
+    d = pg.build_readiness(db, u)[0]["get_job"]
+    assert d["parts"][0] == {"session_type": "interview", "sessions": 5, "score": 80}   # (70+80+90)/3
+    assert d["score"] == 80 and d["early"] is False
+    db.close()
+
+
+def test_readiness_next_step_prefers_untried_then_lowest():
+    db = SessionLocal()
+    u = _user(db)
+    _sc(db, u.id, "drill", 90)
+    r = pg.build_readiness(db, u)[0]
+    assert r["next_type"] == "interview" and "haven't tried a mock interview" in r["next_reason"]
+    for t, s in (("interview", 80), ("walkthrough", 55), ("resume", 75)):
+        _sc(db, u.id, t, s)
+    r = pg.build_readiness(db, u)[0]
+    assert r["next_type"] == "walkthrough" and "lowest area" in r["next_reason"]
+    db.close()
+
+
+def test_readiness_ignores_unscored_open_and_groups_roles():
+    db = SessionLocal()
+    u = _user(db)
+    _sc(db, u.id, "interview", 70, 3, role="Security Architect")
+    _sc(db, u.id, "interview", 80, 1, role=" security architect")
+    _session(db, u.id, None, 1, role="Security Architect", stype="drill")                       # no score
+    _session(db, u.id, None, 0, role="Security Architect", stype="drill", status="in_progress")  # still open
+    _sc(db, u.id, "drill", 60, 8, role="IT Auditor")
+    r = pg.build_readiness(db, u)
+    assert [x["target_role"] for x in r] == ["Security Architect", "IT Auditor"]   # most recent first
+    assert r[0]["scored_sessions"] == 2
+    assert r[1]["get_job"]["score"] is None and r[1]["get_job"]["level"] == "none"
+    db.close()
+
+
+def test_readiness_endpoint_and_progress_payload():
+    db = SessionLocal()
+    u = _user(db)
+    _sc(db, u.id, "walkthrough", 72)
+    uid = u.id
+    db.close()
+    from app.database import get_db
+    from fastapi import Depends
+
+    def _u(db=Depends(get_db)):
+        return db.get(models.User, uid)
+    app.dependency_overrides[get_current_user] = _u
+    c = TestClient(app)
+    r = c.get("/progress/readiness")
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["do_job"]["score"] == 72
+    full = c.get("/progress").json()
+    assert full["readiness"][0]["target_role"] == "IT Auditor"
+
+
+def test_empty_account_has_no_readiness():
+    db = SessionLocal()
+    assert pg.build_readiness(db, _user(db)) == []
+    db.close()
+
+
+def test_one_great_session_is_not_called_ready():
+    db = SessionLocal()
+    u = _user(db)
+    _sc(db, u.id, "drill", 95)
+    d = pg.build_readiness(db, u)[0]["do_job"]
+    assert d["score"] == 95 and d["early"] is True and d["level"] == "close"
+    for _ in range(2):
+        _sc(db, u.id, "walkthrough", 95)
+    d = pg.build_readiness(db, u)[0]["do_job"]
+    assert d["early"] is False and d["level"] == "ready"
+    db.close()
