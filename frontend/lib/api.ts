@@ -853,6 +853,27 @@ export interface OrgAskResponse {
   sources: string[];
 }
 
+export interface StudyFolder {
+  id: number;
+  name: string;
+  note_count: number;
+  created_at: string | null;
+}
+
+export type StudyNoteSource = "notepad" | "coach_reply" | "feedback" | "manual";
+
+export interface StudyNote {
+  id: number;
+  folder_id: number | null;
+  session_id: number | null;
+  title: string;
+  content: string;
+  source: StudyNoteSource;
+  source_label: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export type ResumeBlock =
   | { type: "name" | "headline" | "contact" | "heading" | "sub" | "bullet" | "text"; text: string }
   | { type: "entry"; left: string; right: string }

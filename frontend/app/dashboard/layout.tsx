@@ -204,7 +204,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           Log out
         </button>
       </aside>
-      <main className={`main ${WIDE_ROUTES.includes(pathname) ? "main-wide" : ""}`}>
+      <main className={`main ${WIDE_ROUTES.some((r) => pathname.startsWith(r)) ? "main-wide" : ""}`}>
         {isPreviewActive && (
           <div style={{
             background: "var(--amber-soft, #FBEEE0)", color: "var(--amber, #C97A2B)",

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
+import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
 } from "@/lib/speech";
@@ -75,6 +76,7 @@ export default function CareerCoachPage() {
   const [canSpeak, setCanSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [readAloud, setReadAloud] = useState(false);
+  const [saveDraft, setSaveDraft] = useState<StudyDraft | null>(null);
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const dictation = useRef<Dictation | null>(null);
   const dictationBase = useRef("");
@@ -165,6 +167,30 @@ export default function CareerCoachPage() {
     setReadAloud(on);
     try { localStorage.setItem("cc-read-aloud", on ? "1" : "0"); } catch { /* ignore */ }
     if (!on) { stopSpeaking(); setSpeakingId(null); }
+  }
+
+  function sessionLabel(s: CareerCoachSession) {
+    return `${typeLabel(s.session_type)} · ${s.target_role}`;
+  }
+
+  function saveNotepad() {
+    if (!active || !notes.trim()) return;
+    flushNotes();
+    setSaveDraft({ title: `${active.topic} notes`, content: notes.trim(), source: "notepad", sourceLabel: sessionLabel(active), sessionId: active.id });
+  }
+
+  function saveReply(m: CareerCoachMessage) {
+    if (!active) return;
+    setSaveDraft({ title: active.topic, content: m.content.replace(/\*\*/g, "").replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim(), source: "coach_reply", sourceLabel: sessionLabel(active), sessionId: active.id });
+  }
+
+  function saveFeedback() {
+    if (!active || !active.feedback) return;
+    setSaveDraft({
+      title: `${active.topic} feedback`,
+      content: `${active.score !== null ? `Score: ${active.score}/100\n\n` : ""}${active.feedback}`,
+      source: "feedback", sourceLabel: sessionLabel(active), sessionId: active.id,
+    });
   }
 
   function playMessage(m: CareerCoachMessage) {
@@ -307,7 +333,8 @@ export default function CareerCoachPage() {
         <p>
           Practice for any role you&apos;re aiming for with drills, real tasks, mock interviews and resume
           coaching, and get honest scores and feedback. The coach uses your resume for context
-          (<Link href="/dashboard/resume">edit it here</Link>) and never invents experience for you.
+          (<Link href="/dashboard/resume">edit it here</Link>) and never invents experience for you.{" "}
+          <Link href="/dashboard/career-coach/study">Open your study folders</Link> to review notes you&apos;ve saved.
         </p>
       </div>
 
@@ -424,6 +451,12 @@ export default function CareerCoachPage() {
                           {speakingId === m.id ? "■ Stop" : "▶ Listen"}
                         </button>
                       )}
+                      {m.role === "assistant" && m.id > 0 && (
+                        <button className="btn btn-ghost btn-sm" style={{ display: "flex", marginTop: 8 }}
+                                onClick={() => saveReply(m)} aria-label="Save this reply to a study folder">
+                          Save to study folder
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -456,6 +489,9 @@ export default function CareerCoachPage() {
                   <div>
                     <h3>Coach feedback</h3>
                     <p>{active.feedback}</p>
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={saveFeedback}>
+                      Save to study folder
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -564,12 +600,23 @@ export default function CareerCoachPage() {
                 placeholder="Takeaways, follow-ups, phrases to practice…"
                 style={{ minHeight: 180 }}
               />
+              <div className="card-row" style={{ marginTop: 10, alignItems: "center", gap: 10 }}>
+                <button className="btn btn-ghost btn-sm" onClick={saveNotepad} disabled={!notes.trim()}>
+                  Save to study folder
+                </button>
+                <Link href="/dashboard/career-coach/study" className="hint">Study folders</Link>
+              </div>
+              <p className="hint" style={{ marginBottom: 0 }}>
+                This notepad is kept with the session. Saving to a folder files a copy you can review any time.
+              </p>
             </div>
           )}
 
           {sessionList}
         </div>
       </div>
+
+      {saveDraft && <SaveToStudy draft={saveDraft} onClose={() => setSaveDraft(null)} />}
     </div>
   );
 }
