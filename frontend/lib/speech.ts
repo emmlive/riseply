@@ -84,12 +84,109 @@ export function cleanForSpeech(text: string): string {
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// ---- Voice choice ------------------------------------------------------
+// The browser exposes whatever voices the device has installed, so what's on
+// offer differs by device (Edge and Chrome on desktop have the most accents).
+// The person's pick is remembered on this device.
+
+export interface VoiceInfo {
+  uri: string;
+  name: string;      // tidied for display
+  lang: string;      // e.g. en-GB
+  accent: string;    // e.g. British
+  natural: boolean;  // a higher-quality "natural"/"neural" voice
+  isDefault: boolean;
+}
+
+export interface VoicePrefs {
+  uri: string;   // "" = device default
+  rate: number;  // 0.8 .. 1.3
+}
+
+const PREFS_KEY = "cc-voice";
+const DEFAULT_PREFS: VoicePrefs = { uri: "", rate: 1 };
+
+export function getVoicePrefs(): VoicePrefs {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(PREFS_KEY) : null;
+    if (!raw) return DEFAULT_PREFS;
+    const p = JSON.parse(raw);
+    const rate = typeof p.rate === "number" ? Math.min(1.5, Math.max(0.6, p.rate)) : 1;
+    return { uri: typeof p.uri === "string" ? p.uri : "", rate };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+export function setVoicePrefs(prefs: VoicePrefs): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* private mode: just not remembered */ }
+}
+
+const ACCENT_NAMES: Record<string, string> = {
+  US: "American", GB: "British", AU: "Australian", IN: "Indian", ZA: "South African", IE: "Irish",
+  CA: "Canadian", NZ: "New Zealand", NG: "Nigerian", KE: "Kenyan", GH: "Ghanaian", TZ: "Tanzanian",
+  SG: "Singaporean", HK: "Hong Kong", PH: "Filipino", PK: "Pakistani", ZW: "Zimbabwean",
+};
+
+export function accentLabel(lang: string): string {
+  const region = (lang || "").replace("_", "-").split("-")[1]?.toUpperCase();
+  if (!region) return "English";
+  if (ACCENT_NAMES[region]) return ACCENT_NAMES[region];
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(region);
+    if (name) return `${name} English`;
+  } catch { /* fall through */ }
+  return "English";
+}
+
+const NATURAL = /natural|neural|online|premium|enhanced/i;
+
+function tidyName(name: string): string {
+  return name
+    .replace(/^Microsoft\s+/i, "")
+    .replace(/^Google\s+/i, "Google ")
+    .replace(/\s+-\s+English.*$/i, "")
+    .replace(/\s+Online\s*\(Natural\)/i, " (Natural)")
+    .trim();
+}
+
+function toInfo(v: SpeechSynthesisVoice): VoiceInfo {
+  return {
+    uri: v.voiceURI, name: tidyName(v.name), lang: v.lang, accent: accentLabel(v.lang),
+    natural: NATURAL.test(v.name), isDefault: v.default,
+  };
+}
+
+// Voices load asynchronously in most browsers; resolves with the English
+// voices (or every voice, if the device has no English one).
+export function listVoices(): Promise<VoiceInfo[]> {
+  if (!speechSynthesisSupported()) return Promise.resolve([]);
+  const synth = window.speechSynthesis;
+  const finish = () => {
+    const all = synth.getVoices();
+    const english = all.filter((v) => /^en([-_]|$)/i.test(v.lang));
+    return (english.length ? english : all).map(toInfo);
+  };
+  return new Promise((resolve) => {
+    if (synth.getVoices().length > 0) return resolve(finish());
+    let done = false;
+    const complete = () => { if (!done) { done = true; synth.removeEventListener?.("voiceschanged", complete); resolve(finish()); } };
+    synth.addEventListener?.("voiceschanged", complete);
+    setTimeout(complete, 1500);  // some browsers never fire the event
+  });
+}
+
 export function speak(text: string, onEnd?: () => void): void {
   if (!speechSynthesisSupported()) return;
   const synth = window.speechSynthesis;
   synth.cancel();
   const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
-  u.rate = 1;
+  const prefs = getVoicePrefs();
+  u.rate = prefs.rate;
+  if (prefs.uri) {
+    const voice = synth.getVoices().find((v) => v.voiceURI === prefs.uri);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+  }
   u.onend = () => onEnd?.();
   u.onerror = () => onEnd?.();
   synth.speak(u);

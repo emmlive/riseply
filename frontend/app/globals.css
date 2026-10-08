@@ -839,3 +839,6 @@ textarea.cc-input { resize: vertical; }
   .st-folder { width: auto; }
   .st-move { margin-left: 0; }
 }
+
+.cc-voice .cc-label { display: block; margin-bottom: 6px; }
+.cc-voice-actions { display: flex; gap: 8px; margin: 12px 0; }
