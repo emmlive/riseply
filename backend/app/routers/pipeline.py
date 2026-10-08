@@ -16,6 +16,11 @@ from app.config import settings
 
 router = APIRouter(tags=["pipeline"])
 
+# An interactive search that has been "running" longer than this is
+# treated as dead (its server process restarted mid-run). Used both to
+# report such runs as failed and to stop them from blocking a new search.
+MATCH_RUN_STALE_MINUTES = 45
+
 
 # --- Discovery (shared job pool, not per-user) ---
 
@@ -154,10 +159,41 @@ def match_and_tailor(
     if not has_active_profile:
         raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
 
-    log = models.ScheduledRunLog(run_type="interactive_match", status="running")
+    # One search at a time per person. Each run scores up to 100 jobs
+    # with real Claude calls, so a double click, a second tab or a
+    # retry-after-timeout would otherwise double the spend for no
+    # benefit. Runs older than the stale cutoff (see match_status) are
+    # ignored -- they died with a server restart and must not lock the
+    # person out.
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=MATCH_RUN_STALE_MINUTES)
+
+    def _earlier_running_run(before_id: int | None = None):
+        q = db.query(models.ScheduledRunLog).filter(
+            models.ScheduledRunLog.run_type == "interactive_match",
+            models.ScheduledRunLog.status == "running",
+            models.ScheduledRunLog.user_id == user.id,
+            models.ScheduledRunLog.started_at > stale_cutoff,
+        )
+        if before_id is not None:
+            q = q.filter(models.ScheduledRunLog.id < before_id)
+        return q.first()
+
+    already_msg = ("A search is already running for your account. "
+                   "Give it a few minutes — new matches will show up in your Applications tab.")
+    if _earlier_running_run() is not None:
+        raise HTTPException(status_code=409, detail=already_msg)
+
+    log = models.ScheduledRunLog(run_type="interactive_match", status="running", user_id=user.id)
     db.add(log)
     db.commit()
     db.refresh(log)
+
+    # Two requests landing at the same instant can both pass the check
+    # above; the one with the later id backs out here.
+    if _earlier_running_run(before_id=log.id) is not None:
+        db.delete(log)
+        db.commit()
+        raise HTTPException(status_code=409, detail=already_msg)
 
     background_tasks.add_task(pipeline_runner.run_single_user_matching_background, log.id, user.id)
 
@@ -184,7 +220,7 @@ def match_status(
     # mid-run (a deploy, a memory restart) nothing ever marks the row
     # finished and it would read "running" forever. No healthy run takes
     # this long, so past the cutoff report it as failed.
-    if log.status == "running" and log.started_at and datetime.utcnow() - log.started_at > timedelta(minutes=45):
+    if log.status == "running" and log.started_at and datetime.utcnow() - log.started_at > timedelta(minutes=MATCH_RUN_STALE_MINUTES):
         log.status = "failed"
         log.error = "This search was interrupted (the server restarted while it was running). Please try again."
         log.finished_at = datetime.utcnow()
@@ -219,6 +255,7 @@ def get_near_misses(db: Session = Depends(get_db), user: models.User = Depends(g
             salary_min=job.salary_min, salary_max=job.salary_max,
             salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
             location_mismatch=bool(nm.location_mismatch),
+            found_at=nm.created_at,
         )
         for nm, job in rows
     ]

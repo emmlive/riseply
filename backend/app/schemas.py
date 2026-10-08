@@ -144,6 +144,8 @@ class NearMissOut(BaseModel):
     salary_currency: str = ""
     salary_is_predicted: bool = False
     location_mismatch: bool = False
+    # When the search that surfaced this ran (UTC).
+    found_at: Optional[datetime] = None
 
 
 

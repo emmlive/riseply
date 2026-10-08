@@ -660,7 +660,22 @@ export interface RiseIndexMe {
   recent_events: PointsEvent[];
 }
 
+/**
+ * Formats a server timestamp as the viewer's local date and time, e.g.
+ * "Oct 7, 2026, 7:40 PM". The API sends UTC datetimes, sometimes without a
+ * trailing "Z" -- browsers would read those as LOCAL time and show them
+ * hours off, so a missing zone is treated as UTC.
+ */
+export function formatWhen(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(iso);
+  const d = new Date(hasZone ? iso : iso + "Z");
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 export interface NearMiss {
+  found_at?: string | null;
   title: string;
   company: string;
   url: string;

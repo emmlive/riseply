@@ -28,6 +28,35 @@ try:
 finally:
     _seed_db.close()
 
+
+def _fail_orphaned_match_runs() -> None:
+    """Interactive searches run inside this web process, so any still
+    marked "running" when the process starts belong to a previous
+    process (a deploy or a memory restart) and can never finish. Mark
+    them failed right away, so nobody is stuck behind a dead run."""
+    from datetime import datetime
+    from app import models
+
+    db = SessionLocal()
+    try:
+        db.query(models.ScheduledRunLog).filter(
+            models.ScheduledRunLog.run_type == "interactive_match",
+            models.ScheduledRunLog.status == "running",
+        ).update({
+            "status": "failed",
+            "error": "This search was interrupted (the server restarted while it was running). Please try again.",
+            "finished_at": datetime.utcnow(),
+        }, synchronize_session=False)
+        db.commit()
+    except Exception as e:  # never block startup on housekeeping
+        db.rollback()
+        print(f"[startup] couldn't clear orphaned match runs: {e}")
+    finally:
+        db.close()
+
+
+_fail_orphaned_match_runs()
+
 app = FastAPI(title="Riseply API")
 
 app.state.limiter = limiter

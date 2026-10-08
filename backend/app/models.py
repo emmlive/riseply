@@ -1549,6 +1549,10 @@ class ScheduledRunLog(Base):
     error = Column(Text, nullable=True)  # str(exception), set on failure
     started_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     finished_at = Column(DateTime, nullable=True)
+    # Who started it, for per-user runs ("interactive_match"). Lets
+    # POST /pipeline/match refuse a second search while one is already
+    # running for the same person. NULL for runs with no single owner.
+    user_id = Column(Integer, nullable=True)
 
 
 class FailureLog(Base):
