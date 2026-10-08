@@ -32,6 +32,7 @@ const ALWAYS_NAV = [
 ];
 
 const INDIVIDUAL_NAV = [
+  { href: "/dashboard/progress", label: "Progress" },
   { href: "/dashboard/rise-index", label: "Rise Index" },
   { href: "/dashboard/profiles", label: "Search profiles" },
   { href: "/dashboard/career-coach", label: "Career Coach" },
