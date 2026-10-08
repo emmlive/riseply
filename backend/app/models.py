@@ -474,6 +474,37 @@ class CareerCoachNote(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class StudyFolder(Base):
+    """A folder the person creates to keep Career Coach notes in (for
+    example "Threat modeling" or "Interview stories"). Per user; names are
+    unique per user ignoring case."""
+    __tablename__ = "study_folders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class StudyNote(Base):
+    """A saved piece of study material: a copy of a session's notepad, one
+    of the coach's replies, a session's feedback, or something typed by
+    hand. A COPY on purpose -- it stays put (and editable) even if the
+    session notepad changes later. folder_id NULL means "Unfiled"."""
+    __tablename__ = "study_notes"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    folder_id = Column(Integer, ForeignKey("study_folders.id"), nullable=True, index=True)
+    session_id = Column(Integer, ForeignKey("career_coach_sessions.id"), nullable=True)
+    title = Column(String, default="")
+    content = Column(Text, default="")
+    source = Column(String, default="manual")  # notepad | coach_reply | feedback | manual
+    source_label = Column(String, default="")  # e.g. "Drill · Security Architect"
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class LibraryItem(Base):
     """One curated learning resource in the Library (a course, article,
     video, practice site, reference...). Admin-managed. The Career Coach

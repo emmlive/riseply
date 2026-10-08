@@ -429,6 +429,46 @@ class CareerCoachNoteOut(BaseModel):
     updated_at: datetime | None = None
 
 
+class StudyFolderIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+class StudyFolderOut(BaseModel):
+    id: int
+    name: str
+    note_count: int = 0
+    created_at: datetime | None = None
+
+
+class StudyNoteIn(BaseModel):
+    title: str = Field(default="", max_length=160)
+    content: str = Field(min_length=1, max_length=20000)
+    folder_id: int | None = None
+    session_id: int | None = None
+    source: str = Field(default="manual", pattern="^(notepad|coach_reply|feedback|manual)$")
+    source_label: str = Field(default="", max_length=160)
+
+
+class StudyNoteUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
+    content: str | None = Field(default=None, min_length=1, max_length=20000)
+    # Present-and-null moves the note to "Unfiled", so "not sent" and
+    # "null" have to be told apart (see routers/study.py).
+    folder_id: int | None = None
+
+
+class StudyNoteOut(BaseModel):
+    id: int
+    folder_id: int | None = None
+    session_id: int | None = None
+    title: str = ""
+    content: str = ""
+    source: str = "manual"
+    source_label: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class AddCurrentJobRequest(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)
