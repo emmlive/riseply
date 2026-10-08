@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, LearningStyle, LibraryItem } from "@/lib/api";
+import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import {
@@ -266,196 +266,310 @@ export default function CareerCoachPage() {
 
   const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
+  const completedSessions = sessions.filter((s) => s.status === "completed");
+  const scoredSessions = completedSessions.filter((s) => s.score !== null);
+  const avgScore = scoredSessions.length
+    ? Math.round(scoredSessions.reduce((sum, s) => sum + (s.score as number), 0) / scoredSessions.length)
+    : null;
+  const selectedStyle = LEARNING_STYLES.find((l) => l.value === learningStyle);
+  const activeStyleLabel = LEARNING_STYLES.find((l) => l.value === (active?.learning_style ?? "auto"))?.label ?? "Let the coach adapt";
+
+  const sessionList = (
+    <div className="card">
+      <h3 className="cc-list-title">Past sessions</h3>
+      {!loaded ? (
+        <p className="cc-empty">Loading…</p>
+      ) : sessions.length === 0 ? (
+        <p className="cc-empty">No sessions yet. Your first one will show up here with its score.</p>
+      ) : (
+        sessions.map((s) => (
+          <button
+            key={s.id} type="button"
+            className={`cc-session ${active?.id === s.id ? "is-active" : ""}`}
+            onClick={() => open(s)}
+          >
+            <span>
+              <span className="cc-session-topic">{s.topic}</span>
+              <span className="cc-session-meta">{typeLabel(s.session_type)} · {s.target_role}</span>
+              <span className="cc-session-meta">{formatWhen(s.created_at)}</span>
+            </span>
+            {s.status === "completed" ? <ScoreBadge score={s.score} /> : <span className="hint">In progress</span>}
+          </button>
+        ))
+      )}
+    </div>
+  );
+
   return (
     <div>
-      <h1>Career Coach</h1>
-      <p className="hint">
-        Pick any role or field you&apos;re aiming for and practice it: drills, real tasks, mock interviews,
-        and resume coaching — with honest scores and feedback. Your resume is used for context
-        (<Link href="/dashboard/resume">edit it here</Link>), and the coach never invents experience for you.
-      </p>
+      <div className="cc-head">
+        <h1>Career Coach</h1>
+        <p>
+          Practice for any role you&apos;re aiming for with drills, real tasks, mock interviews and resume
+          coaching, and get honest scores and feedback. The coach uses your resume for context
+          (<Link href="/dashboard/resume">edit it here</Link>) and never invents experience for you.
+        </p>
+      </div>
 
-      {error && <div className="card" style={{ borderColor: "var(--danger, #c0392b)" }}>{error}</div>}
+      {error && <div className="cc-error" role="alert">{error}</div>}
 
-      {!active && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Start a session</h3>
-          <input
-            placeholder="Role or field you're aiming for (e.g. Data Analyst, UX Designer, ICU Nurse)"
-            value={role} maxLength={120} onChange={(e) => setRole(e.target.value)}
-            style={{ width: "100%", marginBottom: 12 }}
-          />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-            {SESSION_TYPES.map((t) => (
-              <label key={t.value} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-                <input type="radio" name="cc-type" checked={type === t.value}
-                       onChange={() => setType(t.value)} style={{ marginTop: 3 }} />
-                <span>
-                  <div style={{ fontWeight: 600 }}>{t.label}</div>
-                  <div className="hint">{t.hint}</div>
-                </span>
-              </label>
-            ))}
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label className="hint" htmlFor="cc-style" style={{ display: "block", marginBottom: 4 }}>How do you like to learn?</label>
-            <select id="cc-style" value={learningStyle} onChange={(e) => setLearningStyle(e.target.value as LearningStyle)}>
-              {LEARNING_STYLES.map((l) => <option key={l.value} value={l.value}>{l.label} — {l.hint}</option>)}
-            </select>
-          </div>
-          <input
-            placeholder={type === "resume" ? "Section to focus on (optional)" : "Topic (optional — leave blank and the coach picks one)"}
-            value={topic} maxLength={200} onChange={(e) => setTopic(e.target.value)}
-            style={{ width: "100%", marginBottom: 12 }}
-          />
-          <button className="btn btn-primary" onClick={start} disabled={starting || role.trim().length < 2}>
-            {starting ? "Starting…" : "Start"}
-          </button>
-        </div>
-      )}
+      <div className="cc-grid">
+        {/* ---------- Main column ---------- */}
+        <div className="cc-col">
+          {!active && (
+            <div className="card" style={{ padding: "26px 28px" }}>
+              <h2 className="cc-card-title">Start a session</h2>
+              <p className="cc-card-sub">Choose a role and a way to practice. You can end a session any time to get your score.</p>
 
-      {active && (
-        <div className="card">
-          <div className="card-row" style={{ marginBottom: 4 }}>
-            <div>
-              <strong>{active.topic}</strong>{" "}
-              <span className="hint">{typeLabel(active.session_type)} · {active.target_role}</span>
+              <div className="cc-group">
+                <label className="cc-label" htmlFor="cc-role">Role or field you&apos;re aiming for</label>
+                <input
+                  id="cc-role" className="cc-input cc-input-lg"
+                  placeholder="For example: Data analyst, UX designer, ICU nurse"
+                  value={role} maxLength={120} onChange={(e) => setRole(e.target.value)}
+                />
+              </div>
+
+              <fieldset className="cc-group" style={{ border: 0, padding: 0, margin: "0 0 22px 0" }}>
+                <legend className="cc-label" style={{ padding: 0 }}>How do you want to practice?</legend>
+                <div className="cc-tiles">
+                  {SESSION_TYPES.map((t) => (
+                    <label key={t.value} className="cc-tile">
+                      <input type="radio" name="cc-type" checked={type === t.value} onChange={() => setType(t.value)} />
+                      <span className="cc-tile-body">
+                        <strong>{t.label}</strong>
+                        <span>{t.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="cc-group" style={{ border: 0, padding: 0, margin: "0 0 22px 0" }}>
+                <legend className="cc-label" style={{ padding: 0 }}>How do you like to learn?</legend>
+                <div className="cc-seg">
+                  {LEARNING_STYLES.map((l) => (
+                    <label key={l.value} className="cc-pill">
+                      <input type="radio" name="cc-style" checked={learningStyle === l.value} onChange={() => setLearningStyle(l.value)} />
+                      <span>{l.label}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedStyle && <p className="cc-seg-hint">{selectedStyle.hint}.</p>}
+              </fieldset>
+
+              <div className="cc-group">
+                <label className="cc-label" htmlFor="cc-topic">
+                  {type === "resume" ? "Section to focus on" : "Topic"} <small>(optional)</small>
+                </label>
+                <input
+                  id="cc-topic" className="cc-input"
+                  placeholder={type === "resume" ? "For example: Work experience" : "Leave blank and the coach will pick one"}
+                  value={topic} maxLength={200} onChange={(e) => setTopic(e.target.value)}
+                />
+              </div>
+
+              <div className="cc-start-row">
+                <button className="btn btn-primary" onClick={start} disabled={starting || role.trim().length < 2}>
+                  {starting ? "Starting…" : "Start session"}
+                </button>
+              </div>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close</button>
-          </div>
+          )}
 
-          <div className="chat-window" style={{ maxHeight: 420, padding: "12px 0" }}>
-            {messages.map((m) => (
-              <div key={m.id} className={`chat-bubble ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>
-                {m.content}
-                {m.visual && <VisualDiagram visual={m.visual} />}
-                {m.resources && m.resources.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}
+          {active && (
+            <div className="card cc-chat">
+              <div className="cc-chat-head">
+                <div>
+                  <h2>{active.topic}</h2>
+                  <div className="cc-chat-meta">
+                    {typeLabel(active.session_type)} · {active.target_role} · Started {formatWhen(active.created_at)}
                   </div>
-                )}
-                {m.role === "assistant" && m.id === lastCoachId && active?.status === "in_progress" &&
-                  active.session_type !== "interview" && !sending && messages.length > 1 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div className="hint" style={{ marginBottom: 4 }}>Explain it differently:</div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {REEXPLAIN.map((r) => (
-                        <button key={r.style} className="btn btn-ghost btn-sm"
-                                onClick={() => send({ text: r.message, style: r.style })}>
-                          {r.label}
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close session</button>
+              </div>
+
+              <div className="cc-chat-window" aria-live="polite">
+                {messages.map((m) => (
+                  <div key={m.id} className={`cc-msg ${m.role}`}>
+                    {m.role === "assistant" && <span className="cc-avatar" aria-hidden>C</span>}
+                    <div className="cc-bubble">
+                      {m.content}
+                      {m.visual && <VisualDiagram visual={m.visual} />}
+                      {m.resources && m.resources.length > 0 && (
+                        <div style={{ marginTop: 6, whiteSpace: "normal" }}>
+                          {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}
+                        </div>
+                      )}
+                      {m.role === "assistant" && m.id === lastCoachId && active?.status === "in_progress" &&
+                        active.session_type !== "interview" && !sending && messages.length > 1 && (
+                        <div className="cc-tools">
+                          <div className="cc-tools-label">Explain it differently</div>
+                          <div className="cc-chips">
+                            {REEXPLAIN.map((r) => (
+                              <button key={r.style} className="btn btn-ghost btn-sm"
+                                      onClick={() => send({ text: r.message, style: r.style })}>
+                                {r.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {canSpeak && m.role === "assistant" && (
+                        <button
+                          className="btn btn-ghost btn-sm" style={{ display: "flex", marginTop: 10 }}
+                          onClick={() => playMessage(m)}
+                          aria-label={speakingId === m.id ? "Stop reading aloud" : "Read this aloud"}
+                        >
+                          {speakingId === m.id ? "■ Stop" : "▶ Listen"}
                         </button>
-                      ))}
+                      )}
                     </div>
                   </div>
+                ))}
+                {sending && (
+                  <div className="cc-msg assistant">
+                    <span className="cc-avatar" aria-hidden>C</span>
+                    <div className="cc-bubble cc-thinking">Thinking…</div>
+                  </div>
                 )}
-                {canSpeak && m.role === "assistant" && (
-                  <button
-                    className="btn btn-ghost btn-sm" style={{ display: "block", marginTop: 6 }}
-                    onClick={() => playMessage(m)}
-                    aria-label={speakingId === m.id ? "Stop reading aloud" : "Read this aloud"}
-                  >
-                    {speakingId === m.id ? "■ Stop" : "▶ Listen"}
-                  </button>
-                )}
+                <div ref={endRef} />
               </div>
-            ))}
-            {sending && <div className="chat-bubble assistant muted">Thinking…</div>}
-            <div ref={endRef} />
-          </div>
 
-          {active.status === "completed" ? (
-            <div className="card" style={{ background: "var(--paper)", marginTop: 8 }}>
-              <div className="card-row">
-                <h4 style={{ margin: 0 }}>Session complete</h4>
-                <ScoreBadge score={active.score} />
-              </div>
-              <p style={{ marginTop: 8, marginBottom: 0 }}>{active.feedback}</p>
-            </div>
-          ) : (
-            <>
-              <div className="chat-input-row">
-                <textarea
-                  value={input} onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-                  }}
-                  placeholder={active.session_type === "resume" ? "Paste a bullet or section to rewrite…" : "Your reply…"}
-                />
-                {canDictate && (
-                  <button
-                    className={`btn ${listening ? "btn-primary" : "btn-ghost"}`}
-                    onClick={toggleDictation} aria-pressed={listening}
-                    aria-label={listening ? "Stop dictating" : "Dictate your reply"}
-                    title={listening ? "Stop dictating" : "Dictate your reply"}
-                  >
-                    {listening ? "● Listening…" : "🎤"}
-                  </button>
-                )}
-                <button className="btn btn-primary" onClick={() => send()} disabled={sending || !input.trim()}>Send</button>
-              </div>
-              {canSpeak && (
-                <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} />
-                  Read the coach&apos;s replies aloud
-                </label>
+              {active.status === "completed" ? (
+                <div className="cc-result">
+                  <div>
+                    {active.score === null ? (
+                      <div className="hint">Not scored</div>
+                    ) : (
+                      <>
+                        <div className={`cc-score ${active.score >= 80 ? "is-high" : ""}`}>
+                          {active.score}<small>/ 100</small>
+                        </div>
+                        <div className="cc-bar" aria-hidden><div style={{ width: `${Math.max(0, Math.min(100, active.score))}%` }} /></div>
+                      </>
+                    )}
+                    {active.completed_at && (
+                      <div className="hint" style={{ marginTop: 10 }}>Finished {formatWhen(active.completed_at)}</div>
+                    )}
+                  </div>
+                  <div>
+                    <h3>Coach feedback</h3>
+                    <p>{active.feedback}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="cc-composer">
+                  <div className="cc-composer-row">
+                    <textarea
+                      className="cc-input"
+                      value={input} onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                      }}
+                      rows={2}
+                      aria-label="Your reply"
+                      placeholder={active.session_type === "resume" ? "Paste a bullet or section to rewrite…" : "Write your reply. Press Enter to send, Shift+Enter for a new line."}
+                    />
+                    {canDictate && (
+                      <button
+                        className={`btn ${listening ? "btn-primary" : "btn-ghost"}`}
+                        onClick={toggleDictation} aria-pressed={listening}
+                        aria-label={listening ? "Stop dictating" : "Dictate your reply"}
+                        title={listening ? "Stop dictating" : "Dictate your reply"}
+                      >
+                        {listening ? "● Listening…" : "🎤"}
+                      </button>
+                    )}
+                    <button className="btn btn-primary" onClick={() => send()} disabled={sending || !input.trim()}>Send</button>
+                  </div>
+                  <div className="cc-composer-foot">
+                    {canSpeak ? (
+                      <label className="cc-check">
+                        <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} />
+                        Read the coach&apos;s replies aloud
+                      </label>
+                    ) : <span />}
+                    <button className="btn btn-ghost btn-sm" onClick={end} disabled={completing}>
+                      {completing ? "Scoring…" : "End session and get feedback"}
+                    </button>
+                  </div>
+                </div>
               )}
-              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={end} disabled={completing}>
-                {completing ? "Scoring…" : "End session & get feedback"}
-              </button>
-            </>
+            </div>
           )}
         </div>
-      )}
 
-      {active && shelf.length > 0 && (
-        <div className="card">
-          <div className="card-row" style={{ marginBottom: 4 }}>
-            <h3 style={{ margin: 0 }}>Go deeper</h3>
-            <Link href="/dashboard/library" className="hint">Browse the Library</Link>
-          </div>
-          <p className="hint" style={{ marginTop: 0 }}>Hand-picked reading and practice for {active.target_role}.</p>
-          {shelf.map((r) => <ResourceCard key={r.id} item={r} />)}
-        </div>
-      )}
-
-      {active && (
-        <div className="card">
-          <div className="card-row" style={{ marginBottom: 6 }}>
-            <h3 style={{ margin: 0 }}>Notepad</h3>
-            <span className="hint">
-              {notesState === "saving" && "Saving…"}
-              {notesState === "saved" && "Saved"}
-              {notesState === "error" && "Couldn't save — keep this tab open and try typing again"}
-            </span>
-          </div>
-          <p className="hint" style={{ marginTop: 0 }}>
-            Your own space for answers worth keeping, stories to reuse, and things to study. Only you see
-            it, and the coach doesn&apos;t read it.
-          </p>
-          <textarea
-            value={notes} onChange={(e) => onNotesChange(e.target.value)} maxLength={20000}
-            placeholder="Jot down takeaways, follow-ups, phrases to practice…"
-            style={{ width: "100%", minHeight: 140 }}
-          />
-        </div>
-      )}
-
-      {loaded && sessions.length > 0 && (
-        <div className="card">
-          <p className="hint" style={{ marginTop: 0, marginBottom: 8 }}>Past sessions</p>
-          {sessions.map((s) => (
-            <div key={s.id} className="points-event-row" style={{ cursor: "pointer" }} onClick={() => open(s)}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{s.topic}</div>
-                <div className="hint">
-                  {typeLabel(s.session_type)} · {s.target_role} · {s.status === "completed" ? "Completed" : "In progress"}
+        {/* ---------- Side column ---------- */}
+        <div className="cc-col cc-aside">
+          {!active && (
+            <div className="card">
+              <div className="cc-stats">
+                <div className="cc-stat">
+                  <div className="cc-stat-value">{sessions.length}</div>
+                  <div className="cc-stat-label">Sessions</div>
+                </div>
+                <div className="cc-stat">
+                  <div className="cc-stat-value">{completedSessions.length}</div>
+                  <div className="cc-stat-label">Completed</div>
+                </div>
+                <div className="cc-stat">
+                  <div className="cc-stat-value">{avgScore ?? "–"}</div>
+                  <div className="cc-stat-label">Average score</div>
                 </div>
               </div>
-              <ScoreBadge score={s.score} />
             </div>
-          ))}
+          )}
+
+          {active && (
+            <div className="card">
+              <h3 className="cc-list-title">Session details</h3>
+              <dl className="cc-dl">
+                <dt>Role</dt><dd>{active.target_role}</dd>
+                <dt>Practice</dt><dd>{typeLabel(active.session_type)}</dd>
+                <dt>Learning style</dt><dd>{activeStyleLabel}</dd>
+                <dt>Status</dt><dd>{active.status === "completed" ? "Completed" : "In progress"}</dd>
+              </dl>
+            </div>
+          )}
+
+          {active && shelf.length > 0 && (
+            <div className="card">
+              <div className="card-row" style={{ marginBottom: 4 }}>
+                <h3 className="cc-list-title" style={{ margin: 0 }}>Go deeper</h3>
+                <Link href="/dashboard/library" className="hint">Browse the Library</Link>
+              </div>
+              <p className="hint" style={{ marginTop: 0 }}>Hand-picked reading and practice for {active.target_role}.</p>
+              {shelf.map((r) => <ResourceCard key={r.id} item={r} />)}
+            </div>
+          )}
+
+          {active && (
+            <div className="card">
+              <div className="card-row" style={{ marginBottom: 6 }}>
+                <h3 className="cc-list-title" style={{ margin: 0 }}>Notepad</h3>
+                <span className="cc-notes-state" aria-live="polite">
+                  {notesState === "saving" && "Saving…"}
+                  {notesState === "saved" && "Saved"}
+                  {notesState === "error" && "Couldn't save. Keep this tab open and keep typing to retry."}
+                </span>
+              </div>
+              <p className="hint" style={{ marginTop: 0 }}>
+                Your own space for answers worth keeping, stories to reuse and things to study. Only you can
+                see it, and the coach doesn&apos;t read it.
+              </p>
+              <textarea
+                className="cc-input" aria-label="Notepad"
+                value={notes} onChange={(e) => onNotesChange(e.target.value)} maxLength={20000}
+                placeholder="Takeaways, follow-ups, phrases to practice…"
+                style={{ minHeight: 180 }}
+              />
+            </div>
+          )}
+
+          {sessionList}
         </div>
-      )}
+      </div>
     </div>
   );
 }

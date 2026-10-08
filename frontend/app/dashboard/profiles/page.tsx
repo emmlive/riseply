@@ -62,12 +62,12 @@ export default function ProfilesPage() {
       setEditing(null);
       load();
     } catch (err: any) {
-      setError(err.message || "Couldn't save this profile.");
+      setError(err.message || "We couldn't save this profile. Please try again.");
     }
   }
 
   async function remove(id: number) {
-    if (!confirm("Delete this search profile?")) return;
+    if (!confirm("Delete this search profile? This can't be undone.")) return;
     await api(`/profiles/${id}`, { method: "DELETE" });
     load();
   }
@@ -81,15 +81,15 @@ export default function ProfilesPage() {
         </button>
       </div>
       <p className="muted">
-        Every profile you add runs at the same time. A job gets queued under
-        whichever profile it matches best, as long as it clears that
-        profile's match threshold.
+        All of your profiles run at the same time. Each job is queued under the
+        profile it matches best, as long as it clears that profile&apos;s minimum
+        match score.
       </p>
 
       {profiles.length === 0 && !editing && (
         <div className="empty-state">
-          No search profiles yet. Add one to start finding matches — e.g.
-          "AI Security Engineer" and "ML Security Engineer" can both run at once.
+          You don&apos;t have any search profiles yet. Add one to start finding matches.
+          For example, &quot;AI Security Engineer&quot; and &quot;ML Security Engineer&quot; can both run at once.
         </div>
       )}
 
@@ -102,7 +102,7 @@ export default function ProfilesPage() {
                 {p.titles.map((t) => <span key={t} className="tag">{t}</span>)}
               </div>
               <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
-                {p.locations.join(", ") || "Any location"} · min match {p.min_match_score}%
+                {p.locations.join(", ") || "Any location"} · minimum match {p.min_match_score}%
               </p>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -121,70 +121,70 @@ export default function ProfilesPage() {
             <label>Profile name</label>
             <input value={editing.name}
                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                   placeholder="e.g. AI Security Engineer" />
+                   placeholder="For example: AI Security Engineer" />
           </div>
 
           <div className="field">
-            <label>Job titles to match (comma-separated)</label>
+            <label>Job titles to match (separate with commas)</label>
             <input value={titlesText}
                    onChange={(e) => { setTitlesText(e.target.value); setEditing({ ...editing, titles: splitList(e.target.value) }); }}
                    placeholder="AI Security Engineer, ML Security Engineer" />
             <p className="hint">
-              Doesn't need to be an exact title match — matching is done by an AI reading the
-              full job description against your resume, not string-matching these words.
+              A title doesn&apos;t have to match exactly. An AI reads the full job description
+              and compares it with your resume, instead of looking for these exact words.
             </p>
           </div>
 
           <div className="field">
-            <label>Locations (comma-separated, blank = anywhere)</label>
+            <label>Locations (separate with commas; leave blank for anywhere)</label>
             <input value={locationsText}
                    onChange={(e) => { setLocationsText(e.target.value); setEditing({ ...editing, locations: splitList(e.target.value) }); }}
                    placeholder="Remote" />
             <p className="hint">
-              This filters strictly — a job outside every location listed here won't match,
-              regardless of how good the title fit is. Add "Remote" too if you're open to it;
-              a lot of what gets discovered skews remote.
+              Locations are a strict filter: a job outside every location listed here won&apos;t match,
+              no matter how well the title fits. Add &quot;Remote&quot; if you&apos;re open to it, since many
+              of the jobs we find are remote.
             </p>
           </div>
 
           <div className="field">
-            <label>Seniority (comma-separated)</label>
+            <label>Seniority (separate with commas)</label>
             <input value={seniorityText}
                    onChange={(e) => { setSeniorityText(e.target.value); setEditing({ ...editing, seniority: splitList(e.target.value) }); }}
                    placeholder="Mid, Senior" />
           </div>
 
           <div className="field">
-            <label>Minimum match score ({editing.min_match_score}%)</label>
+            <label>Minimum match score: {editing.min_match_score}%</label>
             <input type="range" min={0} max={100} value={editing.min_match_score}
                    onChange={(e) => setEditing({ ...editing, min_match_score: Number(e.target.value) })} />
             <p className="hint">
-              How good a fit a job needs to be before it becomes an application you review.
-              Higher = fewer, more targeted matches; lower = more matches, including looser
-              fits. 50-60% is a reasonable starting point — if you're getting nothing, this is
-              usually the first thing to lower, especially combined with a narrow location list.
+              How good a fit a job must be before it becomes an application for you to review.
+              A higher score gives you fewer, more targeted matches; a lower score gives you more,
+              including looser fits. 50–60% is a reasonable starting point. If you&apos;re getting
+              no matches, lower this first, especially if your location list is narrow.
             </p>
             {editing.min_match_score >= 90 && (
               <p className="error-text">
-                ⚠️ Matches are AI-scored, and genuinely perfect fits are rare — a threshold this
-                high can mean few or no real matches ever clear it, even when good jobs exist.
-                You'll mostly just see "Closest this run" near-misses instead of real
-                applications.
+                ⚠️ Matches are scored by AI, and truly perfect fits are rare. At a threshold this
+                high, few or no jobs may clear it, even when good ones exist. You&apos;ll mostly see
+                &quot;Closest this run&quot; near-misses instead of real applications.
               </p>
             )}
           </div>
 
           <div className="field">
-            <label>Exclude companies (comma-separated)</label>
+            <label>Companies to exclude (separate with commas)</label>
             <input value={excludeCompaniesText}
-                   onChange={(e) => { setExcludeCompaniesText(e.target.value); setEditing({ ...editing, exclude_companies: splitList(e.target.value) }); }} />
+                   onChange={(e) => { setExcludeCompaniesText(e.target.value); setEditing({ ...editing, exclude_companies: splitList(e.target.value) }); }}
+                   placeholder="Acme Corp, Globex" />
           </div>
 
           <div className="field">
             <label>
               <input type="checkbox" checked={editing.active} style={{ width: "auto", marginRight: 8 }}
                      onChange={(e) => setEditing({ ...editing, active: e.target.checked })} />
-              Active
+              Active (include this profile when searching)
             </label>
           </div>
 
