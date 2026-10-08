@@ -1057,3 +1057,35 @@ export interface ReadinessRole {
   next_type: CareerCoachSessionType;
   next_reason: string;
 }
+
+// ---- Feedback ---------------------------------------------------------------
+
+export type FeedbackCategory = "idea" | "problem" | "praise";
+
+export interface CoachReplyRating {
+  message_id: number;
+  helpful: boolean;
+}
+
+export interface AdminFeedback {
+  id: number;
+  user_email: string;
+  kind: "general" | "coach_reply";
+  rating: number | null;
+  helpful: boolean | null;
+  category: string;
+  message: string;
+  page: string;
+  reply_excerpt: string;
+  status: "new" | "reviewed";
+  created_at: string;
+}
+
+export interface AdminFeedbackSummary {
+  total: number;
+  new: number;
+  avg_rating: number | null;
+  rated: number;
+  thumbs_up: number;
+  thumbs_down: number;
+}

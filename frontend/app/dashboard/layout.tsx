@@ -1,5 +1,6 @@
 "use client";
 
+import FeedbackButton from "@/components/FeedbackButton";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -196,6 +197,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         )}
         <div style={{ flex: 1 }} />
+        <FeedbackButton />
         {user && (
           <div style={{ padding: "0 8px", fontSize: "0.82rem" }} className="muted">
             {user.email}

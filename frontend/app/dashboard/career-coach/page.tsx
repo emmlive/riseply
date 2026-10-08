@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
+import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
@@ -65,6 +65,11 @@ export default function CareerCoachPage() {
   const [sending, setSending] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState("");
+  // Thumbs on coach replies: message id -> helpful. "why" is the open
+  // thumbs-down note box (one at a time).
+  const [ratings, setRatings] = useState<Record<number, boolean>>({});
+  const [whyId, setWhyId] = useState<number | null>(null);
+  const [whyText, setWhyText] = useState("");
 
   const [role, setRole] = useState("");
   const [type, setType] = useState<CareerCoachSessionType>("drill");
@@ -125,6 +130,40 @@ export default function CareerCoachPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [active?.id]);
+
+  useEffect(() => {
+    setRatings({});
+    setWhyId(null);
+    if (!active) return;
+    let cancelled = false;
+    api<CoachReplyRating[]>(`/feedback/coach-replies?session_id=${active.id}`)
+      .then((rows) => {
+        if (cancelled) return;
+        const map: Record<number, boolean> = {};
+        rows.forEach((r) => { map[r.message_id] = r.helpful; });
+        setRatings(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [active?.id]);
+
+  async function rateReply(m: CareerCoachMessage, helpful: boolean, note = "") {
+    const prev = ratings[m.id];
+    setRatings((r) => ({ ...r, [m.id]: helpful }));
+    setWhyId(helpful || note ? null : m.id);
+    setWhyText("");
+    try {
+      await api("/feedback/coach-reply", { method: "PUT", body: JSON.stringify({ message_id: m.id, helpful, note: note || null }) });
+    } catch {
+      setRatings((r) => {
+        const next = { ...r };
+        if (prev === undefined) delete next[m.id]; else next[m.id] = prev;
+        return next;
+      });
+      setWhyId(null);
+      setError("Couldn't save your rating. Try again.");
+    }
+  }
 
   // Load the note whenever a different session is opened.
   useEffect(() => {
@@ -479,20 +518,44 @@ export default function CareerCoachPage() {
                           </div>
                         </div>
                       )}
-                      {canSpeak && m.role === "assistant" && (
-                        <button
-                          className="btn btn-ghost btn-sm" style={{ display: "flex", marginTop: 10 }}
-                          onClick={() => playMessage(m)}
-                          aria-label={speakingId === m.id ? "Stop reading aloud" : "Read this aloud"}
-                        >
-                          {speakingId === m.id ? "■ Stop" : "▶ Listen"}
-                        </button>
-                      )}
-                      {m.role === "assistant" && m.id > 0 && (
-                        <button className="btn btn-ghost btn-sm" style={{ display: "flex", marginTop: 8 }}
-                                onClick={() => saveReply(m)} aria-label="Save this reply to a study folder">
-                          Save to study folder
-                        </button>
+                      {m.role === "assistant" && (canSpeak || m.id > 0) && (
+                        <div className="cc-reply-actions">
+                          {canSpeak && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => playMessage(m)}
+                              aria-label={speakingId === m.id ? "Stop reading aloud" : "Read this aloud"}
+                            >
+                              {speakingId === m.id ? "■ Stop" : "▶ Listen"}
+                            </button>
+                          )}
+                          {m.id > 0 && (
+                            <button className="btn btn-ghost btn-sm"
+                                    onClick={() => saveReply(m)} aria-label="Save this reply to a study folder">
+                              Save to study folder
+                            </button>
+                          )}
+                          {m.id > 0 && (
+                            <>
+                              <button className="btn btn-ghost btn-sm cc-thumb" aria-pressed={ratings[m.id] === true}
+                                      aria-label="This reply helped" onClick={() => rateReply(m, true)}>👍</button>
+                              <button className="btn btn-ghost btn-sm cc-thumb down" aria-pressed={ratings[m.id] === false}
+                                      aria-label="This reply didn't help" onClick={() => rateReply(m, false)}>👎</button>
+                            </>
+                          )}
+                          {whyId === m.id && (
+                            <div className="cc-why">
+                              <label className="hint" htmlFor={`why-${m.id}`}>What went wrong? (optional)</label>
+                              <textarea id={`why-${m.id}`} className="cc-input" rows={2} maxLength={1000} value={whyText}
+                                        onChange={(e) => setWhyText(e.target.value)} />
+                              <div className="cc-why-row">
+                                <button className="btn btn-primary btn-sm" disabled={!whyText.trim()}
+                                        onClick={() => rateReply(m, false, whyText.trim())}>Send</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setWhyId(null)}>Skip</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
