@@ -355,6 +355,96 @@ def list_applications(
     return [_to_out(app, job) for app, job in q.all()]
 
 
+@router.post("/applications/import", response_model=schemas.ApplicationOut)
+def import_job(
+    payload: schemas.ImportJobIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Add a job the person found elsewhere (Indeed, LinkedIn, a careers
+    page) by pasting its text. Riseply scores it against their resume and
+    tailors the resume for it, then it shows up in Applications like any
+    other match. The job is private to this person: it is never matched
+    to anyone else. Scoring counts as one match and tailoring as one
+    tailored resume, same as everywhere else."""
+    import time
+    if not (user.resume_text or "").strip():
+        raise HTTPException(status_code=400, detail="Add your resume first, so Riseply has something to tailor.")
+
+    description = payload.description.strip()
+    title, company, location = payload.title.strip(), payload.company.strip(), payload.location.strip()
+    if not (title and company):
+        basics = matcher.extract_job_basics(description)
+        title = title or basics["title"]
+        company = company or basics["company"]
+        location = location or basics["location"]
+    if not title:
+        raise HTTPException(status_code=422, detail="We couldn't find the job title in that text. Type it in and try again.")
+    company = company or "Company not stated"
+
+    url = payload.url.strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="The job link should start with http:// or https://")
+
+    usage.check_and_increment(db, user, "match", 1)
+    job_dict = {"title": title, "company": company, "location": location, "url": url, "description": description}
+    profile_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()
+    try:
+        if profile_rows:
+            profiles = [{
+                "name": p.name, "titles": json.loads(p.titles), "locations": json.loads(p.locations),
+                "seniority": json.loads(p.seniority), "min_match_score": p.min_match_score,
+                "exclude_companies": json.loads(p.exclude_companies),
+                "keywords_required": json.loads(p.keywords_required),
+                "keywords_excluded": json.loads(p.keywords_excluded), "active": p.active,
+            } for p in profile_rows]
+            best = matcher.best_profile_match(job_dict, user.resume_text, profiles)
+            profile_name, score, reason = best["profile_name"], best["score"], best["reason"]
+        else:
+            result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60})
+            profile_name, score, reason = "From your resume", result["score"], result["reason"]
+    except Exception as e:
+        usage.decrement(db, user.id, "match", 1)
+        print(f"[import-job] scoring failed for user {user.id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't read that job right now. Try again shortly.")
+
+    job = models.Job(
+        source="imported", external_id=f"imported-{user.id}-{int(time.time() * 1000)}",
+        company=company, title=title, location=location, url=url, description=description,
+        discovered_at=datetime.utcnow(), last_seen_at=datetime.utcnow(), is_active=True,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    application = models.Application(
+        user_id=user.id, job_id=job.id, matched_profile=profile_name, match_score=score,
+        match_reason=reason, status="pending_approval",
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+
+    try:
+        usage.check_and_increment(db, user, "tailor_resume", 1)
+        job_dict["matched_profile"], job_dict["match_score"] = profile_name, score
+        filename, docx_bytes, rationale = resume_customizer.customize_for_job(
+            user.id, user.resume_text, job_dict, application.id
+        )
+        application.tailored_resume_path = filename
+        application.tailored_resume_data = docx_bytes
+        application.tailoring_rationale = rationale
+    except HTTPException:
+        application.notes = "Resume not tailored: monthly tailoring limit reached. Using your base resume."
+    except Exception as e:
+        print(f"[import-job] tailoring failed for application {application.id}: {e}")
+        usage.decrement(db, user.id, "tailor_resume", 1)
+        application.notes = "Resume tailoring failed. Press Re-tailor to try again."
+    db.commit()
+    db.refresh(application)
+    return _to_out(application, job)
+
+
 @router.get("/applications/{application_id}", response_model=schemas.ApplicationOut)
 def get_application(
     application_id: int,

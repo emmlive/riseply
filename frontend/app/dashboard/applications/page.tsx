@@ -37,6 +37,11 @@ export default function ApplicationsPage() {
   const [loadError, setLoadError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
+  const [adding, setAdding] = useState(false);
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "" });
+
   async function load(status: string) {
     // A failed load must not look like "you have no applications".
     try {
@@ -55,6 +60,23 @@ export default function ApplicationsPage() {
   }
 
   useEffect(() => { load(filter); }, [filter]);
+
+  async function addJob(e: React.FormEvent) {
+    e.preventDefault();
+    setAddBusy(true);
+    setAddError("");
+    try {
+      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify(addForm) });
+      setAddForm({ description: "", url: "", title: "", company: "" });
+      setAdding(false);
+      setFilter("");
+      await load("");
+    } catch (err: any) {
+      setAddError(err?.message || "Couldn't add that job. Try again.");
+    } finally {
+      setAddBusy(false);
+    }
+  }
 
   // Quietly fetch the live response-rate stat for each company shown,
   // so the Rise Index data surfaces right where it's most useful — next
@@ -187,9 +209,54 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      <h1>Applications</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ margin: 0 }}>Applications</h1>
+        <button className="btn btn-primary btn-sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
+          {adding ? "Close" : "Add a job"}
+        </button>
+      </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+      {adding && (
+        <form className="card" onSubmit={addJob} style={{ marginTop: 16 }}>
+          <h3>Add a job you found somewhere else</h3>
+          <p className="hint">
+            Open the posting on Indeed, LinkedIn or the company's site, copy the whole job description, and paste it here.
+            Riseply scores it against your resume and tailors your resume for it.
+          </p>
+          <label htmlFor="add-description" style={{ fontWeight: 600 }}>Job description</label>
+          <textarea
+            id="add-description" required minLength={80} rows={9}
+            value={addForm.description}
+            onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
+            placeholder="Paste the full posting here"
+            style={{ width: "100%", marginBottom: 12 }}
+          />
+          <label htmlFor="add-url" style={{ fontWeight: 600 }}>Link to the posting (optional)</label>
+          <input
+            id="add-url" type="url" value={addForm.url}
+            onChange={(e) => setAddForm({ ...addForm, url: e.target.value })}
+            placeholder="https://"
+            style={{ width: "100%", marginBottom: 12 }}
+          />
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 220px" }}>
+              <label htmlFor="add-title" style={{ fontWeight: 600 }}>Job title (optional)</label>
+              <input id="add-title" value={addForm.title} onChange={(e) => setAddForm({ ...addForm, title: e.target.value })} style={{ width: "100%" }} />
+            </div>
+            <div style={{ flex: "1 1 220px" }}>
+              <label htmlFor="add-company" style={{ fontWeight: 600 }}>Company (optional)</label>
+              <input id="add-company" value={addForm.company} onChange={(e) => setAddForm({ ...addForm, company: e.target.value })} style={{ width: "100%" }} />
+            </div>
+          </div>
+          <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          {addError && <p className="cc-error" role="alert">{addError}</p>}
+          <button className="btn btn-primary" type="submit" disabled={addBusy || addForm.description.trim().length < 80}>
+            {addBusy ? "Reading the job and tailoring your resume…" : "Add job and tailor my resume"}
+          </button>
+        </form>
+      )}
+
+      <div style={{ display: "flex", gap: 8, margin: "20px 0", flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.value}
