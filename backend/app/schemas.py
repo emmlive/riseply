@@ -159,6 +159,9 @@ class ImportJobIn(BaseModel):
     title: str = Field(default="", max_length=300)
     company: str = Field(default="", max_length=200)
     location: str = Field(default="", max_length=200)
+    # The person has already applied (on the employer's site). The job is
+    # saved as Submitted and no tailoring is spent on it.
+    already_applied: bool = False
 
 
 class ApplicationOut(BaseModel):
@@ -171,6 +174,7 @@ class ApplicationOut(BaseModel):
     notes: str
     created_at: datetime
     submitted_at: Optional[datetime] = None
+    status_updated_at: Optional[datetime] = None
 
     job_title: str
     job_company: str

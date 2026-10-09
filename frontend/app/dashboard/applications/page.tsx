@@ -32,6 +32,37 @@ function looksLikeWrongText(text: string): boolean {
   return /(sign in to|log in to|join linkedin|enable cookies|verify you are human|are you a robot|accept all cookies)/.test(t) && t.length < 1200;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysSince(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(iso);
+  const t = new Date(hasZone ? iso : iso + "Z").getTime();
+  return isNaN(t) ? 0 : Math.floor((Date.now() - t) / DAY_MS);
+}
+
+// One plain line on each card saying what the person does next. Riseply
+// can't see what happens on an employer's site, so each stage moves on
+// only when the person presses its button.
+function nextStepLine(app: Application): string {
+  switch (app.status) {
+    case "pending_approval":
+      return app.job_open === false ? "" : "Next: open the posting and read the tailored resume. Approve it if you want to apply, or press I already applied if you have.";
+    case "approved": {
+      const days = daysSince(app.status_updated_at);
+      return days >= 3
+        ? `You approved this ${days} days ago. Did you apply? Press Mark as applied. If you're skipping it, Reject or Archive it.`
+        : "Next: apply on the employer's site, then press Mark as applied. Riseply can't see your application, so it only knows when you tell it.";
+    }
+    case "submitted":
+      return "Applied. When the company invites you to interview, press Mark interviewing.";
+    case "interviewing":
+      return "If you get an offer, press Mark accepted.";
+    default:
+      return "";
+  }
+}
+
 export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
@@ -59,6 +90,7 @@ export default function ApplicationsPage() {
   const [adding, setAdding] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const [addedNote, setAddedNote] = useState("");
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [addError, setAddError] = useState("");
   const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "" });
 
@@ -86,13 +118,16 @@ export default function ApplicationsPage() {
     setAddBusy(true);
     setAddError("");
     try {
-      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify(addForm) });
+      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied }) });
       setAddForm({ description: "", url: "", title: "", company: "" });
       setAdding(false);
       setFilter("");
       await load("");
       setActionError("");
-      setAddedNote("Job added. Read the tailored resume with Preview resume, check the posting is still open, then apply on the employer's site.");
+      setAddedNote(alreadyApplied
+        ? "Job saved as Submitted. When the company invites you to interview, press Mark interviewing."
+        : "Job added. Read the tailored resume with Preview resume, check the posting is still open, then apply on the employer's site.");
+      setAlreadyApplied(false);
     } catch (err: any) {
       setAddError(err?.message || "Couldn't add that job. Try again.");
     } finally {
@@ -300,6 +335,10 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0 12px" }}>
+            <input type="checkbox" checked={alreadyApplied} onChange={(e) => setAlreadyApplied(e.target.checked)} />
+            I already applied to this job (save it as Submitted, no resume tailoring)
+          </label>
           {looksLikeWrongText(addForm.description) && (
             <p className="cc-error" role="status">
               This doesn't look like a full job posting. If you pasted a sign-in page, a cookie notice or a list of
@@ -308,7 +347,7 @@ export default function ApplicationsPage() {
           )}
           {addError && <p className="cc-error" role="alert">{addError}</p>}
           <button className="btn btn-primary" type="submit" disabled={addBusy || addForm.description.trim().length < 80}>
-            {addBusy ? "Reading the job and tailoring your resume…" : "Add job and tailor my resume"}
+            {addBusy ? "Reading the job…" : alreadyApplied ? "Add job as Submitted" : "Add job and tailor my resume"}
           </button>
         </form>
       )}
@@ -332,6 +371,15 @@ export default function ApplicationsPage() {
           Archived
         </button>
       </div>
+
+      {(() => {
+        const waiting = apps.filter((a) => a.status === "approved" && daysSince(a.status_updated_at) >= 3).length;
+        return waiting > 0 ? (
+          <div className="card" role="status" style={{ borderColor: "var(--amber)", marginTop: 16 }}>
+            {waiting} approved job{waiting === 1 ? " is" : "s are"} still waiting. If you applied, press <strong>Mark as applied</strong> on {waiting === 1 ? "it" : "each one"} so your progress stays accurate. If not, apply soon, because postings close.
+          </div>
+        ) : null;
+      })()}
 
       {addedNote && (
         <div className="card" role="status" style={{ borderColor: "var(--accent)" }}>
@@ -388,6 +436,9 @@ export default function ApplicationsPage() {
                 )}
                 <p style={{ margin: "8px 0", fontSize: "0.9rem" }}>{app.match_reason}</p>
                 {app.notes && <p className="hint">{app.notes}</p>}
+                {nextStepLine(app) && (
+                  <p className="hint" style={{ color: "var(--accent-hover)" }}>{nextStepLine(app)}</p>
+                )}
                 {stat && stat !== "none" && (
                   <p className="hint" style={{ color: "var(--accent-hover)" }}>
                     {stat.response_rate}% of {stat.applied_count} Riseply applicants heard back from {stat.company}
@@ -473,6 +524,11 @@ export default function ApplicationsPage() {
                     <button className="btn btn-danger-ghost btn-sm" disabled={busyId === app.id}
                             onClick={() => act(app.id, "reject")}>Reject</button>
                   </div>
+                )}
+                {app.status === "pending_approval" && (
+                  <button className="btn btn-ghost btn-sm" disabled={busyId === app.id}
+                          title="Use this if you already applied on the employer's site"
+                          onClick={() => act(app.id, "mark-submitted")}>I already applied</button>
                 )}
 
                 {app.status === "approved" && (

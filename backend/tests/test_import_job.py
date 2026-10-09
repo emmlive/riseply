@@ -99,3 +99,23 @@ def test_same_link_cannot_be_added_twice(setup):
         assert client.post("/applications/import", json={"description": POSTING, "url": url}).status_code == 200
         again = client.post("/applications/import", json={"description": POSTING, "url": url})
     assert again.status_code == 409 and "already" in again.json()["detail"]
+
+
+def test_already_applied_saves_as_submitted_without_tailoring(setup):
+    db, user, client = setup
+    a, b, _ = _fakes()
+    with a, b, patch("app.routers.pipeline.resume_customizer.customize_for_job") as tailor:
+        r = client.post("/applications/import", json={"description": POSTING, "already_applied": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "submitted" and body["submitted_at"] and body["status_updated_at"]
+    tailor.assert_not_called()
+
+
+def test_mark_submitted_works_straight_from_awaiting_review(setup):
+    db, user, client = setup
+    a, b, c = _fakes()
+    with a, b, c:
+        app_id = client.post("/applications/import", json={"description": POSTING}).json()["id"]
+    assert client.post(f"/applications/{app_id}/mark-submitted").json() == {"status": "submitted"}
+    assert client.get(f"/applications/{app_id}").json()["status"] == "submitted"

@@ -315,6 +315,7 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         notes=app.notes or "",
         created_at=app.created_at or datetime.utcnow(),
         submitted_at=app.submitted_at,
+        status_updated_at=app.status_updated_at,
         job_title=job.title or "", job_company=job.company or "",
         job_location=job.location or "", job_url=job.url or "",
         organization_id=app.organization_id,
@@ -428,6 +429,19 @@ def import_job(
         user_id=user.id, job_id=job.id, matched_profile=profile_name, match_score=score,
         match_reason=reason, status="pending_approval",
     )
+    if payload.already_applied:
+        # Already sent on the employer's site: record it as Submitted and
+        # don't spend a tailored resume on a job that is already applied to.
+        now = datetime.utcnow()
+        application.status = "submitted"
+        application.submitted_at = now
+        application.status_updated_at = now
+        application.notes = "Added after you applied on the employer's site."
+        db.add(application)
+        db.commit()
+        db.refresh(application)
+        rise_index.award_points(db, user, "mark_submitted", "Submitted an application")
+        return _to_out(application, job)
     db.add(application)
     db.commit()
     db.refresh(application)
