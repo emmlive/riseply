@@ -1654,3 +1654,20 @@ class Feedback(Base):
 
     status = Column(String, default="new", server_default="new")   # new | reviewed
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class EmailLog(Base):
+    """One row per email the app tried to send, so "why didn't I get the
+    email?" can be answered from Admin instead of from the server log. Holds
+    who it went to and what happened, never the message body. Rows older than
+    30 days are pruned as new ones are written."""
+    __tablename__ = "email_log"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, default="other")       # new_match | digest | welcome | password_reset | submitted | test | other
+    to_addr = Column(String, default="")
+    subject = Column(String, default="")
+    # sent | failed | skipped (email isn't configured on the server)
+    status = Column(String, default="sent", index=True)
+    error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

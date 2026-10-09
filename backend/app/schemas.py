@@ -1205,6 +1205,33 @@ class AdminSystemHealthOut(BaseModel):
     last_discovery: list[AdminDiscoverySourceRun] = []
 
 
+class AdminEmailFailure(BaseModel):
+    kind: str
+    to_addr: str
+    subject: str
+    status: str
+    error: str = ""
+    created_at: datetime
+
+
+class AdminEmailHealthOut(BaseModel):
+    configured: bool
+    from_address: str
+    sent_24h: int = 0
+    failed_24h: int = 0
+    skipped_24h: int = 0
+    sent_7d: int = 0
+    failed_7d: int = 0
+    skipped_7d: int = 0
+    recent_problems: list[AdminEmailFailure] = []
+
+
+class AdminEmailTestOut(BaseModel):
+    ok: bool
+    to: str
+    detail: str
+
+
 # --- Admin: content moderation ---
 
 class AdminFlaggedMessageOut(BaseModel):

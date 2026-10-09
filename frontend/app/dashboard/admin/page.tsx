@@ -7,7 +7,7 @@ import DiscountCodesTab from "@/components/DiscountCodesTab";
 import FeedbackTab from "@/components/FeedbackTab";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
-  AdminOrganization, AdminSystemHealth, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
+  AdminOrganization, AdminSystemHealth, AdminEmailHealth, AdminEmailTest, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
 type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "feedback" | "admins";
@@ -576,6 +576,76 @@ function OrganizationsTab() {
   );
 }
 
+function EmailDeliveryCard() {
+  const [email, setEmail] = useState<AdminEmailHealth | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<AdminEmailTest | null>(null);
+
+  function load() {
+    api<AdminEmailHealth>("/admin/email-health").then(setEmail).catch((e) => setLoadError(e?.message || "Couldn't load email status."));
+  }
+  useEffect(load, []);
+
+  async function sendTest() {
+    setTesting(true);
+    setTest(null);
+    try {
+      setTest(await api<AdminEmailTest>("/admin/email-test", { method: "POST" }));
+    } catch (e: any) {
+      setTest({ ok: false, to: "", detail: e?.message || "The test email request failed." });
+    } finally {
+      setTesting(false);
+      load();
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>Email delivery</h3>
+      {loadError && <p className="cc-error" role="alert">{loadError}</p>}
+      {!email && !loadError && <p className="muted">Loading…</p>}
+      {email && (
+        <>
+          <div className="points-event-row" style={{ alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>{email.configured ? "Sending is switched on" : "Sending is switched off"}</div>
+              <div className="hint">
+                {email.configured ? `Sent from ${email.from_address}` : "RESEND_API_KEY isn't set on Render, so no email leaves the app."}
+              </div>
+            </div>
+            <span className={`pill ${email.configured ? "pill-approved" : "pill-rejected"}`}>{email.configured ? "on" : "off"}</span>
+          </div>
+          <p className="hint">
+            Last 24 hours: {email.sent_24h} sent, {email.failed_24h} failed, {email.skipped_24h} skipped.
+            Last 7 days: {email.sent_7d} sent, {email.failed_7d} failed, {email.skipped_7d} skipped.
+          </p>
+          {email.recent_problems.map((p, i) => (
+            <div key={i} className="points-event-row" style={{ alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{p.subject || p.kind}</div>
+                <div className="hint">{p.kind} to {p.to_addr} · {new Date(p.created_at).toLocaleString()}</div>
+                {p.error && <div className="hint" style={{ color: "var(--ink)" }}>{p.error}</div>}
+              </div>
+              <span className={`pill ${p.status === "failed" ? "pill-rejected" : "pill-pending"}`}>{p.status}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-primary btn-sm" onClick={sendTest} disabled={testing}>
+              {testing ? "Sending…" : "Send test email"}
+            </button>
+            {test && (
+              <p className={test.ok ? "hint" : "cc-error"} role="status" style={{ marginTop: 8 }}>
+                {test.detail}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SystemHealthTab() {
   const [health, setHealth] = useState<AdminSystemHealth | null>(null);
   const [error, setError] = useState("");
@@ -613,6 +683,8 @@ function SystemHealthTab() {
           {health.warnings.map((w, i) => <p key={i} style={{ margin: "6px 0" }}>{w}</p>)}
         </div>
       )}
+
+      <EmailDeliveryCard />
 
       <div className="card">
         <h3>Last discovery run</h3>

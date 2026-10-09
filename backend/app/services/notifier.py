@@ -21,11 +21,47 @@ def _format_salary(job: dict) -> str:
     return f"{range_str} (estimated)" if job.get("salary_is_predicted") else range_str
 
 
-def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None, attachment_filename: str = "attachment.docx"):
+def _log_email(kind: str, to_addr: str, subject: str, status: str, error: str = "") -> None:
+    """Best-effort record of an attempt. Never raises: bookkeeping must not
+    turn a sent email into an error, or hide a real one."""
+    try:
+        from datetime import datetime, timedelta
+        import random
+        from app.database import SessionLocal
+        from app import models
+
+        db = SessionLocal()
+        try:
+            db.add(models.EmailLog(kind=kind, to_addr=(to_addr or "")[:200], subject=(subject or "")[:200],
+                                   status=status, error=(error or "")[:500]))
+            if random.random() < 0.02:  # now and then, drop rows older than 30 days
+                db.query(models.EmailLog).filter(
+                    models.EmailLog.created_at < datetime.utcnow() - timedelta(days=30)
+                ).delete(synchronize_session=False)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[notifier] couldn't record email log entry: {e}")
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "ratelimit" in text or "rate limit" in text or "too many requests" in text or "429" in text
+
+
+def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None,
+               attachment_filename: str = "attachment.docx", kind: str = "other") -> str:
+    """Sends through Resend. Returns "sent", or "skipped" when email isn't
+    configured on the server. Raises when Resend refuses the message. Every
+    attempt is recorded in email_log. A burst of messages can hit Resend's
+    per-second limit, so a rate-limit reply is retried a couple of times."""
     if not settings.resend_api_key:
         print(f"[notifier] Resend not configured — skipping email to {to_addr}: {subject}\n{body}\n")
-        return
+        _log_email(kind, to_addr, subject, "skipped", "RESEND_API_KEY isn't set on the server")
+        return "skipped"
 
+    import time
     import resend
     resend.api_key = settings.resend_api_key
 
@@ -42,13 +78,22 @@ def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | N
         # error), so it's worth this comment existing.
         params["attachments"] = [{"content": list(attachment_data), "filename": attachment_filename}]
 
-    try:
-        resend.Emails.send(params)
-    except Exception as e:
-        # Prefixed with [Resend] for the same reason the old SMTP path
-        # prefixed [host:port] -- every caller's error log should show
-        # WHERE this failed without needing to go dig through code.
-        raise Exception(f"[Resend] {e}") from e
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            resend.Emails.send(params)
+            _log_email(kind, to_addr, subject, "sent")
+            return "sent"
+        except Exception as e:
+            last_error = e
+            if attempt < 2 and _is_rate_limited(e):
+                time.sleep(1.1 * (attempt + 1))
+                continue
+            break
+
+    # Prefixed with [Resend] so every caller's error log shows WHERE this failed.
+    _log_email(kind, to_addr, subject, "failed", str(last_error))
+    raise Exception(f"[Resend] {last_error}") from last_error
 
 
 def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filename: str = "", resume_data: bytes | None = None):
@@ -67,6 +112,7 @@ def notify_new_match(to_addr: str, job: dict, application_id: int, resume_filena
         ),
         resume_data,
         resume_filename or "resume.docx",
+        kind="new_match",
     )
 
 
@@ -75,6 +121,7 @@ def notify_submitted(to_addr: str, job: dict):
         to_addr,
         f"Application submitted: {job['title']} @ {job['company']}",
         f"Submitted your application to {job['company']} for {job['title']}.\n{job['url']}",
+        kind="submitted",
     )
 
 
@@ -99,6 +146,7 @@ def notify_digest(to_addr: str, matches: list[dict]):
             + "\n\n".join(lines)
             + "\n\nReview and approve/reject them in your dashboard."
         ),
+        kind="digest",
     )
 
 
@@ -117,6 +165,7 @@ def notify_welcome(to_addr: str, full_name: str = ""):
             f"Questions? Just reply to this email or use the Support tab in your dashboard.\n\n"
             f"— Riseply"
         ),
+        kind="welcome",
     )
 
 
@@ -131,4 +180,5 @@ def notify_password_reset(to_addr: str, reset_url: str, expire_minutes: int):
             f"If you didn't request this, you can safely ignore this email — your password "
             f"won't change unless you click the link above and set a new one."
         ),
+        kind="password_reset",
     )
