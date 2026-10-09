@@ -34,13 +34,24 @@ export default function ApplicationsPage() {
   const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
   const [previewApp, setPreviewApp] = useState<Application | null>(null);
 
+  const [loadError, setLoadError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
   async function load(status: string) {
-    if (status === ARCHIVED_FILTER) {
-      setApps(await api<Application[]>("/applications?archived=true"));
-      return;
+    // A failed load must not look like "you have no applications".
+    try {
+      if (status === ARCHIVED_FILTER) {
+        setApps(await api<Application[]>("/applications?archived=true"));
+      } else {
+        const qs = status ? `?status=${status}` : "";
+        setApps(await api<Application[]>(`/applications${qs}`));
+      }
+      setLoadError("");
+    } catch (e: any) {
+      setLoadError(e?.message || "We couldn't load your applications.");
+    } finally {
+      setLoaded(true);
     }
-    const qs = status ? `?status=${status}` : "";
-    setApps(await api<Application[]>(`/applications${qs}`));
   }
 
   useEffect(() => { load(filter); }, [filter]);
@@ -200,7 +211,14 @@ export default function ApplicationsPage() {
 
       {actionError && <p className="cc-error" role="alert">{actionError}</p>}
 
-      {apps.length === 0 && (
+      {loadError && (
+        <div className="cc-error" role="alert">
+          We couldn&apos;t load your applications: {loadError}{" "}
+          <button className="btn btn-ghost btn-sm" onClick={() => load(filter)}>Try again</button>
+        </div>
+      )}
+
+      {loaded && !loadError && apps.length === 0 && (
         <div className="empty-state">
           {filter === "" && "No applications yet — head to Overview and click \"Find new matches\" to get started."}
           {filter === "pending_approval" && "Nothing waiting on your review right now."}

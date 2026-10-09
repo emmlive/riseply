@@ -54,9 +54,10 @@ def _profile(db, uid, titles, excluded=None):
 
 
 def _job(db, title, **kw):
-    j = models.Job(source="t", external_id=uuid.uuid4().hex, company="Acme", title=title, location="Remote",
-                   description="d", url="https://acme.example/" + uuid.uuid4().hex,
-                   discovered_at=datetime.utcnow(), **kw)
+    fields = dict(source="t", external_id=uuid.uuid4().hex, company="Acme", title=title, location="Remote",
+                  description="d", url="https://acme.example/" + uuid.uuid4().hex, discovered_at=datetime.utcnow())
+    fields.update(kw)
+    j = models.Job(**fields)
     db.add(j)
     db.commit()
     return j
@@ -265,3 +266,58 @@ def test_approve_keeps_the_job_when_the_site_will_not_say(db):
     j = _job(db, "Blocked"); a = _app(db, u.id, j)
     with patch("app.routers.pipeline.posting_check.check_posting", return_value=None):
         assert _as(u.id).post(f"/applications/{a.id}/approve").status_code == 200
+
+
+# --- regression: the relevance check must not hide jobs people want ------
+
+@pytest.mark.parametrize("profile_title, wanted_jobs", [
+    ("Cybersecurity Architect", ["Security Architect", "Information Security Engineer", "Cloud Security Lead", "Cyber Defense Analyst"]),
+    ("IT Auditor", ["Internal Audit Manager", "Technology Risk Assurance Associate", "Information Systems Auditor"]),
+    ("Project Scheduler", ["Planning Engineer", "Primavera P6 Planner", "Construction Project Controls Specialist"]),
+    ("Software Engineer", ["Backend Developer", "Python Developer", "Full Stack Developer"]),
+    ("Registered Nurse", ["RN - Medical Surgical", "Staff Nurse ICU", "Clinical Nurse II"]),
+])
+def test_related_job_names_are_not_hidden(profile_title, wanted_jobs):
+    p = [{"titles": [profile_title], "keywords_required": [], "keywords_excluded": [], "active": True}]
+    for title in wanted_jobs:
+        assert search_terms.title_fits(title, p), f"{title!r} was hidden from a {profile_title!r} search"
+
+
+def test_the_start_of_the_description_can_rescue_an_unusual_title():
+    p = [{"titles": ["IT Auditor"], "keywords_required": [], "keywords_excluded": [], "active": True}]
+    assert not search_terms.title_fits("SOX Compliance Analyst", p)
+    assert search_terms.title_fits("SOX Compliance Analyst", p, "You will support our internal audit team on SOX testing")
+    assert not search_terms.title_fits("Sales Manager", p, "Grow revenue across the region")
+
+
+def test_the_relevance_check_can_be_switched_off(db):
+    from app.config import settings
+    u = _user(db)
+    _profile(db, u.id, ["IT Auditor"])
+    _job(db, "Sales Manager")
+    old = settings.match_relevance_check
+    settings.match_relevance_check = False
+    try:
+        scored, _ = _run(db, u)
+    finally:
+        settings.match_relevance_check = old
+    assert scored == ["Sales Manager"]
+
+
+def test_a_job_is_kept_when_only_its_description_matches(db):
+    u = _user(db)
+    _profile(db, u.id, ["IT Auditor"])
+    _job(db, "SOX Compliance Analyst", description="Support our internal audit team")
+    _job(db, "Sales Manager", description="Grow revenue")
+    scored, result = _run(db, u)
+    assert scored == ["SOX Compliance Analyst"] and result["off_target"] == 1
+
+
+def test_find_new_matches_works_with_a_resume_and_no_profile(db):
+    u = _user(db)
+    c = _as(u.id)
+    with patch("app.services.pipeline_runner.run_single_user_matching_background"):
+        assert c.post("/pipeline/match").status_code == 202
+    bare = _user(db, resume="I like walking dogs and baking bread")
+    r = _as(bare.id).post("/pipeline/match")
+    assert r.status_code == 400 and "search profile" in r.json()["detail"]

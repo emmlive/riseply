@@ -207,6 +207,10 @@ class Settings(BaseSettings):
     # Before a match is shown, fetch its posting link and drop it if the
     # page says the job is closed (404/410 or "no longer accepting").
     verify_posting_live: bool = True
+    # Skip scoring jobs whose title and description opening share nothing
+    # with the person's search (saves AI cost). Set MATCH_RELEVANCE_CHECK=false
+    # to score everything again.
+    match_relevance_check: bool = True
     # Nightly look at jobs people are still sitting on: how many per run,
     # and how long before the same job is looked at again.
     pending_recheck_per_run: int = 40
