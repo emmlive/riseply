@@ -22,6 +22,16 @@ const STATUS_FILTERS = [
 // query param.
 const ARCHIVED_FILTER = "__archived__";
 
+// Pasted text that is probably not a job description: too short to describe
+// a role, or a sign-in / cookie wall copied by mistake. Only warns; the
+// person can still add it.
+function looksLikeWrongText(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (t.length < 80) return false; // the Add button is already disabled
+  if (t.length < 300) return true;
+  return /(sign in to|log in to|join linkedin|enable cookies|verify you are human|are you a robot|accept all cookies)/.test(t) && t.length < 1200;
+}
+
 export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
@@ -37,8 +47,18 @@ export default function ApplicationsPage() {
   const [loadError, setLoadError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
+  const [guideHidden, setGuideHidden] = useState(true);
+  useEffect(() => {
+    try { setGuideHidden(localStorage.getItem("riseply_hide_review_guide") === "1"); } catch { setGuideHidden(false); }
+  }, []);
+  function hideGuide() {
+    setGuideHidden(true);
+    try { localStorage.setItem("riseply_hide_review_guide", "1"); } catch {}
+  }
+
   const [adding, setAdding] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
+  const [addedNote, setAddedNote] = useState("");
   const [addError, setAddError] = useState("");
   const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "" });
 
@@ -71,6 +91,8 @@ export default function ApplicationsPage() {
       setAdding(false);
       setFilter("");
       await load("");
+      setActionError("");
+      setAddedNote("Job added. Read the tailored resume with Preview resume, check the posting is still open, then apply on the employer's site.");
     } catch (err: any) {
       setAddError(err?.message || "Couldn't add that job. Try again.");
     } finally {
@@ -191,6 +213,9 @@ export default function ApplicationsPage() {
   }
 
   async function attemptAutoSubmit(id: number) {
+    // Guard: this is the one button that really sends an application to an
+    // employer, so make the person confirm it.
+    if (!window.confirm("This fills in and submits the application to the employer using your tailored resume. Have you read the resume and confirmed the job is still open?")) return;
     setBusyId(id);
     try {
       const result = await api<{ status: string; detail?: string }>(`/applications/${id}/auto-submit`, { method: "POST" });
@@ -216,12 +241,38 @@ export default function ApplicationsPage() {
         </button>
       </div>
 
+      {!guideHidden && apps.some((a) => a.status === "pending_approval") && (
+        <div className="card" style={{ marginTop: 16, borderColor: "var(--accent)" }}>
+          <div className="card-row" style={{ alignItems: "flex-start" }}>
+            <h3 style={{ margin: 0 }}>Before you approve a match</h3>
+            <button className="btn btn-ghost btn-sm" onClick={hideGuide}>Got it</button>
+          </div>
+          <p className="hint" style={{ marginTop: 8 }}>
+            1. Open <strong>View posting</strong> and check the job is still taking applications. Postings close without warning.
+          </p>
+          <p className="hint">
+            2. Open <strong>Preview resume</strong> and read the tailored resume. It only rearranges and rewords what is already on your resume, but you are the one who signs it.
+          </p>
+          <p className="hint">
+            3. <strong>Approve</strong> only moves the job to Approved. Nothing is sent to the employer. Apply on their site, then press <strong>Mark as applied</strong>.
+          </p>
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Found a job somewhere else? Use <strong>Add a job</strong> above to get a tailored resume for it.
+          </p>
+        </div>
+      )}
+
       {adding && (
         <form className="card" onSubmit={addJob} style={{ marginTop: 16 }}>
           <h3>Add a job you found somewhere else</h3>
           <p className="hint">
             Open the posting on Indeed, LinkedIn or the company's site, copy the whole job description, and paste it here.
             Riseply scores it against your resume and tailors your resume for it.
+          </p>
+          <p className="hint">
+            Copy from the posting page itself, from the title down to the requirements. A login page or a
+            search results list won't work, because the text has to be the job. Add the link too, so you can
+            come back and apply.
           </p>
           <label htmlFor="add-description" style={{ fontWeight: 600 }}>Job description</label>
           <textarea
@@ -249,6 +300,12 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          {looksLikeWrongText(addForm.description) && (
+            <p className="cc-error" role="status">
+              This doesn't look like a full job posting. If you pasted a sign-in page, a cookie notice or a list of
+              jobs, go back and copy the description itself. You can still add it if it's right.
+            </p>
+          )}
           {addError && <p className="cc-error" role="alert">{addError}</p>}
           <button className="btn btn-primary" type="submit" disabled={addBusy || addForm.description.trim().length < 80}>
             {addBusy ? "Reading the job and tailoring your resume…" : "Add job and tailor my resume"}
@@ -275,6 +332,15 @@ export default function ApplicationsPage() {
           Archived
         </button>
       </div>
+
+      {addedNote && (
+        <div className="card" role="status" style={{ borderColor: "var(--accent)" }}>
+          <div className="card-row" style={{ alignItems: "flex-start" }}>
+            <span>{addedNote}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAddedNote("")}>Dismiss</button>
+          </div>
+        </div>
+      )}
 
       {actionError && <p className="cc-error" role="alert">{actionError}</p>}
 

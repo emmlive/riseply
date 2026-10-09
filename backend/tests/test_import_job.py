@@ -89,3 +89,13 @@ def test_pasted_jobs_are_never_matched_to_other_people(setup):
     job = db.query(models.Job).filter_by(source="imported").order_by(models.Job.id.desc()).first()
     visible = db.query(models.Job.id).filter(*pipeline_runner._open_job_filters()).all()
     assert job.id not in {row[0] for row in visible}
+
+
+def test_same_link_cannot_be_added_twice(setup):
+    db, user, client = setup
+    a, b, c = _fakes()
+    url = f"https://indeed.com/viewjob?jk={uuid.uuid4().hex[:8]}"
+    with a, b, c:
+        assert client.post("/applications/import", json={"description": POSTING, "url": url}).status_code == 200
+        again = client.post("/applications/import", json={"description": POSTING, "url": url})
+    assert again.status_code == 409 and "already" in again.json()["detail"]
