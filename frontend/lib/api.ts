@@ -152,6 +152,8 @@ export interface Application {
   salary_is_predicted: boolean;
   is_archived: boolean;
   archived_at: string | null;
+  // false once the posting is known to be closed
+  job_open?: boolean;
 }
 
 // Shared by both the Overview near-misses list and the Applications

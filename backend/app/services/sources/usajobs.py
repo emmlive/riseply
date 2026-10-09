@@ -134,6 +134,8 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
             # Adzuna's salary_is_predicted, this is never True here.
             "salary_currency": "USD" if (salary_min or salary_max) else "",
             "salary_is_predicted": False,
+            # Federal announcements always state a closing date.
+            "closes": descriptor.get("ApplicationCloseDate") or descriptor.get("PositionEndDate") or "",
         })
 
     return jobs

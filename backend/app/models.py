@@ -190,6 +190,11 @@ class Job(Base):
     last_seen_at = Column(DateTime, nullable=True)
     posted_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, nullable=True, default=True)
+    # The posting's own deadline, when the source states one (USAJobs).
+    # Past it, the job is treated as closed everywhere.
+    closes_at = Column(DateTime, nullable=True)
+    # Last time we opened the posting's page to see whether it is still up.
+    live_checked_at = Column(DateTime, nullable=True)
 
     # --- Salary (currently only populated by the Adzuna source --
     # Greenhouse/Lever/RSS postings essentially never state a salary in

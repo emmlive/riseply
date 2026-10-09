@@ -14,7 +14,9 @@ check_posting() answers three ways, on purpose:
          blocked us would be worse than showing one that has closed.
 """
 import ipaddress
+import re
 import socket
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -42,7 +44,40 @@ CLOSED_PHRASES = (
     "this role is no longer available",
     "sorry, this job is no longer",
     "the job you are looking for is no longer open",
+    "this job is no longer open",
+    "this position is no longer open",
+    "this posting is no longer active",
+    "this opportunity is no longer available",
+    "position has been closed",
+    "this job has been closed",
+    "this role has been filled",
+    "no longer available for applications",
+    "applications are closed",
+    "job not found",
 )
+
+# schema.org JobPosting markup, which most job pages carry for search
+# engines, says when the posting stops being valid.
+_VALID_THROUGH = re.compile(r'"validThrough"\s*:\s*"([^"]{8,40})"', re.I)
+
+
+def expired_by_markup(text: str, now: datetime | None = None) -> bool:
+    """True when the page's own JobPosting markup says it expired in the
+    past. A date we can't read counts as "not expired"."""
+    now = now or datetime.utcnow()
+    for raw in _VALID_THROUGH.findall(text or ""):
+        raw = raw.strip()
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        elif len(raw) <= 10:
+            parsed += timedelta(days=1)  # a bare date is valid through the end of that day
+        if parsed < now:
+            return True
+    return False
 
 
 def _is_public_host(hostname: str) -> bool:
@@ -94,7 +129,7 @@ def check_posting(url: str):
                     if len(body) >= MAX_BYTES:
                         break
                 text = body.decode(resp.encoding or "utf-8", errors="ignore")
-                return False if page_says_closed(text) else True
+                return False if (page_says_closed(text) or expired_by_markup(text)) else True
             finally:
                 resp.close()
         return None  # too many redirects

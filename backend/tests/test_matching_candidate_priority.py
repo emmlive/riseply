@@ -148,12 +148,11 @@ def test_relevant_older_jobs_prioritized_over_irrelevant_newer_ones_when_capped(
     assert set(scored_titles) == {"Security Engineer", "Senior Security Engineer"}
 
 
-def test_falls_back_to_recency_when_not_enough_relevant_jobs_to_fill_cap(db):
-    """Only 1 relevant job exists; cap is 3. The relevant one should
-    still be included, with recency filling the remaining 2 slots.
-    The relevant job queues (meets_threshold=True) so the location-
-    fallback pass doesn't fire and contaminate scored_titles with
-    jobs beyond this test's capped primary-pass selection."""
+def test_unrelated_titles_are_never_scored_even_when_the_cap_has_room(db):
+    """Only 1 relevant job exists; cap is 3. The two unrelated ones used to
+    fill the spare slots (a paid scoring call each); now the free title
+    check drops them, so only the relevant job is scored and the cap is
+    not used up on jobs nobody asked for."""
     user = _make_user(db)
     _make_profile(db, user.id, titles=["Security Engineer"])
 
@@ -167,24 +166,14 @@ def test_falls_back_to_recency_when_not_enough_relevant_jobs_to_fill_cap(db):
 
     def fake_best_match(job, resume_text, profiles, ignore_location=False):
         scored_titles.append(job["title"])
-        is_relevant = "security engineer" in job["title"].lower()
-        return {
-            "profile_name": "Security roles" if is_relevant else None,
-            "score": 85 if is_relevant else 20,
-            "reason": "good fit" if is_relevant else "not a great fit",
-            "meets_threshold": is_relevant,
-        }
+        return {"profile_name": "Security roles", "score": 85, "reason": "good fit", "meets_threshold": True}
 
     with patch.object(matcher, "best_profile_match", side_effect=fake_best_match):
-        pipeline_runner.run_matching_for_user(db, user, max_jobs=3)
+        result = pipeline_runner.run_matching_for_user(db, user, max_jobs=3)
 
-    assert "Security Engineer" in scored_titles
-    assert len(scored_titles) == 3
-    # The 2 most recent irrelevant jobs fill the remaining slots, not the
-    # least recent one -- recency ordering is preserved WITHIN each group.
-    assert "Retail Store Manager" in scored_titles
-    assert "Warehouse Associate" in scored_titles
-    assert "Marketing Coordinator" not in scored_titles
+    assert scored_titles == ["Security Engineer"]
+    assert result["off_target"] == 3
+    assert result["hit_job_cap"] is False
 
 
 def test_uncapped_run_scores_everything_regardless_of_relevance_ordering(db):
