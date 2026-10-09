@@ -795,13 +795,28 @@ export interface AdminJobSourceHealth {
   source: string;
   jobs_last_24h: number;
   jobs_last_7d: number;
+  active_jobs: number;
   last_discovered_at: string | null;
   status: "healthy" | "stale" | "silent";
+}
+
+export interface AdminDiscoverySourceRun {
+  name: string;
+  status: "ok" | "empty" | "failed" | "not_configured";
+  fetched: number;
+  new: number;
+  detail: string;
+  notes: string[];
 }
 
 export interface AdminSystemHealth {
   job_sources: AdminJobSourceHealth[];
   total_jobs_in_pool: number;
+  active_jobs_in_pool: number;
+  warnings: string[];
+  last_discovery_at: string | null;
+  last_discovery_kind: string;
+  last_discovery: AdminDiscoverySourceRun[];
 }
 
 export interface AdminFlaggedMessage {

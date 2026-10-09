@@ -23,6 +23,8 @@ than a handful of active search profiles.
 """
 import requests
 
+from app.services.sources import report
+
 from app.config import settings
 
 # US only for now -- Adzuna supports ~20 country indexes (co.uk, com.au,
@@ -47,6 +49,7 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
         # from the logs alone. This print is the only thing that tells
         # the two apart after the fact.
         print("[adzuna] skipped -- ADZUNA_APP_ID/ADZUNA_APP_KEY not set")
+        report.not_configured("adzuna", "ADZUNA_APP_ID and ADZUNA_APP_KEY")
         return []
 
     jobs = []
@@ -75,6 +78,7 @@ def fetch_jobs_for_keyword(keyword: str, location: str = "") -> list[dict]:
             body = getattr(e, "response", None)
             body_text = body.text[:300] if body is not None else "(no response body)"
             print(f"[adzuna] failed for keyword {keyword!r} page {page}: {e} -- body: {body_text}")
+            report.problem("adzuna", f"Request failed for {keyword!r}: {e} {body_text}")
             break
 
         results = data.get("results", [])
@@ -136,6 +140,7 @@ def fetch_by_keyword_location_pairs(pairs: list[tuple[str, str]]) -> list[dict]:
     """
     if not settings.adzuna_app_id or not settings.adzuna_app_key:
         print("[adzuna] skipped (location-paired) -- ADZUNA_APP_ID/ADZUNA_APP_KEY not set")
+        report.not_configured("adzuna_location", "ADZUNA_APP_ID and ADZUNA_APP_KEY")
         return []
 
     if not pairs:
@@ -149,6 +154,7 @@ def fetch_by_keyword_location_pairs(pairs: list[tuple[str, str]]) -> list[dict]:
             all_jobs.extend(fetch_jobs_for_keyword(kw, location=loc))
         except Exception as e:
             print(f"[adzuna] unexpected error for pair ({kw!r}, {loc!r}): {e}")
+            report.problem("adzuna_location", f"Error for ({kw!r}, {loc!r}): {e}")
     print(f"[adzuna] done (location-paired) -- {len(all_jobs)} total result(s) across {len(pairs)} pair(s)")
     return all_jobs
 
@@ -168,6 +174,7 @@ def fetch_by_keywords(keywords: list[str]) -> list[dict]:
         # search profiles have any titles set yet). Same "returns []
         # either way" ambiguity problem as the credentials check.
         print("[adzuna] skipped -- no keywords to search (no active search profile titles)")
+        report.problem("adzuna", "No job titles to search for yet (no search profiles or resume titles).")
         return []
 
     print(f"[adzuna] querying {len(keywords)} keyword(s): {keywords}")
@@ -177,5 +184,6 @@ def fetch_by_keywords(keywords: list[str]) -> list[dict]:
             all_jobs.extend(fetch_jobs_for_keyword(kw))
         except Exception as e:
             print(f"[adzuna] unexpected error for keyword {kw!r}: {e}")
+            report.problem("adzuna", f"Error for {kw!r}: {e}")
     print(f"[adzuna] done -- {len(all_jobs)} total result(s) across {len(keywords)} keyword(s)")
     return all_jobs

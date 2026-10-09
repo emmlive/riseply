@@ -36,6 +36,8 @@ philosophy as remoteok.py.
 """
 import requests
 
+from app.services.sources import report
+
 API_URL = "https://www.arbeitnow.com/api/job-board-api"
 
 HEADERS = {
@@ -62,9 +64,11 @@ def fetch_jobs() -> list[dict]:
         data = resp.json()
     except requests.RequestException as e:
         print(f"[arbeitnow] fetch failed: {e}")
+        report.problem("arbeitnow", f"Fetch failed: {e}")
         return []
     except ValueError as e:  # response wasn't valid JSON
         print(f"[arbeitnow] response wasn't valid JSON: {e}")
+        report.problem("arbeitnow", "Response wasn't valid JSON")
         return []
 
     # Documented shape is {"data": [...]} -- but given the schema

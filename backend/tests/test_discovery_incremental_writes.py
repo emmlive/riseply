@@ -120,4 +120,5 @@ def test_no_jobs_from_any_source_returns_zero_counts(db):
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7]:
         result = pipeline_runner.run_discovery(db)
 
-    assert result == {"discovered": 0, "new": 0}
+    assert (result["discovered"], result["new"]) == (0, 0)
+    assert {src["status"] for src in result["sources"]} == {"empty"}

@@ -7,6 +7,8 @@ import feedparser
 import hashlib
 import requests
 
+from app.services.sources import report
+
 # Some feed hosts block requests with no User-Agent (or one that
 # self-identifies as a bot/scraper) as basic bot mitigation. A realistic
 # browser-style UA avoids that without doing anything deceptive -- this
@@ -56,4 +58,5 @@ def fetch_all(feed_urls: list[str]):
             all_jobs.extend(fetch_jobs(url))
         except Exception as e:
             print(f"[rss] failed for {url}: {e}")
+            report.problem("rss", f"{url}: {e}")
     return all_jobs

@@ -1,6 +1,7 @@
+import json
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -478,45 +479,82 @@ def system_health(
     day_ago = now - timedelta(hours=24)
     week_ago = now - timedelta(days=7)
 
-    known_sources = (
-        ["greenhouse", "lever"]
-        + [f"rss:{f}" for f in discovery_sources.RSS_JOB_FEEDS]
-    )
+    # Every source we can pull from, so one that has never produced a job
+    # still shows up (as silent) instead of being invisible.
+    known_sources = ["greenhouse", "lever", "remoteok", "arbeitnow", "adzuna", "usajobs"]
 
+    last_seen = func.coalesce(models.Job.last_seen_at, models.Job.discovered_at)
     rows = db.query(
         models.Job.source,
         func.count(models.Job.id).filter(models.Job.discovered_at >= day_ago),
         func.count(models.Job.id).filter(models.Job.discovered_at >= week_ago),
-        func.max(models.Job.discovered_at),
+        func.max(last_seen),
+        func.count(models.Job.id).filter(or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True))),
     ).group_by(models.Job.source).all()
 
     by_source = {r[0]: r for r in rows}
-    # RSS sources are keyed by feed *title* once discovered (not the feed
-    # URL) -- fall back to whatever's actually in the DB for those, since
-    # we can't know the title in advance without fetching the feed.
-    seen_sources = set(by_source.keys()) | {s for s in known_sources if not s.startswith("rss:")}
+    seen_sources = set(by_source.keys()) | set(known_sources)
 
     health = []
     for source in sorted(seen_sources):
         row = by_source.get(source)
         last_24h = int(row[1]) if row else 0
         last_7d = int(row[2]) if row else 0
-        last_seen = row[3] if row else None
-        if last_seen is None:
+        last_seen_at = row[3] if row else None
+        active = int(row[4]) if row else 0
+        if last_seen_at is None:
             status_label = "silent"
-        elif last_seen >= day_ago:
+        elif last_seen_at >= day_ago:
             status_label = "healthy"
-        elif last_seen >= week_ago:
+        elif last_seen_at >= week_ago:
             status_label = "stale"
         else:
             status_label = "silent"
         health.append(schemas.AdminJobSourceHealthOut(
-            source=source, jobs_last_24h=last_24h, jobs_last_7d=last_7d,
-            last_discovered_at=last_seen, status=status_label,
+            source=source, jobs_last_24h=last_24h, jobs_last_7d=last_7d, active_jobs=active,
+            last_discovered_at=last_seen_at, status=status_label,
         ))
 
+    warnings = []
+    if not (settings.adzuna_app_id and settings.adzuna_app_key):
+        warnings.append(
+            "Adzuna (the biggest source, covering all industries) is switched off. "
+            "Set ADZUNA_APP_ID and ADZUNA_APP_KEY on Render (free keys at developer.adzuna.com)."
+        )
+    if not (settings.usajobs_api_key and settings.usajobs_email):
+        warnings.append(
+            "USAJobs (US federal jobs) is switched off. Set USAJOBS_API_KEY and USAJOBS_EMAIL on Render "
+            "(free at developer.usajobs.gov)."
+        )
+
+    # The most recent finished discovery run that recorded per-source results.
+    last_at, last_kind, last_sources = None, "", []
+    recent = db.query(models.ScheduledRunLog).filter(
+        models.ScheduledRunLog.status == "success",
+        models.ScheduledRunLog.run_type.in_(("scheduled_run", "interactive_discover")),
+        models.ScheduledRunLog.result_json.isnot(None),
+    ).order_by(models.ScheduledRunLog.finished_at.desc()).limit(10).all()
+    for log in recent:
+        try:
+            result = json.loads(log.result_json)
+        except (TypeError, ValueError):
+            continue
+        sources = (result.get("discovery") or result).get("sources") if isinstance(result, dict) else None
+        if sources:
+            last_at, last_kind, last_sources = log.finished_at, log.run_type, sources
+            break
+    last_discovery = [schemas.AdminDiscoverySourceRun(**{k: v for k, v in s.items() if k in schemas.AdminDiscoverySourceRun.model_fields}) for s in last_sources]
+    for s in last_discovery:
+        if s.status == "failed":
+            warnings.append(f"{s.name} returned nothing in the last run: {s.notes[0] if s.notes else 'it failed'}")
+
     total_jobs = db.query(models.Job).count()
-    return schemas.AdminSystemHealthOut(job_sources=health, total_jobs_in_pool=total_jobs)
+    active_jobs = db.query(models.Job).filter(or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True))).count()
+    return schemas.AdminSystemHealthOut(
+        job_sources=health, total_jobs_in_pool=total_jobs, active_jobs_in_pool=active_jobs,
+        warnings=warnings, last_discovery_at=last_at, last_discovery_kind=last_kind,
+        last_discovery=last_discovery,
+    )
 
 
 # --- Content moderation (Job Buddy safety flags) ---

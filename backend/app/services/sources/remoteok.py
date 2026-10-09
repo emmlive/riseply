@@ -29,6 +29,8 @@ silently producing zero or malformed results.
 """
 import requests
 
+from app.services.sources import report
+
 API_URL = "https://remoteok.com/api"
 
 # RemoteOK blocks generic/bot-looking User-Agents on this endpoint (a
@@ -55,13 +57,16 @@ def fetch_jobs() -> list[dict]:
         data = resp.json()
     except requests.RequestException as e:
         print(f"[remoteok] fetch failed: {e}")
+        report.problem("remoteok", f"Fetch failed: {e}")
         return []
     except ValueError as e:  # response wasn't valid JSON
         print(f"[remoteok] response wasn't valid JSON: {e}")
+        report.problem("remoteok", "Response wasn't valid JSON")
         return []
 
     if not isinstance(data, list):
         print(f"[remoteok] unexpected response shape (expected a list, got {type(data).__name__}) -- skipping")
+        report.problem("remoteok", f"Unexpected response shape ({type(data).__name__})")
         return []
 
     # The documented RemoteOK API shape has a legal/metadata notice as

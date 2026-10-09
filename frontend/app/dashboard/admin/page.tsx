@@ -578,9 +578,13 @@ function OrganizationsTab() {
 
 function SystemHealthTab() {
   const [health, setHealth] = useState<AdminSystemHealth | null>(null);
+  const [error, setError] = useState("");
 
-  useEffect(() => { api<AdminSystemHealth>("/admin/system-health").then(setHealth); }, []);
+  useEffect(() => {
+    api<AdminSystemHealth>("/admin/system-health").then(setHealth).catch((e) => setError(e?.message || "Couldn't load system health."));
+  }, []);
 
+  if (error) return <p className="cc-error" role="alert">{error}</p>;
   if (!health) return <p className="muted">Loading…</p>;
 
   const statusPill: Record<string, string> = {
@@ -588,26 +592,69 @@ function SystemHealthTab() {
     stale: "pill-pending",
     silent: "pill-rejected",
   };
+  const runPill: Record<string, string> = {
+    ok: "pill-approved",
+    empty: "pill-pending",
+    failed: "pill-rejected",
+    not_configured: "pill-rejected",
+  };
+  const runLabel: Record<string, string> = {
+    ok: "pulled jobs",
+    empty: "nothing returned",
+    failed: "failed",
+    not_configured: "switched off",
+  };
 
   return (
     <div>
+      {health.warnings.length > 0 && (
+        <div className="card" style={{ borderColor: "var(--amber)" }} role="status">
+          <h3>Needs attention</h3>
+          {health.warnings.map((w, i) => <p key={i} style={{ margin: "6px 0" }}>{w}</p>)}
+        </div>
+      )}
+
       <div className="card">
-        <h3>Job discovery sources</h3>
-        <p className="hint">{health.total_jobs_in_pool} jobs total in the shared pool.</p>
+        <h3>Last discovery run</h3>
+        {health.last_discovery.length === 0 ? (
+          <p className="hint">No discovery run has been recorded yet. Run one from Overview (Find new matches), or wait for the nightly run.</p>
+        ) : (
+          <>
+            <p className="hint">
+              {health.last_discovery_kind === "scheduled_run" ? "Nightly run" : "Manual run"}
+              {health.last_discovery_at && `, ${new Date(health.last_discovery_at).toLocaleString()}`}
+            </p>
+            {health.last_discovery.map((s) => (
+              <div key={s.name} className="points-event-row" style={{ alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{s.name}</div>
+                  <div className="hint">
+                    {s.fetched} pulled, {s.new} new{s.detail && ` · ${s.detail}`}
+                  </div>
+                  {s.notes.map((n, i) => <div key={i} className="hint" style={{ color: "var(--ink)" }}>{n}</div>)}
+                </div>
+                <span className={`pill ${runPill[s.status] || "pill-default"}`}>{runLabel[s.status] || s.status}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Jobs by source</h3>
+        <p className="hint">{health.active_jobs_in_pool} open jobs ({health.total_jobs_in_pool} total) in the shared pool.</p>
         {health.job_sources.map((s) => (
           <div key={s.source} className="points-event-row" style={{ alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 600 }}>{s.source}</div>
               <div className="hint">
-                {s.jobs_last_24h} new in 24h · {s.jobs_last_7d} in 7d
-                {s.last_discovered_at && ` · last seen ${new Date(s.last_discovered_at).toLocaleString()}`}
-                {!s.last_discovered_at && " · never discovered anything"}
+                {s.active_jobs} open · {s.jobs_last_24h} new in 24h · {s.jobs_last_7d} in 7d
+                {s.last_discovered_at ? ` · last seen ${new Date(s.last_discovered_at).toLocaleString()}` : " · never returned a job"}
               </div>
             </div>
             <span className={`pill ${statusPill[s.status] || "pill-default"}`}>{s.status}</span>
           </div>
         ))}
-        {health.job_sources.length === 0 && <p className="muted">No sources configured.</p>}
       </div>
     </div>
   );
