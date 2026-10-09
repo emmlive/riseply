@@ -174,7 +174,7 @@ export default function OverviewPage() {
       // already uses for the identical underlying reason.
       type MatchResult = {
         queued_application_ids: number[]; usage_limit_reached: boolean;
-        near_misses: NearMiss[]; hit_job_cap: boolean; is_welcome_search: boolean; jobs_searched: number;
+        near_misses: NearMiss[]; hit_job_cap: boolean; off_target?: number; is_welcome_search: boolean; jobs_searched: number;
       };
       const { run_id } = await api<{ status: string; run_id: number }>("/pipeline/match", { method: "POST" });
 
@@ -260,6 +260,10 @@ export default function OverviewPage() {
         );
       } else if (result.hit_job_cap) {
         setMessage((m) => m + " There are more unscored postings waiting — click \"Find new matches\" again to keep going, or check back after the nightly search runs.");
+      }
+      if ((result.off_target ?? 0) > 0) {
+        // Be upfront about what was left out, so a thin result isn't a mystery.
+        setMessage((m) => m + ` We skipped ${result.off_target} posting${result.off_target === 1 ? "" : "s"} whose titles didn't look related to your search. If that's too strict, add related job titles to your search profile.`);
       }
       setNearMisses(result.near_misses);
       load();

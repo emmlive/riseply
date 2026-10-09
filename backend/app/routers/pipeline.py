@@ -11,7 +11,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -157,9 +157,14 @@ def match_and_tailor(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before running matching.")
 
+    # A search profile is best, but a default resume with readable job titles
+    # is enough to search by.
     has_active_profile = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).first()
-    if not has_active_profile:
-        raise HTTPException(status_code=400, detail="Add at least one active search profile first.")
+    if not has_active_profile and not search_terms.implicit_profile(user.resume_text, user.location):
+        raise HTTPException(
+            status_code=400,
+            detail="Add at least one active search profile first (we couldn't find a job title on your resume to search by).",
+        )
 
     # One search at a time per person. Each run scores up to 100 jobs
     # with real Claude calls, so a double click, a second tab or a

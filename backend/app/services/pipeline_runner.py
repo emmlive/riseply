@@ -315,6 +315,7 @@ def run_single_user_matching_background(run_log_id: int, user_id: int) -> None:
             "usage_limit_reached": result["usage_limit_reached"],
             "near_misses": result["near_misses"],
             "hit_job_cap": result["hit_job_cap"],
+            "off_target": result.get("off_target", 0),
             "is_welcome_search": is_welcome_search,
             "jobs_searched": max_jobs,
         })
@@ -760,7 +761,12 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # THEN fetch full Job rows for just those ids below -- so peak
     # memory for a capped run is bounded by max_jobs full postings,
     # not the whole backlog.
-    unseen_rows = db.query(models.Job.id, models.Job.title).filter(
+    unseen_rows = db.query(
+        models.Job.id, models.Job.title,
+        # Only the start of the description, for the relevance check below
+        # (the full text is fetched later for the few jobs actually scored).
+        func.substr(models.Job.description, 1, 800).label("snippet"),
+    ).filter(
         not_(models.Job.id.in_(already_applied_subq)),
         not_(models.Job.id.in_(already_scored_subq)),
         *_open_job_filters(),
@@ -771,7 +777,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # excluded). These are not marked as scored, so editing a profile
     # brings them back into play.
     before_gate = len(unseen_rows)
-    unseen_rows = [r for r in unseen_rows if search_terms.title_fits(r.title, profiles)]
+    if settings.match_relevance_check:
+        unseen_rows = [r for r in unseen_rows if search_terms.title_fits(r.title, profiles, r.snippet or "")]
     off_target = before_gate - len(unseen_rows)
 
     hit_job_cap = False

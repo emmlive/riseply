@@ -49,15 +49,55 @@ _SECTION_HEADS = re.compile(
 
 
 def _stem(word: str) -> str:
-    """Crude on purpose: 'auditor', 'audit' and 'auditing' all meet at 'audit',
-    'engineering' and 'engineer' at 'engin'. Longer words are cut to 5."""
+    """Crude on purpose, and short on purpose: 'nurse', 'nurses' and 'nursing'
+    all meet at 'nurs', 'auditor' and 'audit' at 'audi'. Words over 4 letters
+    are cut to 4. This check only ever lets a job THROUGH, so matching too
+    loosely costs one cheap scoring call, while matching too tightly hides a
+    job the person wanted."""
     word = word.lower()
-    return word[:5] if len(word) > 5 else word
+    return word[:4] if len(word) > 4 else word
 
 
-def _distinctive_stems(text: str) -> set[str]:
+# Different words for the same kind of work. A profile that says
+# "Cybersecurity Architect" must still see "Security Architect".
+_FAMILIES = (
+    {"cybe", "secu"},
+    {"nurs", "rn", "regi"},
+    {"audi", "assu"},
+    {"soft", "prog", "deve", "code"},
+    {"data", "anal"},
+    {"plan", "sche", "prim"},
+    {"clou", "devo", "infr"},
+)
+
+
+# Technical job names that are used for one another all the time.
+_TECH_ROLES = {"engineer", "developer", "programmer", "architect"}
+
+
+def _has_tech_role(text: str) -> bool:
+    return bool(set(re.split(r"[^a-z]+", (text or "").lower())) & _TECH_ROLES)
+
+
+def _expand(stems: set[str]) -> set[str]:
+    out = set(stems)
+    for family in _FAMILIES:
+        if stems & family:
+            out |= family
+    return out
+
+
+# Two-letter words that carry no meaning in a job title. Real abbreviations
+# (IT, RN, HR, QA, UX) are kept for title matching.
+_SHORT_NOISE = frozenset(("of", "in", "at", "to", "or", "an", "is", "as", "on", "by", "be", "us", "uk", "co", "if", "no", "so", "we", "up", "ii"))
+
+
+def _distinctive_stems(text: str, titles: bool = True) -> set[str]:
+    """Two-letter abbreviations count in titles ("RN", "IT") but not in running
+    description text, where "it" is just the word."""
     words = re.split(r"[^a-z0-9+#]+", (text or "").lower())
-    return {_stem(w) for w in words if len(w) >= 3 and w not in GENERIC_WORDS}
+    floor = 2 if titles else 3
+    return {_stem(w) for w in words if len(w) >= floor and w not in GENERIC_WORDS and w not in _SHORT_NOISE}
 
 
 def resume_job_titles(resume_text: str, limit: int = 4) -> list[str]:
@@ -117,16 +157,19 @@ def implicit_profile(resume_text: str, location: str = "") -> dict | None:
     }
 
 
-def title_fits(job_title: str, profiles: list[dict]) -> bool:
-    """False only when no active profile could want this job by its title.
+def title_fits(job_title: str, profiles: list[dict], description: str = "") -> bool:
+    """False only when no active profile could plausibly want this job.
 
-    A profile accepts a title when it shares a distinctive word with one of
-    the profile's titles or required keywords, and the title contains none
-    of the profile's excluded keywords. A profile with no titles or
-    keywords (nothing to compare against) accepts everything, so an
-    unusual search is never starved by this check."""
+    A profile accepts a job when the title, or the start of the description,
+    shares a distinctive word (or a word for the same kind of work) with one
+    of the profile's titles or required keywords, and the title contains none
+    of the profile's excluded keywords. A profile with no titles or keywords
+    to compare against accepts everything, so an unusual search is never
+    starved by this check. Err toward letting jobs through: the scorer makes
+    the real decision."""
     job_title = job_title or ""
-    job_stems = _distinctive_stems(job_title)
+    title_stems = _expand(_distinctive_stems(job_title))
+    desc_stems = _expand(_distinctive_stems(description, titles=False)) if description else set()
     lowered = job_title.lower()
     for profile in profiles:
         if not profile.get("active", True):
@@ -139,6 +182,10 @@ def title_fits(job_title: str, profiles: list[dict]) -> bool:
             wanted |= _distinctive_stems(term)
         if not wanted:
             return True
-        if job_stems & wanted:
+        wanted = _expand(wanted)
+        if (title_stems | desc_stems) & wanted:
+            return True
+        # "Software Engineer" should still see "Backend Developer".
+        if _has_tech_role(job_title) and any(_has_tech_role(t) for t in profile.get("titles", [])):
             return True
     return False
