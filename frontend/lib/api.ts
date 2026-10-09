@@ -137,6 +137,7 @@ export interface Application {
   notes: string;
   created_at: string;
   submitted_at: string | null;
+  status_updated_at?: string | null;
   job_title: string;
   job_company: string;
   job_location: string;
