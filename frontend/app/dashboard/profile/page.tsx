@@ -178,6 +178,12 @@ export default function ProfilePage() {
             {form.notification_preference === "daily_digest" && "One summary a day listing everything found since your last digest, instead of one per match."}
             {form.notification_preference === "off" && "No alerts — matches will still show up on your Overview and Applications pages, you'll just need to check."}
           </p>
+          {form.notification_preference !== "off" && (
+            <p className="hint">
+              Emails come from support@riseply.com. Add it to your contacts, and if you don't see one,
+              check Spam or Promotions and mark it "Not spam" so the next ones land in your inbox.
+            </p>
+          )}
         </div>
 
         {form.notification_preference !== "off" && (

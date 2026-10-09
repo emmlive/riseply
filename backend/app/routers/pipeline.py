@@ -386,6 +386,13 @@ def import_job(
     if url and not url.lower().startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="The job link should start with http:// or https://")
 
+    if url:
+        already = db.query(models.Application.id).join(models.Job, models.Application.job_id == models.Job.id).filter(
+            models.Application.user_id == user.id, models.Job.url == url,
+        ).first()
+        if already:
+            raise HTTPException(status_code=409, detail="You already have this job in your applications. Look for it under All, or Archived.")
+
     usage.check_and_increment(db, user, "match", 1)
     job_dict = {"title": title, "company": company, "location": location, "url": url, "description": description}
     profile_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()

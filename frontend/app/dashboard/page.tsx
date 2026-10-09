@@ -16,6 +16,7 @@ export default function OverviewPage() {
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
   const [hasSearchedBefore, setHasSearchedBefore] = useState<boolean | null>(null);
+  const [notifyPref, setNotifyPref] = useState("every_match");
   const [profileCount, setProfileCount] = useState<number | null>(null);
   const [userName, setUserName] = useState<string>("");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -79,6 +80,7 @@ export default function OverviewPage() {
       // click, welcome or not, and stays true forever after.
       setHasSearchedBefore(meR.value.used_welcome_search);
       setUserName((meR.value.full_name || "").split(" ")[0]);
+      setNotifyPref(meR.value.notification_preference || "every_match");
       setIsAdmin(!!meR.value.is_admin);
     }
     if (profilesR.status === "fulfilled") setProfileCount(profilesR.value.length);
@@ -150,7 +152,23 @@ export default function OverviewPage() {
     }
   }
 
+  // What to tell someone about email after a run, based on how they set
+  // notifications. Without this the message promised an email that might
+  // never come (turned off) or land in Spam (new sender).
+  function emailNote(): string {
+    if (notifyPref === "off") return " Email alerts are off, so check the Applications tab.";
+    if (notifyPref === "daily_digest") return " Your daily digest email will list them.";
+    return " We also emailed you. If it isn't in your inbox, check Spam and add support@riseply.com to your contacts.";
+  }
+
   async function runPipeline() {
+    // Guard: with no resume there is nothing to match or tailor, and a run
+    // would only use up a search.
+    if (hasResume === false) {
+      setMessage("");
+      setError("Add your resume first. Riseply matches jobs and tailors your resume from it. Go to Resume in the sidebar, then come back.");
+      return;
+    }
     setRunning(true);
     setError("");
     setMessage("");
@@ -238,7 +256,7 @@ export default function OverviewPage() {
         setMessage(
           `Your first search went deep — we scored ${result.jobs_searched} postings for you. ` +
           (result.queued_application_ids.length > 0
-            ? `Found ${result.queued_application_ids.length} match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
+            ? `Found ${result.queued_application_ids.length} match${result.queued_application_ids.length === 1 ? "" : "es"} — they're in the Applications tab.${emailNote()}`
             : result.near_misses.length > 0
             ? "Nothing quite cleared your bar yet, but here's what came closest."
             : "Nothing close yet — try loosening your search criteria, or check back as new postings come in.")
@@ -246,7 +264,7 @@ export default function OverviewPage() {
       } else {
         setMessage(
           result.queued_application_ids.length > 0
-            ? `Found ${result.queued_application_ids.length} new match${result.queued_application_ids.length === 1 ? "" : "es"} — check your email or the Applications tab.`
+            ? `Found ${result.queued_application_ids.length} new match${result.queued_application_ids.length === 1 ? "" : "es"} — they're in the Applications tab.${emailNote()}`
             : result.near_misses.length > 0
             ? "Nothing quite cleared your bar this run — here's what came closest."
             : "No new matches this run. Try again later as new postings come in."
@@ -314,6 +332,12 @@ export default function OverviewPage() {
               Scoring postings one at a time — this can take up to a minute or two.
             </p>
           )}
+          {!running && hasResume && profileCount === 0 && (
+            <p className="hint" style={{ marginTop: 6, marginBottom: 0, maxWidth: 320 }}>
+              No search profile yet, so Riseply will look for the job titles in your resume.{" "}
+              <Link href="/dashboard/profiles">Create a profile</Link> to aim the search.
+            </p>
+          )}
         </div>
       </div>
 
@@ -335,7 +359,8 @@ export default function OverviewPage() {
           </div>
           <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
             Every match lands here for you to approve or reject — nothing gets submitted
-            anywhere without you saying so first.
+            anywhere without you saying so first. Match emails come from support@riseply.com:
+            add it to your contacts, and check Spam if you don't see one.
           </p>
         </div>
       )}
