@@ -13,6 +13,7 @@ const STATUS_FILTERS = [
   { value: "interviewing", label: "Interviewing" },
   { value: "accepted", label: "Accepted" },
   { value: "rejected", label: "Rejected" },
+  { value: "closed", label: "Closed postings" },
 ];
 
 // A distinct pseudo-filter, not a real status -- archived is its own
@@ -25,6 +26,7 @@ export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState("");
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
   const [keywordGaps, setKeywordGaps] = useState<Record<number, KeywordGaps | "loading" | "none">>({});
   const [followups, setFollowups] = useState<Record<number, Followup | "loading" | "none">>({});
@@ -85,8 +87,15 @@ export default function ApplicationsPage() {
 
   async function act(id: number, action: "approve" | "reject" | "mark-submitted" | "mark-interviewing" | "mark-accepted") {
     setBusyId(id);
+    setActionError("");
     try {
       await api(`/applications/${id}/${action}`, { method: "POST" });
+    } catch (e: any) {
+      // e.g. the posting closed since it was matched: say so, and the
+      // refresh below moves it out of the way.
+      setActionError(e?.message || "That didn't work. Try again.");
+    }
+    try {
       await load(filter);
     } finally {
       setBusyId(null);
@@ -189,6 +198,8 @@ export default function ApplicationsPage() {
         </button>
       </div>
 
+      {actionError && <p className="cc-error" role="alert">{actionError}</p>}
+
       {apps.length === 0 && (
         <div className="empty-state">
           {filter === "" && "No applications yet — head to Overview and click \"Find new matches\" to get started."}
@@ -198,6 +209,7 @@ export default function ApplicationsPage() {
           {filter === "interviewing" && "Nothing in an interview stage yet."}
           {filter === "accepted" && "No accepted offers yet — once you get one, mark it accepted to unlock Job Buddy for it."}
           {filter === "rejected" && "Nothing rejected — that's a good thing."}
+          {filter === "closed" && "No closed postings. When a job you were matched to closes, it moves here."}
           {filter === ARCHIVED_FILTER && "Nothing archived — archive an application to tuck it out of your default view without losing it."}
         </div>
       )}
@@ -300,7 +312,10 @@ export default function ApplicationsPage() {
                 </span>
                 <span className="hint" style={{ fontSize: "0.8rem" }}>Found {formatWhen(app.created_at)}</span>
 
-                {app.status === "pending_approval" && (
+                {app.status === "pending_approval" && app.job_open === false && (
+                  <span className="hint">This posting has closed.</span>
+                )}
+                {app.status === "pending_approval" && app.job_open !== false && (
                   <div style={{ display: "flex", gap: 6 }}>
                     <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
                             onClick={() => act(app.id, "approve")}>Approve</button>
@@ -436,7 +451,8 @@ function StatusPill({ status }: { status: string }) {
     submitted: "pill-submitted",
     interviewing: "pill-interviewing",
     accepted: "pill-accepted",
+    closed: "pill-rejected",
   };
-  const label = status.replace("_", " ");
+  const label = status === "closed" ? "posting closed" : status.replace("_", " ");
   return <span className={`pill ${map[status] || "pill-default"}`}>{label}</span>;
 }

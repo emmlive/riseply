@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs
 from app.services import discovery_sources
 from app.config import settings
@@ -74,6 +74,20 @@ def _collect_active_search_titles(db: Session) -> list[str]:
                     titles.append(t)
         except (json.JSONDecodeError, TypeError):
             continue  # a malformed row shouldn't take down discovery for everyone else
+
+    # People who have a default resume but no active search profile are
+    # searched for by the job titles on that resume, so they get jobs the
+    # moment they upload one.
+    has_profile = db.query(models.SearchProfile.user_id).filter_by(active=True).distinct().subquery()
+    resume_rows = db.query(models.User.resume_text).filter(
+        models.User.resume_text.isnot(None), models.User.resume_text != "",
+        not_(models.User.id.in_(has_profile)),
+    ).all()
+    for (resume_text,) in resume_rows:
+        for t in search_terms.resume_job_titles(resume_text, limit=2):
+            if t.lower() not in seen_lower:
+                seen_lower.add(t.lower())
+                titles.append(t)
     return titles
 
 
@@ -117,6 +131,10 @@ def run_scheduled_matching_batch(db: Session) -> dict:
     base gets; anything not covered in one run is picked up on a later
     one, since already-seen jobs aren't rescored."""
     discovery_result = run_discovery(db)
+    try:
+        discovery_result["recheck"] = recheck_pending_postings(db)
+    except Exception as e:  # a failed sweep must never stop the matching run
+        print(f"[pipeline] pending-posting recheck failed: {e}")
 
     users = db.query(models.User).filter(models.User.resume_text.isnot(None)).all()
     per_user_results = {}
@@ -126,7 +144,7 @@ def run_scheduled_matching_batch(db: Session) -> dict:
         has_active_profile = db.query(models.SearchProfile).filter_by(
             user_id=user.id, active=True
         ).first()
-        if not has_active_profile:
+        if not has_active_profile and not search_terms.implicit_profile(user.resume_text, user.location):
             continue
 
         try:
@@ -338,7 +356,10 @@ def _open_job_filters():
     date if it gave one, else when discovery last saw it, else when we
     first found it). NULL is_active counts as active so rows from before
     the column existed keep working."""
-    conds = [or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True))]
+    conds = [or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True)),
+             # A stated closing date that has passed (a day of grace for
+             # dates that carry no time of day).
+             or_(models.Job.closes_at.is_(None), models.Job.closes_at >= datetime.utcnow() - timedelta(days=1))]
     if settings.job_max_age_days and settings.job_max_age_days > 0:
         cutoff = datetime.utcnow() - timedelta(days=settings.job_max_age_days)
         conds.append(func.coalesce(models.Job.posted_at, models.Job.last_seen_at, models.Job.discovered_at) >= cutoff)
@@ -399,6 +420,7 @@ def run_discovery(db: Session) -> dict:
                 salary_currency=j.get("salary_currency", ""),
                 salary_is_predicted=j.get("salary_is_predicted", False),
                 last_seen_at=run_started, posted_at=_parse_posted(j.get("posted")),
+                closes_at=_parse_posted(j.get("closes")),
                 is_active=True,
             ).on_conflict_do_nothing(index_elements=["source", "external_id"])
             result = db.execute(stmt)
@@ -421,6 +443,12 @@ def run_discovery(db: Session) -> dict:
                     models.Job.external_id.in_(ids[i:i + 500]),
                 ).update({models.Job.last_seen_at: run_started, models.Job.is_active: True},
                          synchronize_session=False)
+        for j in jobs:
+            closes = _parse_posted(j.get("closes"))
+            if closes:
+                db.query(models.Job).filter(
+                    models.Job.source == j["source"], models.Job.external_id == j["external_id"],
+                ).update({models.Job.closes_at: closes}, synchronize_session=False)
         db.commit()
 
     def _close_unlisted(source: str, jobs: list[dict]) -> int:
@@ -549,7 +577,78 @@ def run_discovery(db: Session) -> dict:
     del adzuna_location_jobs
 
     print(f"[discovery] total this run -- discovered: {total_discovered}, new: {total_new}")
+    closed_apps = close_applications_for_closed_jobs(db)
+    if closed_apps:
+        print(f"[discovery] {closed_apps} waiting application(s) closed because their posting is gone")
     return {"discovered": total_discovered, "new": total_new}
+
+
+def _job_is_closed_expr():
+    return or_(
+        models.Job.is_active.is_(False),
+        and_(models.Job.closes_at.isnot(None), models.Job.closes_at < datetime.utcnow() - timedelta(days=1)),
+    )
+
+
+def close_applications_for_closed_jobs(db: Session) -> int:
+    """Applications still waiting on the person (awaiting review, or
+    approved but not yet sent) whose posting has since closed become
+    "closed", so nobody is asked to apply to a job that is gone. Anything
+    already submitted or further along is never touched."""
+    ids = [i for (i,) in db.query(models.Job.id).filter(_job_is_closed_expr()).all()]
+    if not ids:
+        return 0
+    now = datetime.utcnow()
+    count = 0
+    for i in range(0, len(ids), 500):
+        count += db.query(models.Application).filter(
+            models.Application.job_id.in_(ids[i:i + 500]),
+            models.Application.status.in_(("pending_approval", "approved")),
+        ).update({
+            models.Application.status: "closed",
+            models.Application.status_updated_at: now,
+            models.Application.notes: "This posting has closed, so there is nothing left to apply to.",
+        }, synchronize_session=False)
+    db.commit()
+    return count
+
+
+def recheck_pending_postings(db: Session, limit: int | None = None) -> dict:
+    """Opens the page of jobs people are still sitting on (awaiting review
+    or approved) to see if they closed since they were matched. Each job is
+    looked at at most once every settings.pending_recheck_days, oldest
+    check first, and at most `limit` per run, so the cost stays flat as the
+    list grows."""
+    if not settings.verify_posting_live:
+        return {"checked": 0, "closed": 0, "applications_closed": 0}
+    limit = settings.pending_recheck_per_run if limit is None else limit
+    stale_before = datetime.utcnow() - timedelta(days=settings.pending_recheck_days)
+    if limit <= 0:
+        return {"checked": 0, "closed": 0, "applications_closed": close_applications_for_closed_jobs(db)}
+    rows = db.query(models.Job).join(models.Application, models.Application.job_id == models.Job.id).filter(
+        models.Application.status.in_(("pending_approval", "approved")),
+        or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True)),
+        or_(models.Job.live_checked_at.is_(None), models.Job.live_checked_at < stale_before),
+        models.Job.url != "",
+    ).order_by(models.Job.live_checked_at.asc().nullsfirst()).distinct().limit(limit).all()
+
+    jobs = {j.id: j.url for j in rows}
+    from concurrent.futures import ThreadPoolExecutor
+    workers = max(1, min(settings.matching_concurrency, len(jobs) or 1))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        verdicts = dict(zip(jobs.keys(), pool.map(posting_check.check_posting, jobs.values())))
+
+    now = datetime.utcnow()
+    closed = 0
+    for job in rows:
+        verdict = verdicts.get(job.id)
+        if verdict is not None:
+            job.live_checked_at = now
+        if verdict is False:
+            job.is_active = False
+            closed += 1
+    db.commit()
+    return {"checked": len(rows), "closed": closed, "applications_closed": close_applications_for_closed_jobs(db)}
 
 
 def _all_profiles_exclude_company(profiles: list[dict], company: str) -> bool:
@@ -603,10 +702,14 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_resume", "near_misses": [], "hit_job_cap": False}
 
     profiles_rows = db.query(models.SearchProfile).filter_by(user_id=user.id, active=True).all()
+    implicit = None
     if not profiles_rows:
-        return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles", "near_misses": [], "hit_job_cap": False}
+        # No search profile yet: search by the job titles on their default resume.
+        implicit = search_terms.implicit_profile(user.resume_text, user.location)
+        if implicit is None:
+            return {"queued_application_ids": [], "usage_limit_reached": False, "skipped_reason": "no_active_profiles", "near_misses": [], "hit_job_cap": False}
 
-    profiles = [{
+    profiles = [implicit] if implicit else [{
         "name": p.name,
         "titles": json.loads(p.titles),
         "locations": json.loads(p.locations),
@@ -662,6 +765,14 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         not_(models.Job.id.in_(already_scored_subq)),
         *_open_job_filters(),
     ).order_by(models.Job.discovered_at.desc()).all()
+
+    # Free check before any paid scoring: skip postings whose title is
+    # nowhere near what any profile wants (or contains a word the person
+    # excluded). These are not marked as scored, so editing a profile
+    # brings them back into play.
+    before_gate = len(unseen_rows)
+    unseen_rows = [r for r in unseen_rows if search_terms.title_fits(r.title, profiles)]
+    off_target = before_gate - len(unseen_rows)
 
     hit_job_cap = False
     if max_jobs is not None and len(unseen_rows) > max_jobs:
@@ -842,6 +953,8 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 near_miss_candidates = near_miss_candidates[:NEAR_MISS_CAP]
             continue
 
+        if best.get("posting_live") is not None:
+            job_row.live_checked_at = datetime.utcnow()
         if best.get("posting_live") is False:
             # The posting's own page says it's closed -- don't show it, and
             # take it out of the pool so nobody else is matched to it.
@@ -1025,7 +1138,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     rise_index.award_points(db, user, "run_search", "Ran a job search")
     return {
         "queued_application_ids": queued, "usage_limit_reached": limit_hit,
-        "skipped_reason": None, "near_misses": near_misses, "hit_job_cap": hit_job_cap,
+        "skipped_reason": None, "near_misses": near_misses, "hit_job_cap": hit_job_cap, "off_target": off_target,
     }
 
 

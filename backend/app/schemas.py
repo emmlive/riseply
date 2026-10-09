@@ -174,6 +174,9 @@ class ApplicationOut(BaseModel):
     salary_max: Optional[int] = None
     salary_currency: str = ""
     salary_is_predicted: bool = False
+    # False once the posting is known to be closed. The page greys the
+    # job out and hides Approve.
+    job_open: bool = True
     is_archived: bool = False
     archived_at: Optional[datetime] = None
 

@@ -207,6 +207,10 @@ class Settings(BaseSettings):
     # Before a match is shown, fetch its posting link and drop it if the
     # page says the job is closed (404/410 or "no longer accepting").
     verify_posting_live: bool = True
+    # Nightly look at jobs people are still sitting on: how many per run,
+    # and how long before the same job is looked at again.
+    pending_recheck_per_run: int = 40
+    pending_recheck_days: int = 3
     # Only the best N matches of a run get their resume auto-tailored
     # (a full Claude rewrite + .docx each). The rest keep the base
     # resume and can be tailored on demand via POST

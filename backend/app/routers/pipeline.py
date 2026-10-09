@@ -11,7 +11,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -246,7 +246,10 @@ def get_near_misses(db: Session = Depends(get_db), user: models.User = Depends(g
     """
     rows = db.query(models.NearMissResult, models.Job).join(
         models.Job, models.NearMissResult.job_id == models.Job.id
-    ).filter(models.NearMissResult.user_id == user.id).order_by(
+    ).filter(
+        models.NearMissResult.user_id == user.id,
+        *pipeline_runner._open_job_filters(),
+    ).order_by(
         models.NearMissResult.score.desc()
     ).all()
 
@@ -264,6 +267,38 @@ def get_near_misses(db: Session = Depends(get_db), user: models.User = Depends(g
 
 
 # --- Applications list + approve/reject ---
+
+def _job_still_open(job: models.Job) -> bool:
+    """False when discovery or a page check has marked the posting closed,
+    or its own closing date has passed. Unknown counts as open."""
+    if job.is_active is False:
+        return False
+    return not (job.closes_at and job.closes_at < datetime.utcnow() - timedelta(days=1))
+
+
+def _ensure_posting_open(db: Session, app_row: models.Application, job: models.Job) -> None:
+    """Called at the moment of commitment (Approve, Auto-fill, Auto-submit):
+    if the posting has closed since it was matched, close the application
+    instead of letting the person spend effort on it. Looks at the live page
+    at most once an hour per job; if the site won't tell us, the job is kept."""
+    closed = not _job_still_open(job)
+    if not closed and settings.verify_posting_live and job.url:
+        recently = job.live_checked_at and job.live_checked_at > datetime.utcnow() - timedelta(hours=1)
+        if not recently:
+            verdict = posting_check.check_posting(job.url)
+            if verdict is not None:
+                job.live_checked_at = datetime.utcnow()
+            if verdict is False:
+                job.is_active = False
+                closed = True
+            db.commit()
+    if closed:
+        app_row.status = "closed"
+        app_row.status_updated_at = datetime.utcnow()
+        app_row.notes = "This posting has closed, so there is nothing left to apply to."
+        db.commit()
+        raise HTTPException(status_code=409, detail="This job posting has closed, so we took it off your list.")
+
 
 def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
     return schemas.ApplicationOut(
@@ -285,6 +320,7 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         salary_min=job.salary_min, salary_max=job.salary_max,
         salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
         is_archived=bool(app.is_archived), archived_at=app.archived_at,
+        job_open=_job_still_open(job),
     )
 
 
@@ -560,6 +596,9 @@ def approve_application(
     app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
+    job = db.get(models.Job, app_row.job_id)
+    if job is not None and app_row.status == "pending_approval":
+        _ensure_posting_open(db, app_row, job)
     app_row.status = "approved"
     app_row.status_updated_at = datetime.utcnow()
     db.commit()
@@ -716,6 +755,7 @@ def _get_approved_application_for_submit(db: Session, application_id: int, user:
     if not allowed:
         raise HTTPException(status_code=400, detail=reason)
 
+    _ensure_posting_open(db, app_row, job)
     return app_row, job
 
 
