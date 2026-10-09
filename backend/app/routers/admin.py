@@ -527,6 +527,13 @@ def system_health(
             "(free at developer.usajobs.gov)."
         )
 
+    if not settings.resend_api_key:
+        warnings.append(
+            "Email is switched off: RESEND_API_KEY isn't set on Render, so match emails, password resets and "
+            "welcome emails are skipped without any error. Add it from your Resend dashboard (the SMTP_* "
+            "variables are no longer used)."
+        )
+
     # The most recent finished discovery run that recorded per-source results.
     last_at, last_kind, last_sources = None, "", []
     recent = db.query(models.ScheduledRunLog).filter(
@@ -555,6 +562,57 @@ def system_health(
         warnings=warnings, last_discovery_at=last_at, last_discovery_kind=last_kind,
         last_discovery=last_discovery,
     )
+
+
+@router.get("/email-health", response_model=schemas.AdminEmailHealthOut)
+def email_health(
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_view("health")),
+):
+    """Is email going out? Counts for the last day and week, and the most
+    recent messages that were refused or skipped, with the reason."""
+    now = datetime.utcnow()
+    day_ago, week_ago = now - timedelta(hours=24), now - timedelta(days=7)
+
+    def count(status: str, since):
+        return db.query(models.EmailLog).filter(
+            models.EmailLog.status == status, models.EmailLog.created_at >= since).count()
+
+    problems = db.query(models.EmailLog).filter(
+        models.EmailLog.status.in_(("failed", "skipped"))
+    ).order_by(models.EmailLog.created_at.desc()).limit(10).all()
+    return schemas.AdminEmailHealthOut(
+        configured=bool(settings.resend_api_key),
+        from_address=f"{settings.resend_from_name} <{settings.resend_from_email}>",
+        sent_24h=count("sent", day_ago), failed_24h=count("failed", day_ago), skipped_24h=count("skipped", day_ago),
+        sent_7d=count("sent", week_ago), failed_7d=count("failed", week_ago), skipped_7d=count("skipped", week_ago),
+        recent_problems=[schemas.AdminEmailFailure(
+            kind=r.kind or "other", to_addr=r.to_addr or "", subject=r.subject or "", status=r.status,
+            error=r.error or "", created_at=r.created_at) for r in problems],
+    )
+
+
+@router.post("/email-test", response_model=schemas.AdminEmailTestOut)
+def email_test(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin_action("health")),
+):
+    """Sends one real email to the signed-in admin, right now, and reports what
+    the email provider said. The fastest way to find out whether email works."""
+    to = admin.notify_email or admin.email
+    try:
+        result = notifier.send_email(
+            to, "Riseply test email",
+            "If you can read this, Riseply can send email. You can delete it.", kind="test")
+    except Exception as e:  # noqa: BLE001
+        return schemas.AdminEmailTestOut(ok=False, to=to, detail=str(e)[:500])
+    if result == "skipped":
+        return schemas.AdminEmailTestOut(
+            ok=False, to=to,
+            detail="Email is switched off: RESEND_API_KEY isn't set on the server.")
+    return schemas.AdminEmailTestOut(
+        ok=True, to=to,
+        detail=f"Sent from {settings.resend_from_email}. Check the inbox (and spam) for {to}.")
 
 
 # --- Content moderation (Job Buddy safety flags) ---

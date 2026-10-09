@@ -819,6 +819,33 @@ export interface AdminSystemHealth {
   last_discovery: AdminDiscoverySourceRun[];
 }
 
+export interface AdminEmailFailure {
+  kind: string;
+  to_addr: string;
+  subject: string;
+  status: string;
+  error: string;
+  created_at: string;
+}
+
+export interface AdminEmailHealth {
+  configured: boolean;
+  from_address: string;
+  sent_24h: number;
+  failed_24h: number;
+  skipped_24h: number;
+  sent_7d: number;
+  failed_7d: number;
+  skipped_7d: number;
+  recent_problems: AdminEmailFailure[];
+}
+
+export interface AdminEmailTest {
+  ok: boolean;
+  to: string;
+  detail: string;
+}
+
 export interface AdminFlaggedMessage {
   id: number;
   application_id: number;
