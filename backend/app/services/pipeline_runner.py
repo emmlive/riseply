@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms
-from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs
+from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, report as source_report
 from app.services import discovery_sources
 from app.config import settings
 
@@ -473,24 +473,46 @@ def run_discovery(db: Session) -> dict:
     total_discovered = 0
     total_new = 0
     run_started = datetime.utcnow()
+    source_stats: list[dict] = []
+
+    def _record(name: str, fetched: int, new: int, detail: str = "") -> None:
+        """One line per source for the Admin health page: what it returned and,
+        when it returned nothing, why (switched off, blocked, or just empty)."""
+        notes, switched_off = source_report.take(name)
+        if fetched > 0:
+            status = "ok"
+        elif switched_off:
+            status = "not_configured"
+        elif notes:
+            status = "failed"
+        else:
+            status = "empty"
+        source_stats.append({"name": name, "status": status, "fetched": fetched, "new": new,
+                             "notes": notes, "detail": detail})
 
     gh_jobs = greenhouse.fetch_all(discovery_sources.GREENHOUSE_COMPANIES)
     total_discovered += len(gh_jobs)
-    total_new += _write_and_commit(gh_jobs)
+    _n = _write_and_commit(gh_jobs)
+    total_new += _n
+    _record("greenhouse", len(gh_jobs), _n)
     gh_closed = _close_unlisted("greenhouse", gh_jobs)
     print(f"[discovery] greenhouse: {len(gh_jobs)} raw postings, written and committed; {gh_closed} no longer listed (closed)")
     del gh_jobs
 
     lever_jobs = lever.fetch_all(discovery_sources.LEVER_COMPANIES)
     total_discovered += len(lever_jobs)
-    total_new += _write_and_commit(lever_jobs)
+    _n = _write_and_commit(lever_jobs)
+    total_new += _n
+    _record("lever", len(lever_jobs), _n)
     lever_closed = _close_unlisted("lever", lever_jobs)
     print(f"[discovery] lever: {len(lever_jobs)} raw postings, written and committed; {lever_closed} no longer listed (closed)")
     del lever_jobs
 
     rss_jobs = rss_boards.fetch_all(discovery_sources.RSS_JOB_FEEDS)
     total_discovered += len(rss_jobs)
-    total_new += _write_and_commit(rss_jobs)
+    _n = _write_and_commit(rss_jobs)
+    total_new += _n
+    _record("rss", len(rss_jobs), _n)
     print(f"[discovery] rss: {len(rss_jobs)} raw postings, written and committed")
     del rss_jobs
 
@@ -504,7 +526,9 @@ def run_discovery(db: Session) -> dict:
     # thorough for exactly that reason.
     remoteok_jobs = remoteok.fetch_jobs()
     total_discovered += len(remoteok_jobs)
-    total_new += _write_and_commit(remoteok_jobs)
+    _n = _write_and_commit(remoteok_jobs)
+    total_new += _n
+    _record("remoteok", len(remoteok_jobs), _n)
     print(f"[discovery] remoteok: {len(remoteok_jobs)} raw postings, written and committed")
     del remoteok_jobs
 
@@ -516,7 +540,9 @@ def run_discovery(db: Session) -> dict:
     # unverified-live-schema caveat remoteok.py has.
     arbeitnow_jobs = arbeitnow.fetch_jobs()
     total_discovered += len(arbeitnow_jobs)
-    total_new += _write_and_commit(arbeitnow_jobs)
+    _n = _write_and_commit(arbeitnow_jobs)
+    total_new += _n
+    _record("arbeitnow", len(arbeitnow_jobs), _n)
     print(f"[discovery] arbeitnow: {len(arbeitnow_jobs)} raw postings, written and committed")
     del arbeitnow_jobs
 
@@ -531,7 +557,9 @@ def run_discovery(db: Session) -> dict:
           f"{len(keywords_this_run)} selected for Adzuna this run")
     adzuna_jobs = adzuna.fetch_by_keywords(keywords_this_run)
     total_discovered += len(adzuna_jobs)
-    total_new += _write_and_commit(adzuna_jobs)
+    _n = _write_and_commit(adzuna_jobs)
+    total_new += _n
+    _record("adzuna", len(adzuna_jobs), _n, f"{len(keywords_this_run)} job title(s) searched")
     print(f"[discovery] adzuna (keyword): {len(adzuna_jobs)} raw postings, written and committed")
     del adzuna_jobs
 
@@ -547,7 +575,9 @@ def run_discovery(db: Session) -> dict:
     print(f"[discovery] {len(usajobs_keywords_this_run)} selected for USAJobs this run")
     usajobs_jobs = usajobs.fetch_by_keywords(usajobs_keywords_this_run)
     total_discovered += len(usajobs_jobs)
-    total_new += _write_and_commit(usajobs_jobs)
+    _n = _write_and_commit(usajobs_jobs)
+    total_new += _n
+    _record("usajobs", len(usajobs_jobs), _n, f"{len(usajobs_keywords_this_run)} job title(s) searched")
     print(f"[discovery] usajobs: {len(usajobs_jobs)} raw postings, written and committed")
     del usajobs_jobs
 
@@ -573,7 +603,9 @@ def run_discovery(db: Session) -> dict:
           f"{len(location_pairs_this_run)} keyword/location pair(s) selected for Adzuna this run")
     adzuna_location_jobs = adzuna.fetch_by_keyword_location_pairs(location_pairs_this_run)
     total_discovered += len(adzuna_location_jobs)
-    total_new += _write_and_commit(adzuna_location_jobs)
+    _n = _write_and_commit(adzuna_location_jobs)
+    total_new += _n
+    _record("adzuna_location", len(adzuna_location_jobs), _n, f"{len(location_pairs_this_run)} title + place pair(s) searched")
     print(f"[discovery] adzuna (location-paired): {len(adzuna_location_jobs)} raw postings, written and committed")
     del adzuna_location_jobs
 
@@ -581,7 +613,7 @@ def run_discovery(db: Session) -> dict:
     closed_apps = close_applications_for_closed_jobs(db)
     if closed_apps:
         print(f"[discovery] {closed_apps} waiting application(s) closed because their posting is gone")
-    return {"discovered": total_discovered, "new": total_new}
+    return {"discovered": total_discovered, "new": total_new, "sources": source_stats}
 
 
 def _job_is_closed_expr():

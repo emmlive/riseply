@@ -5,6 +5,8 @@ https://boards.greenhouse.io/<slug>
 """
 import requests
 
+from app.services.sources import report
+
 API_URL = "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
 
 # Some hosts block requests with no User-Agent (or a default
@@ -43,4 +45,5 @@ def fetch_all(company_slugs: list[str]):
             all_jobs.extend(fetch_jobs(slug))
         except requests.RequestException as e:
             print(f"[greenhouse] failed for {slug}: {e}")
+            report.problem("greenhouse", f"{slug}: {e}")
     return all_jobs

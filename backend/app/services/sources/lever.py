@@ -5,6 +5,8 @@ https://jobs.lever.co/<slug>
 """
 import requests
 
+from app.services.sources import report
+
 API_URL = "https://api.lever.co/v0/postings/{company}?mode=json"
 
 # Same reasoning as greenhouse.py / rss_boards.py -- a bare Python
@@ -42,4 +44,5 @@ def fetch_all(company_slugs: list[str]):
             all_jobs.extend(fetch_jobs(slug))
         except requests.RequestException as e:
             print(f"[lever] failed for {slug}: {e}")
+            report.problem("lever", f"{slug}: {e}")
     return all_jobs

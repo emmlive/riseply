@@ -1177,13 +1177,32 @@ class AdminJobSourceHealthOut(BaseModel):
     source: str
     jobs_last_24h: int
     jobs_last_7d: int
+    active_jobs: int = 0
+    # Last time a discovery run saw this source's postings (not just added a
+    # new one), so a steady source doesn't read as "silent".
     last_discovered_at: Optional[datetime] = None
     status: str  # "healthy" | "stale" | "silent"
+
+
+class AdminDiscoverySourceRun(BaseModel):
+    """What one source did in the most recent discovery run."""
+    name: str
+    status: str  # "ok" | "empty" | "failed" | "not_configured"
+    fetched: int = 0
+    new: int = 0
+    detail: str = ""
+    notes: list[str] = []
 
 
 class AdminSystemHealthOut(BaseModel):
     job_sources: list[AdminJobSourceHealthOut]
     total_jobs_in_pool: int
+    active_jobs_in_pool: int = 0
+    # Plain-language problems that need an admin (a source switched off, ...).
+    warnings: list[str] = []
+    last_discovery_at: Optional[datetime] = None
+    last_discovery_kind: str = ""
+    last_discovery: list[AdminDiscoverySourceRun] = []
 
 
 # --- Admin: content moderation ---
