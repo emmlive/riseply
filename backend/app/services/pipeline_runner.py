@@ -351,6 +351,9 @@ def _parse_posted(value):
         return None
 
 
+PRIVATE_JOB_SOURCES = ("manual", "imported")
+
+
 def _open_job_filters():
     """SQL conditions for 'worth showing': not marked closed, and not
     older than settings.job_max_age_days (by the source's own posted
@@ -358,6 +361,9 @@ def _open_job_filters():
     first found it). NULL is_active counts as active so rows from before
     the column existed keep working."""
     conds = [or_(models.Job.is_active.is_(None), models.Job.is_active.is_(True)),
+             # Jobs a person typed in or pasted belong to that person only;
+             # they must never be matched to anyone else.
+             models.Job.source.notin_(PRIVATE_JOB_SOURCES),
              # A stated closing date that has passed (a day of grace for
              # dates that carry no time of day).
              or_(models.Job.closes_at.is_(None), models.Job.closes_at >= datetime.utcnow() - timedelta(days=1))]

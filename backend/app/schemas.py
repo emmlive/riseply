@@ -150,6 +150,17 @@ class NearMissOut(BaseModel):
 
 
 
+class ImportJobIn(BaseModel):
+    """A job posting the person copied from another site (Indeed,
+    LinkedIn, a company careers page). Only the description is required;
+    title and company are read from the text when left blank."""
+    description: str = Field(min_length=80, max_length=20000)
+    url: str = Field(default="", max_length=1000)
+    title: str = Field(default="", max_length=300)
+    company: str = Field(default="", max_length=200)
+    location: str = Field(default="", max_length=200)
+
+
 class ApplicationOut(BaseModel):
     id: int
     status: str
