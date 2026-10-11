@@ -325,7 +325,7 @@ LEARNING_STYLES = "auto|visual|handson|story|stepbystep"
 
 
 class CareerCoachStartRequest(BaseModel):
-    session_type: str = Field(pattern="^(drill|walkthrough|interview|resume)$")
+    session_type: str = Field(pattern="^(drill|walkthrough|interview|resume|leadership)$")
     target_role: str = Field(min_length=2, max_length=120)
     topic: str = Field(default="", max_length=200)
     learning_style: str = Field(default="auto", pattern=f"^({LEARNING_STYLES})$")

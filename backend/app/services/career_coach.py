@@ -38,7 +38,7 @@ IMPORTANT -- SCOPE AND SAFETY:
 - Be a real coach: specific and honest, not automatically flattering.
 """
 
-SESSION_TYPES = ("drill", "walkthrough", "interview", "resume")
+SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "leadership")
 
 # When the person has "read the coach's replies aloud" switched on, the
 # words are spoken by a text-to-speech voice, which reads every symbol out
@@ -188,6 +188,20 @@ coach and do not explain what you're doing. Open the way a real
 interviewer would (one brief line of context, then ONE realistic
 question suited to this role and this person's background) and wait for
 their answer.""",
+    "leadership": """You are coaching someone who wants to move into a
+LEADERSHIP role (the target role above might be a team lead, manager,
+director, VP or CIO/CTO/CISO-level position, or any role that leads people
+or a function). Teach them how people in that role THINK, not just what
+they do, using practice rather than a lecture.
+
+Pick ONE realistic situation that someone in that exact role really faces
+(a hard people decision, competing priorities with not enough budget or
+time, a risk to weigh, a stakeholder to persuade, a mistake to own, what to
+tell the team or the board). Make it concrete and specific to the role's
+level, in 3 to 5 sentences, with enough detail to decide on. Then ask them
+how they would think it through and what they would do first. Ask for their
+instinct BEFORE you teach anything, and then STOP and wait. Do not give
+the answer or a framework yet.""",
     "resume": """Give a focused resume gap analysis for THIS target role,
 based only on what the resume text actually says:
 1. In 2-3 sentences, how the resume reads for this role overall.
@@ -236,7 +250,7 @@ a few words, even if one was given to you above):
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
-    default_topic = "Resume review" if session_type == "resume" else "Practice session"
+    default_topic = {"resume": "Resume review", "leadership": "How leaders think"}.get(session_type, "Practice session")
     return {"topic": parsed_topic or topic.strip() or default_topic, "opening_message": opening}
 
 
@@ -255,6 +269,25 @@ follow-up, then the next question. Do NOT coach mid-interview. Only step
 out of character, marked clearly with "[Stepping out of the interview]",
 if they explicitly ask for feedback or the interview has reached its
 natural end.""",
+    "leadership": """You're coaching this person to think like a leader in
+the target role. React to their answer in this order, briefly:
+1. What was sound in their thinking, said plainly and specifically.
+2. The leadership shift: where an individual contributor's instinct (do it
+   myself, be right, fix the task) differs from how a good leader in this
+   role thinks (outcomes over tasks, people and their growth, trade-offs and
+   priorities, risk, who needs to hear what and when, what to measure).
+   Name the one or two lenses that matter most for THIS situation, not a
+   long list.
+3. What a strong leader would typically do first and why, including how
+   they would communicate it up, down and across.
+Tie it to this person's own background from their resume where it honestly
+helps, for example how an auditor's or engineer's habits are a strength or
+a trap in the new role. When it fits, say what the role feels like on the
+job day to day (what the first 90 days look like, what surprises new
+leaders, what to stop doing). Then give a NEW situation that is a step
+harder or a different area (people, money, risk, strategy, stakeholders).
+One situation at a time. If the situation involves legal, HR or
+disciplinary matters, say plainly that real cases need HR or counsel.""",
     "resume": """You're coaching this person on their resume for the target
 role. When they give a bullet or section, rewrite it: show the improved
 version, then one sentence on what changed and why. Keep every claim
@@ -307,6 +340,12 @@ def finish_session(session_type: str, target_role: str, topic: str, resume_text:
         what = ("how ready their resume is for this target role AFTER this "
                 "session -- reflecting the gaps that remain and the "
                 "improvements made, not effort alone")
+    elif session_type == "leadership":
+        what = ("how well the PERSON showed leadership judgment for this target "
+                "role, based only on what they said: weighing trade-offs, "
+                "thinking about people and outcomes rather than only tasks, "
+                "handling risk, and communicating. Judge the thinking, not "
+                "confident-sounding buzzwords")
     else:
         what = "how the PERSON actually did in this session, based only on what they said"
 

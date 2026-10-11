@@ -27,6 +27,7 @@ const SESSION_TYPES: { value: CareerCoachSessionType; label: string; hint: strin
   { value: "walkthrough", label: "Task walkthrough", hint: "Work through a realistic task from the job, step by step" },
   { value: "interview", label: "Mock interview", hint: "A hiring manager interviews you for this role" },
   { value: "resume", label: "Resume coaching", hint: "Gap analysis for this role, then bullet-by-bullet rewrites" },
+  { value: "leadership", label: "How leaders think", hint: "Moving into management or an executive role? Practice the decisions leaders face and learn how they think" },
 ];
 
 // How the person likes to learn. "auto" lets the coach adapt; the others
@@ -427,7 +428,9 @@ export default function CareerCoachPage() {
                 <label className="cc-label" htmlFor="cc-role">Role or field you&apos;re aiming for</label>
                 <input
                   id="cc-role" className="cc-input cc-input-lg"
-                  placeholder="For example: Data analyst, UX designer, ICU nurse"
+                  placeholder={type === "leadership"
+                    ? "For example: Engineering manager, Director of IT, CIO"
+                    : "For example: Data analyst, UX designer, ICU nurse"}
                   value={role} maxLength={120} onChange={(e) => setRole(e.target.value)}
                 />
               </div>
@@ -466,7 +469,11 @@ export default function CareerCoachPage() {
                 </label>
                 <input
                   id="cc-topic" className="cc-input"
-                  placeholder={type === "resume" ? "For example: Work experience" : "Leave blank and the coach will pick one"}
+                  placeholder={
+                    type === "resume" ? "For example: Work experience"
+                    : type === "leadership" ? "For example: giving hard feedback, budgets, or your first 90 days. Leave blank and the coach will pick one"
+                    : "Leave blank and the coach will pick one"
+                  }
                   value={topic} maxLength={200} onChange={(e) => setTopic(e.target.value)}
                 />
               </div>
