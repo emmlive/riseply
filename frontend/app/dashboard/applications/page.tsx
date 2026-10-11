@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
 import CoverLetter from "@/components/CoverLetter";
+import BackToTop from "@/components/BackToTop";
 import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
@@ -271,6 +272,7 @@ export default function ApplicationsPage() {
 
   return (
     <div>
+      <BackToTop />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Applications</h1>
         <button className="btn btn-primary btn-sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
