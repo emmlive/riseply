@@ -22,6 +22,7 @@ const PART_NAMES: Record<string, string> = {
   resume: "Resume coaching",
   walkthrough: "Task walkthroughs",
   drill: "Knowledge drills",
+  leadership: "Leadership practice",
 };
 
 export const THRESHOLDS = "Just starting is under 50, Building 50 to 64, Getting close 65 to 79, Ready 80 and up, once at least 3 scored sessions are behind it.";
