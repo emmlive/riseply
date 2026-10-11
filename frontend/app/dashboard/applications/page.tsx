@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
+import CoverLetter from "@/components/CoverLetter";
 import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
@@ -74,6 +75,7 @@ export default function ApplicationsPage() {
   const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
   const [autoSubmitEligible, setAutoSubmitEligible] = useState<Record<number, boolean>>({});
   const [previewApp, setPreviewApp] = useState<Application | null>(null);
+  const [letterApp, setLetterApp] = useState<Application | null>(null);
 
   const [loadError, setLoadError] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -464,6 +466,15 @@ export default function ApplicationsPage() {
                       Preview resume
                     </button>
                   )}
+                  {app.status !== "rejected" && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: "2px 8px" }}
+                      onClick={() => setLetterApp(app)}
+                    >
+                      {app.has_cover_letter ? "Cover letter" : "Write cover letter"}
+                    </button>
+                  )}
                   {app.has_tailored_resume_data && (
                     <a
                       href="#"
@@ -638,6 +649,14 @@ export default function ApplicationsPage() {
           </div>
         );
       })}
+      {letterApp && (
+        <CoverLetter
+          applicationId={letterApp.id}
+          company={letterApp.job_company}
+          onClose={() => setLetterApp(null)}
+          onChanged={() => load(filter)}
+        />
+      )}
       {previewApp && (
         <ResumePreview
           applicationId={previewApp.id}

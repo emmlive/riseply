@@ -265,6 +265,9 @@ class Application(Base):
     # model's response didn't follow the expected format -- the
     # tailoring itself still succeeds either way, this is additive.
     tailoring_rationale = Column(Text, default="", server_default="")
+    # The tailored cover letter for this application (plain text), written
+    # on request and editable. Empty until the person asks for one.
+    cover_letter = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     # --- Archivable pattern ---
