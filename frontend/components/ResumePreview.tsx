@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, ResumeBlock, ResumePreviewData } from "@/lib/api";
+import { api, downloadFile, ResumeBlock, ResumeFitResult, ResumePreviewData } from "@/lib/api";
 
 // Shows a tailored resume as a page, before the person downloads it, and
 // lets them edit it. Content comes from the stored .docx
@@ -48,6 +48,8 @@ export default function ResumePreview({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [fitting, setFitting] = useState<number | null>(null);
+  const [fitNote, setFitNote] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const dirty = editing && data !== null &&
@@ -107,6 +109,35 @@ export default function ResumePreview({
     setError("");
   }
 
+  // Asks for a shorter version that keeps the points most relevant to the job,
+  // and opens it in the editor UNSAVED so the person reviews it first.
+  async function shorten(pages: number) {
+    if (!data) return;
+    setFitting(pages);
+    setError("");
+    setFitNote("");
+    try {
+      const r = await api<ResumeFitResult>(`/applications/${applicationId}/tailored-resume/fit`, {
+        method: "POST",
+        body: JSON.stringify({ pages }),
+      });
+      if (JSON.stringify(r.blocks) === JSON.stringify(data.blocks)) {
+        setFitNote(`It already fits ${pages === 1 ? "one page" : "two pages"} (about ${r.pages} pages). Nothing was changed.`);
+        return;
+      }
+      setDraft(r.blocks.map(withUid));
+      setEditing(true);
+      setFitNote(
+        `${r.note} Length went from about ${r.pages_before} to about ${r.pages_after} pages. ` +
+        "This is a draft: read it, change anything, then press Save changes. Cancel keeps your current resume."
+      );
+    } catch (e: any) {
+      setError(e?.message || "We couldn't shorten this resume right now. Try again shortly.");
+    } finally {
+      setFitting(null);
+    }
+  }
+
   async function save() {
     setSaving(true);
     setError("");
@@ -117,6 +148,7 @@ export default function ResumePreview({
       });
       setData(updated);
       setEditing(false);
+      setFitNote("");
       onSaved?.();
     } catch (e: any) {
       setError(e?.message || "We couldn't save your changes. Please try again.");
@@ -183,10 +215,36 @@ export default function ResumePreview({
         <div className="rp-body">
           {error && <p className="cc-error" role="alert">{error}</p>}
           {!data && !error && <p className="hint">Loading preview…</p>}
+          {fitNote && <div className="brief rp-why" role="status">{fitNote}</div>}
           {data && !editing && (
             <>
               {data.rationale && (
                 <div className="brief rp-why"><strong>What we changed:</strong> {data.rationale}</div>
+              )}
+              {data.ats && data.ats.length > 0 && (
+                <section className="brief rp-why rp-ats" aria-label="Length and applicant tracking system check">
+                  <strong>Length and ATS check</strong>
+                  {typeof data.pages === "number" && <span className="hint"> · about {data.pages} pages</span>}
+                  <ul className="rp-ats-list">
+                    {data.ats.map((c) => (
+                      <li key={c.label}>
+                        <span className={c.ok ? "rp-ats-ok" : "rp-ats-warn"} aria-hidden="true">{c.ok ? "✓" : "!"}</span>
+                        <span><strong>{c.label}:</strong> <span className="visually-hidden">{c.ok ? "passed. " : "needs attention. "}</span>{c.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="rp-ats-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={() => shorten(2)} disabled={fitting !== null}>
+                      {fitting === 2 ? "Shortening…" : "Shorten to 2 pages"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => shorten(1)} disabled={fitting !== null}>
+                      {fitting === 1 ? "Shortening…" : "Shorten to 1 page"}
+                    </button>
+                    <span className="hint">
+                      Keeps every job, date and number, and the points that matter most for this role. You review it before anything is saved. Uses one tailored resume.
+                    </span>
+                  </div>
+                </section>
               )}
               <article className="rp-paper" aria-label="Resume preview">
                 {data.blocks.map((b, i) => <Block key={i} block={b} />)}

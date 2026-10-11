@@ -924,10 +924,29 @@ export type ResumeBlock =
   | { type: "entry"; left: string; right: string }
   | { type: "skills"; label: string; text: string };
 
+export interface AtsCheck {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
 export interface ResumePreviewData {
   filename: string;
   blocks: ResumeBlock[];
   rationale: string;
+  // Estimated length in pages and the applicant-tracking-system checks.
+  pages?: number;
+  ats?: AtsCheck[];
+}
+
+export interface ResumeFitResult {
+  blocks: ResumeBlock[];
+  pages_before: number;
+  pages_after: number;
+  fits: boolean;
+  note: string;
+  pages: number;
+  ats: AtsCheck[];
 }
 
 export async function downloadFile(path: string, fallbackFilename: string) {
