@@ -526,10 +526,13 @@ def _resume_preview_payload(app_row: models.Application) -> dict:
         blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
     except Exception:
         raise HTTPException(status_code=422, detail="This resume couldn't be previewed. You can still download it.")
+    report = resume_customizer.ats_checks(blocks)
     return {
         "filename": app_row.tailored_resume_path or "tailored_resume.docx",
         "blocks": blocks,
         "rationale": app_row.tailoring_rationale or "",
+        "pages": report["pages"],
+        "ats": report["checks"],
     }
 
 
@@ -554,6 +557,47 @@ def preview_tailored_resume(
     what the download contains -- including resumes made before the new
     layout existed."""
     return _resume_preview_payload(_own_application_with_resume(db, user, application_id))
+
+
+class FitPagesIn(BaseModel):
+    pages: int = Field(ge=1, le=2)
+
+
+@router.post("/applications/{application_id}/tailored-resume/fit")
+def fit_tailored_resume(
+    application_id: int,
+    payload: FitPagesIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Proposes a shorter version of the tailored resume that fits one or
+    two pages and keeps the points most relevant to the job. Nothing is
+    saved: the person reviews it in the editor and saves it if they like
+    it. Costs one tailored-resume use when it has to be shortened (and
+    nothing if it already fits, or if the AI step fails)."""
+    app_row = _own_application_with_resume(db, user, application_id)
+    job = db.get(models.Job, app_row.job_id)
+    try:
+        blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="This resume couldn't be read. Re-tailor it first.")
+
+    max_pages = float(payload.pages)
+    if resume_customizer.fits_pages(blocks, max_pages):
+        result = resume_customizer.fit_to_pages(blocks, {}, max_pages, use_ai=False)
+    else:
+        usage.check_and_increment(db, user, "tailor_resume", 1)
+        job_dict = {"title": job.title if job else "", "company": job.company if job else "",
+                    "description": job.description if job else ""}
+        result = resume_customizer.fit_to_pages(blocks, job_dict, max_pages)
+        if not result["ai_used"]:
+            usage.decrement(db, user.id, "tailor_resume", 1)   # nothing was spent on the AI
+
+    report = resume_customizer.ats_checks(result["blocks"])
+    return {
+        "blocks": result["blocks"], "pages_before": result["pages_before"], "pages_after": result["pages_after"],
+        "fits": result["fits"], "note": result["note"], "pages": report["pages"], "ats": report["checks"],
+    }
 
 
 @router.put("/applications/{application_id}/tailored-resume")
