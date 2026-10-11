@@ -1026,3 +1026,15 @@ textarea.cc-input { resize: vertical; }
 .cl-text:focus { outline: none; border-color: #1F7A6C; background: #fff; box-shadow: 0 0 0 2px rgba(31, 122, 108, 0.18); }
 .cl-foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: 760px; margin: 12px auto 0; }
 @media (max-width: 640px) { .cl-paper { padding: 20px 16px; } }
+
+/* ---- Back to top ---- */
+.back-to-top {
+  position: fixed; right: 24px; bottom: 24px; z-index: 40;
+  width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff;
+  box-shadow: 0 4px 14px rgba(22, 35, 61, 0.28);
+}
+.back-to-top:hover { background: var(--accent-hover); }
+.back-to-top:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+@media (max-width: 640px) { .back-to-top { right: 14px; bottom: 14px; } }
