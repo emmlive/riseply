@@ -177,22 +177,93 @@ export function listVoices(): Promise<VoiceInfo[]> {
   });
 }
 
-export function speak(text: string, onEnd?: () => void): void {
-  if (!speechSynthesisSupported()) return;
-  const synth = window.speechSynthesis;
-  synth.cancel();
-  const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
-  const prefs = getVoicePrefs();
-  u.rate = prefs.rate;
-  if (prefs.uri) {
-    const voice = synth.getVoices().find((v) => v.voiceURI === prefs.uri);
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
+// Chrome silently stops long utterances (roughly 15 seconds in) and drops a
+// speak() that arrives right after cancel(). So the text is read in
+// sentence-sized pieces, queued one after another, and started a beat after
+// any cancel. Each call gets a number so a stale piece from an earlier call
+// can never end or restart a newer one.
+let speakRun = 0;
+
+export function splitForSpeech(text: string, maxLen = 180): string[] {
+  const pieces: string[] = [];
+  for (const para of (text || "").split(/\n+/)) {
+    const sentences = para.match(/[^.!?;:]+[.!?;:]*\s*/g) || [para];
+    let buf = "";
+    for (const raw of sentences) {
+      const sentence = raw.trim();
+      if (!sentence) continue;
+      if (buf && (buf + " " + sentence).length > maxLen) { pieces.push(buf); buf = ""; }
+      if (sentence.length > maxLen) {
+        // A very long sentence with no punctuation: cut it at spaces.
+        const words = sentence.split(/\s+/);
+        let part = "";
+        for (const w of words) {
+          if (part && (part + " " + w).length > maxLen) { pieces.push(part); part = ""; }
+          part = part ? part + " " + w : w;
+        }
+        buf = part;
+      } else {
+        buf = buf ? buf + " " + sentence : sentence;
+      }
+    }
+    if (buf) pieces.push(buf);
   }
-  u.onend = () => onEnd?.();
-  u.onerror = () => onEnd?.();
-  synth.speak(u);
+  return pieces;
+}
+
+// onEnd fires once, when everything has been read or reading stopped.
+// onProblem fires if the browser never starts speaking, so the person is
+// told instead of left clicking a silent button.
+export function speak(text: string, onEnd?: () => void, onProblem?: (message: string) => void): void {
+  if (!speechSynthesisSupported()) { onProblem?.("This browser can't read aloud. Try Chrome or Edge."); onEnd?.(); return; }
+  const synth = window.speechSynthesis;
+  const run = ++speakRun;
+  synth.cancel();
+
+  const pieces = splitForSpeech(cleanForSpeech(text));
+  if (pieces.length === 0) { onEnd?.(); return; }
+  const prefs = getVoicePrefs();
+  let finished = false;
+  let started = false;
+  const done = () => { if (!finished) { finished = true; onEnd?.(); } };
+
+  const speakPiece = (i: number) => {
+    if (run !== speakRun) return;               // a newer speak() or a stop took over
+    if (i >= pieces.length) { done(); return; }
+    const u = new SpeechSynthesisUtterance(pieces[i]);
+    u.rate = prefs.rate;
+    if (prefs.uri) {
+      const voice = synth.getVoices().find((v) => v.voiceURI === prefs.uri);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+    }
+    u.onstart = () => { started = true; };
+    u.onend = () => speakPiece(i + 1);
+    u.onerror = (e: any) => {
+      if (run !== speakRun) return;
+      if (e?.error === "interrupted" || e?.error === "canceled") return;
+      if (i === 0 && !started) onProblem?.("Your browser couldn't play the voice. Check the tab isn't muted, or pick a different voice under Voice settings.");
+      done();
+    };
+    synth.speak(u);
+  };
+
+  // A beat after cancel(), and resume() in case the engine was left paused.
+  setTimeout(() => {
+    if (run !== speakRun) return;
+    try { synth.resume(); } catch { /* not paused */ }
+    speakPiece(0);
+    // If nothing has started after a few seconds, say so.
+    setTimeout(() => {
+      if (run === speakRun && !started && !finished) {
+        onProblem?.("Nothing played. Check the tab isn't muted and your sound output is right, then try again.");
+        stopSpeaking();
+        done();
+      }
+    }, 4000);
+  }, 80);
 }
 
 export function stopSpeaking(): void {
+  speakRun++;   // makes any queued piece of an earlier speak() do nothing
   if (speechSynthesisSupported()) window.speechSynthesis.cancel();
 }
