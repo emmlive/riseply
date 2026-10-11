@@ -22,7 +22,9 @@ export default function CoverLetter({
 }) {
   const [saved, setSaved] = useState<string | null>(null);   // null while loading
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState<"" | "writing" | "saving" | "downloading">("");
+  const [busy, setBusy] = useState<"" | "writing" | "saving" | "downloading" | "humanizing">("");
+  const [before, setBefore] = useState<string | null>(null);   // draft before the last rewrite, for Undo
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -65,12 +67,37 @@ export default function CoverLetter({
       const d = await api<Letter>(`/applications/${applicationId}/cover-letter`, { method: "POST" });
       setSaved(d.text);
       setDraft(d.text);
+      setBefore(null);
+      setNote("");
       onChanged?.();
     } catch (e: any) {
       setError(e?.message || "Couldn't write the letter right now. Try again shortly.");
     } finally {
       setBusy("");
     }
+  }
+
+  async function humanize() {
+    if (dirty && !(await save())) return;
+    setBusy("humanizing");
+    setError("");
+    setNote("");
+    try {
+      const d = await api<{ text: string; note: string }>(`/applications/${applicationId}/cover-letter/humanize`, { method: "POST" });
+      setBefore(draft);
+      setDraft(d.text);
+      setNote(`${d.note} This is a draft: read it, then press Save changes, or Undo to go back.`);
+    } catch (e: any) {
+      setError(e?.message || "Couldn't rewrite the letter right now. Try again shortly.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function undo() {
+    if (before !== null) setDraft(before);
+    setBefore(null);
+    setNote("");
   }
 
   async function save(): Promise<boolean> {
@@ -83,6 +110,8 @@ export default function CoverLetter({
       });
       setSaved(d.text);
       setDraft(d.text);
+      setBefore(null);
+      setNote("");
       onChanged?.();
       return true;
     } catch (e: any) {
@@ -163,12 +192,19 @@ export default function CoverLetter({
                   spellCheck
                 />
               </article>
+              {note && <div className="brief rp-why" role="status" style={{ marginTop: 12 }}>{note}</div>}
               <div className="cl-foot">
+                <button className="btn btn-ghost btn-sm" onClick={humanize} disabled={busy !== ""}>
+                  {busy === "humanizing" ? "Rewriting…" : "Make it sound more human"}
+                </button>
+                {before !== null && (
+                  <button className="btn btn-ghost btn-sm" onClick={undo} disabled={busy !== ""}>Undo</button>
+                )}
                 <span className="hint">{words} words{words > 400 ? ". A little long. Most letters work best under 400." : ""}</span>
                 <button className="btn btn-ghost btn-sm" onClick={write} disabled={busy !== ""}>
                   {busy === "writing" ? "Writing…" : "Write a new one"}
                 </button>
-                <span className="hint">Uses one interview-prep use.</span>
+                <span className="hint">Each rewrite uses one interview-prep use. It keeps your facts and numbers.</span>
               </div>
             </>
           )}

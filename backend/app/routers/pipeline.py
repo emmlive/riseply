@@ -602,6 +602,39 @@ def fit_tailored_resume(
     }
 
 
+@router.post("/applications/{application_id}/tailored-resume/humanize")
+def humanize_tailored_resume(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Proposes a version whose summary and bullets read like a person wrote
+    them. Nothing is saved: the person reviews it in the editor. Only those
+    lines can change; every number and tool name is checked. Costs one
+    tailored-resume use, refunded if no safe rewrite comes back."""
+    app_row = _own_application_with_resume(db, user, application_id)
+    job = db.get(models.Job, app_row.job_id)
+    try:
+        blocks = resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="This resume couldn't be read. Re-tailor it first.")
+
+    usage.check_and_increment(db, user, "tailor_resume", 1)
+    try:
+        new_blocks, note = resume_customizer.humanize_blocks(
+            blocks, {"title": job.title if job else "", "company": job.company if job else "",
+                     "description": job.description if job else ""})
+    except ValueError as e:
+        usage.decrement(db, user.id, "tailor_resume", 1)
+        raise HTTPException(status_code=502, detail=f"{e} Your resume is unchanged. Try again.")
+    except Exception:
+        usage.decrement(db, user.id, "tailor_resume", 1)
+        raise HTTPException(status_code=502, detail="Couldn't rewrite this right now. Try again shortly.")
+
+    report = resume_customizer.ats_checks(new_blocks)
+    return {"blocks": new_blocks, "note": note, "pages": report["pages"], "ats": report["checks"]}
+
+
 @router.put("/applications/{application_id}/tailored-resume")
 def save_tailored_resume_edits(
     application_id: int,
@@ -701,6 +734,31 @@ def write_cover_letter(
     app_row.cover_letter = letter
     db.commit()
     return {"text": letter, "company": job.company, "title": job.title}
+
+
+@router.post("/applications/{application_id}/cover-letter/humanize")
+def humanize_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Proposes a more natural-sounding version of the letter as it is saved
+    right now. Nothing is saved: the person reviews it first. Metered like
+    writing a letter, refunded if no safe rewrite comes back."""
+    app_row, job = _app_and_job(db, user, application_id)
+    if not (app_row.cover_letter or "").strip():
+        raise HTTPException(status_code=404, detail="Write a cover letter first.")
+    usage.check_and_increment(db, user, "interview_prep", 1)
+    try:
+        text, note = cover_letter_service.humanize(
+            app_row.cover_letter, {"title": job.title, "company": job.company})
+    except ValueError as e:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        raise HTTPException(status_code=502, detail=f"{e} Your letter is unchanged. Try again.")
+    except Exception:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        raise HTTPException(status_code=502, detail="Couldn't rewrite this right now. Try again shortly.")
+    return {"text": text, "note": note}
 
 
 @router.put("/applications/{application_id}/cover-letter")

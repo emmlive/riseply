@@ -950,6 +950,13 @@ export interface ResumeFitResult {
   ats: AtsCheck[];
 }
 
+export interface HumanizeResult {
+  blocks: ResumeBlock[];
+  note: string;
+  pages: number;
+  ats: AtsCheck[];
+}
+
 export async function downloadFile(path: string, fallbackFilename: string) {
   const token = getToken();
   const res = await fetch(`${API_URL}${path}`, {
