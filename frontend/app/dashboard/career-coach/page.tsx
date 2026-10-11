@@ -255,7 +255,7 @@ export default function CareerCoachPage() {
   function playMessage(m: CareerCoachMessage) {
     if (speakingId === m.id) { stopSpeaking(); setSpeakingId(null); return; }
     setSpeakingId(m.id);
-    speak(m.content, () => setSpeakingId((cur) => (cur === m.id ? null : cur)));
+    speak(m.content, () => setSpeakingId((cur) => (cur === m.id ? null : cur)), (msg) => setError(msg));
   }
 
   function flushNotes() {
