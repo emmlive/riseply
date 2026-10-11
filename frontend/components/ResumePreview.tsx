@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, downloadFile, ResumeBlock, ResumeFitResult, ResumePreviewData } from "@/lib/api";
+import { api, downloadFile, HumanizeResult, ResumeBlock, ResumeFitResult, ResumePreviewData } from "@/lib/api";
 
 // Shows a tailored resume as a page, before the person downloads it, and
 // lets them edit it. Content comes from the stored .docx
@@ -50,6 +50,7 @@ export default function ResumePreview({
   const [saving, setSaving] = useState(false);
   const [fitting, setFitting] = useState<number | null>(null);
   const [fitNote, setFitNote] = useState("");
+  const [humanizing, setHumanizing] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const dirty = editing && data !== null &&
@@ -135,6 +136,30 @@ export default function ResumePreview({
       setError(e?.message || "We couldn't shorten this resume right now. Try again shortly.");
     } finally {
       setFitting(null);
+    }
+  }
+
+  async function humanize() {
+    if (!data) return;
+    setHumanizing(true);
+    setError("");
+    setFitNote("");
+    try {
+      const r = await api<HumanizeResult>(`/applications/${applicationId}/tailored-resume/humanize`, { method: "POST" });
+      if (JSON.stringify(r.blocks) === JSON.stringify(data.blocks)) {
+        setFitNote("Nothing needed changing. Your wording already reads naturally.");
+        return;
+      }
+      setDraft(r.blocks.map(withUid));
+      setEditing(true);
+      setFitNote(
+        `${r.note} Only the summary and bullet wording changed. Jobs, dates, skills and numbers are untouched. ` +
+        "This is a draft: read it, change anything, then press Save changes. Cancel keeps your current resume."
+      );
+    } catch (e: any) {
+      setError(e?.message || "We couldn't rewrite this resume right now. Try again shortly.");
+    } finally {
+      setHumanizing(false);
     }
   }
 
@@ -234,7 +259,7 @@ export default function ResumePreview({
                     ))}
                   </ul>
                   <div className="rp-ats-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => shorten(2)} disabled={fitting !== null}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => shorten(2)} disabled={fitting !== null || humanizing}>
                       {fitting === 2 ? "Shortening…" : "Shorten to 2 pages"}
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => shorten(1)} disabled={fitting !== null}>
@@ -246,6 +271,17 @@ export default function ResumePreview({
                   </div>
                 </section>
               )}
+              <section className="brief rp-why" aria-label="Make the wording sound more human">
+                <strong>Make it sound more human</strong>
+                <div className="rp-ats-actions" style={{ marginTop: 8 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={humanize} disabled={humanizing || fitting !== null}>
+                    {humanizing ? "Rewriting…" : "Make it sound more human"}
+                  </button>
+                  <span className="hint">
+                    Rewrites your summary and bullets in plainer, more natural words. Every job, date, skill and number stays as it is. You review it before anything is saved. Uses one tailored resume.
+                  </span>
+                </div>
+              </section>
               <article className="rp-paper" aria-label="Resume preview">
                 {data.blocks.map((b, i) => <Block key={i} block={b} />)}
               </article>
