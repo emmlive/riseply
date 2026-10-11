@@ -185,6 +185,7 @@ class ApplicationOut(BaseModel):
     organization_accent_color: str = ""
     tailoring_rationale: str = ""
     has_tailored_resume_data: bool = False
+    has_cover_letter: bool = False
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = ""

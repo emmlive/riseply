@@ -11,6 +11,7 @@ from sqlalchemy import and_, not_, exists
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import cover_letter as cover_letter_service
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
@@ -323,6 +324,7 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         organization_accent_color=(app.organization.accent_color or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
         has_tailored_resume_data=bool(app.tailored_resume_data),
+        has_cover_letter=bool((app.cover_letter or '').strip()),
         salary_min=job.salary_min, salary_max=job.salary_max,
         salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
         is_archived=bool(app.is_archived), archived_at=app.archived_at,
@@ -631,6 +633,112 @@ def save_tailored_resume_edits(
     db.commit()
     db.refresh(app_row)
     return _resume_preview_payload(app_row)
+
+
+class CoverLetterIn(BaseModel):
+    text: str = Field(max_length=cover_letter_service.MAX_LETTER_CHARS)
+
+
+def _app_and_job(db: Session, user: models.User, application_id: int):
+    row = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.id == application_id, models.Application.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return row
+
+
+def _resume_blocks_or_none(app_row: models.Application):
+    if not app_row.tailored_resume_data:
+        return None
+    try:
+        return resume_customizer.docx_to_blocks(app_row.tailored_resume_data)
+    except Exception:
+        return None
+
+
+@router.get("/applications/{application_id}/cover-letter")
+def get_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row, job = _app_and_job(db, user, application_id)
+    return {"text": app_row.cover_letter or "", "company": job.company, "title": job.title}
+
+
+@router.post("/applications/{application_id}/cover-letter")
+def write_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Writes (or rewrites) the cover letter from the tailored resume and
+    the posting. Metered against interview_prep, the same bucket as the
+    other 'AI writes career-application material' actions. Replaces any
+    earlier letter, so the screen asks before it does that."""
+    app_row, job = _app_and_job(db, user, application_id)
+    blocks = _resume_blocks_or_none(app_row)
+    source = blocks if blocks else (user.resume_text or "")
+    if not source:
+        raise HTTPException(status_code=400, detail="Add your resume before writing a cover letter.")
+
+    usage.check_and_increment(db, user, "interview_prep", 1)
+    try:
+        name, _ = cover_letter_service.letterhead(blocks or [], user.full_name or "")
+        letter = cover_letter_service.generate(
+            source,
+            {"title": job.title, "company": job.company, "description": job.description},
+            name,
+        )
+    except ValueError as e:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        raise HTTPException(status_code=502, detail=f"{e} Try again, or write it yourself.")
+    except Exception:
+        usage.decrement(db, user.id, "interview_prep", 1)
+        raise HTTPException(status_code=502, detail="Couldn't write the cover letter right now. Try again shortly.")
+
+    app_row.cover_letter = letter
+    db.commit()
+    return {"text": letter, "company": job.company, "title": job.title}
+
+
+@router.put("/applications/{application_id}/cover-letter")
+def save_cover_letter(
+    application_id: int,
+    payload: CoverLetterIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    app_row, job = _app_and_job(db, user, application_id)
+    text = payload.text.replace("\r\n", "\n").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="The letter can't be empty. Write a new one instead.")
+    app_row.cover_letter = text
+    db.commit()
+    return {"text": text, "company": job.company, "title": job.title}
+
+
+@router.get("/applications/{application_id}/cover-letter/download")
+def download_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    import re as _re
+    from fastapi.responses import Response
+
+    app_row, job = _app_and_job(db, user, application_id)
+    if not (app_row.cover_letter or "").strip():
+        raise HTTPException(status_code=404, detail="No cover letter for this application yet.")
+    name, contact = cover_letter_service.letterhead(_resume_blocks_or_none(app_row) or [], user.full_name or "")
+    data = cover_letter_service.build_docx(app_row.cover_letter, name, contact)
+    safe = _re.sub(r"[^A-Za-z0-9]+", "_", job.company or "").strip("_") or "Job"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="Cover_Letter_{safe}.docx"'},
+    )
 
 
 @router.post("/applications/{application_id}/retailor", response_model=schemas.ApplicationOut)
