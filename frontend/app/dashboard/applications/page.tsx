@@ -205,6 +205,33 @@ export default function ApplicationsPage() {
     }
   }
 
+  async function deleteApp(id: number) {
+    if (!window.confirm("Delete this rejected job? Its saved resume and cover letter are removed. Riseply remembers you rejected it, so it won't suggest it again.")) return;
+    setBusyId(id);
+    setActionError("");
+    try {
+      await api(`/applications/${id}`, { method: "DELETE" });
+      await load(filter);
+    } catch (err: any) {
+      setActionError(err?.message || "Couldn't delete that job. Try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteAllRejected() {
+    const n = apps.filter((a) => a.status === "rejected" && !a.organization_id).length;
+    if (!n) return;
+    if (!window.confirm(`Delete all ${n} rejected job${n === 1 ? "" : "s"}? Their saved resumes and cover letters are removed. Riseply remembers you rejected them, so it won't suggest them again.`)) return;
+    setActionError("");
+    try {
+      await api("/applications/delete-rejected", { method: "POST" });
+      await load(filter);
+    } catch (err: any) {
+      setActionError(err?.message || "Couldn't delete those jobs. Try again.");
+    }
+  }
+
   async function retailor(id: number) {
     setBusyId(id);
     try {
@@ -394,6 +421,15 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {filter === "rejected" && apps.some((a) => !a.organization_id) && (
+        <div className="card-row" style={{ margin: "0 0 12px", gap: 12, flexWrap: "wrap", justifyContent: "flex-start", alignItems: "center" }}>
+          <button className="btn btn-ghost btn-sm" onClick={deleteAllRejected}>
+            Delete all rejected ({apps.filter((a) => !a.organization_id).length})
+          </button>
+          <span className="hint">Frees the saved resumes and letters. Riseply won&apos;t suggest these jobs again.</span>
+        </div>
+      )}
+
       {actionError && <p className="cc-error" role="alert">{actionError}</p>}
 
       {loadError && (
@@ -459,6 +495,16 @@ export default function ApplicationsPage() {
                   >
                     {app.is_archived ? "Unarchive" : "Archive"}
                   </button>
+                  {app.status === "rejected" && !app.organization_id && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: "2px 8px", color: "var(--danger, #B3261E)" }}
+                      disabled={busyId === app.id}
+                      onClick={() => deleteApp(app.id)}
+                    >
+                      Delete
+                    </button>
+                  )}
                   {app.has_tailored_resume_data && (
                     <button
                       className="btn btn-ghost btn-sm"

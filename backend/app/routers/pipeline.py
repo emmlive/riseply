@@ -351,6 +351,7 @@ def list_applications(
     ).filter(
         models.Application.user_id == user.id,
         models.Application.is_archived == archived,
+        models.Application.deleted_at.is_(None),
     )
     if status:
         q = q.filter(models.Application.status == status)
@@ -392,6 +393,7 @@ def import_job(
     if url:
         already = db.query(models.Application.id).join(models.Job, models.Application.job_id == models.Job.id).filter(
             models.Application.user_id == user.id, models.Job.url == url,
+            models.Application.deleted_at.is_(None),
         ).first()
         if already:
             raise HTTPException(status_code=409, detail="You already have this job in your applications. Look for it under All, or Archived.")
@@ -952,6 +954,61 @@ def reject_application(
 # purely "get this out of my default view," independent of and does
 # not change the underlying status. Copy this pair verbatim onto any
 # future model that adopts the same pattern. ---
+
+def _wipe_application(app_row: models.Application, now: datetime) -> None:
+    """Frees what the application stores (the tailored resume file, the cover
+    letter, the written notes) and takes it out of every list. The row itself
+    stays so the same job is never matched to this person again."""
+    app_row.tailored_resume_data = None
+    app_row.tailored_resume_path = ""
+    app_row.tailoring_rationale = ""
+    app_row.cover_letter = ""
+    app_row.notes = ""
+    app_row.match_reason = ""
+    app_row.is_archived = True
+    app_row.deleted_at = now
+
+
+def _deletable(app_row: models.Application) -> bool:
+    return app_row.status == "rejected" and app_row.organization_id is None and app_row.deleted_at is None
+
+
+@router.post("/applications/delete-rejected")
+def delete_all_rejected(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Deletes every rejected job in one go (archived or not)."""
+    rows = db.query(models.Application).filter(
+        models.Application.user_id == user.id,
+        models.Application.status == "rejected",
+        models.Application.organization_id.is_(None),
+        models.Application.deleted_at.is_(None),
+    ).all()
+    now = datetime.utcnow()
+    for row in rows:
+        _wipe_application(row, now)
+    db.commit()
+    return {"deleted": len(rows)}
+
+
+@router.delete("/applications/{application_id}")
+def delete_application(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Deletes one rejected job. Only rejected ones: anything you approved or
+    applied to is a record you may want later."""
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row or app_row.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not _deletable(app_row):
+        raise HTTPException(status_code=409, detail="Only jobs you rejected can be deleted.")
+    _wipe_application(app_row, datetime.utcnow())
+    db.commit()
+    return {"status": "deleted"}
+
 
 @router.post("/applications/{application_id}/archive")
 def archive_application(

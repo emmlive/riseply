@@ -283,6 +283,13 @@ class Application(Base):
     is_archived = Column(Boolean, default=False, server_default="false")
     archived_at = Column(DateTime, nullable=True)
 
+    # Set when the person deletes a rejected job. The big stored content is
+    # wiped and the row leaves every list, but a slim row stays on purpose:
+    # discovery skips any job the person already has an application for, so
+    # removing the row outright would let the same job come back (and cost
+    # another match).
+    deleted_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     status_updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     submitted_at = Column(DateTime, nullable=True)
