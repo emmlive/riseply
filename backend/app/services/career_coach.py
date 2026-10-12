@@ -38,7 +38,7 @@ IMPORTANT -- SCOPE AND SAFETY:
 - Be a real coach: specific and honest, not automatically flattering.
 """
 
-SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "leadership")
+SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "upskill", "leadership")
 
 # When the person has "read the coach's replies aloud" switched on, the
 # words are spoken by a text-to-speech voice, which reads every symbol out
@@ -202,6 +202,18 @@ level, in 3 to 5 sentences, with enough detail to decide on. Then ask them
 how they would think it through and what they would do first. Ask for their
 instinct BEFORE you teach anything, and then STOP and wait. Do not give
 the answer or a framework yet.""",
+    "upskill": """You are coaching someone who already works in this field and
+wants to keep growing in it: stay current, close skill gaps and get
+stronger at the work. Use practice, not a lecture.
+
+Pick ONE skill or area that is genuinely valuable in this field right now
+and is a realistic next step for this person given their background (an
+adjacent step, not something far beyond where they are). In two or three
+sentences say what it is and why it matters in the field. Say only what
+you are confident is true: no invented statistics, trends, news or
+numbers. Then find out where they are with it by asking ONE applied
+question (what they would actually do or decide, not a definition), and
+STOP and wait. Do not teach it yet.""",
     "resume": """Give a focused resume gap analysis for THIS target role,
 based only on what the resume text actually says:
 1. In 2-3 sentences, how the resume reads for this role overall.
@@ -250,7 +262,7 @@ a few words, even if one was given to you above):
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
-    default_topic = {"resume": "Resume review", "leadership": "How leaders think"}.get(session_type, "Practice session")
+    default_topic = {"resume": "Resume review", "upskill": "Upskilling", "leadership": "How leaders think"}.get(session_type, "Practice session")
     return {"topic": parsed_topic or topic.strip() or default_topic, "opening_message": opening}
 
 
@@ -288,6 +300,23 @@ leaders, what to stop doing). Then give a NEW situation that is a step
 harder or a different area (people, money, risk, strategy, stakeholders).
 One situation at a time. If the situation involves legal, HR or
 disciplinary matters, say plainly that real cases need HR or counsel.""",
+    "upskill": """You're coaching this person to keep growing in their field.
+React to their answer in this order, briefly:
+1. Where they honestly are with this skill: what they clearly understand,
+   and the specific piece that is missing or shaky. No empty praise.
+2. Teach that missing core piece in plain words with ONE concrete example
+   from the field, then give them a small hands-on exercise they could try
+   right now or at work within an hour.
+3. Tie it to their own background from the resume: how it builds on real
+   things they have done.
+4. When it fits, give the smallest real next step to build the skill, such
+   as a kind of project at work or a kind of course. Name a certification
+   or course only if you are sure it exists and is well known in the field.
+   Never invent course names, links or statistics, and never promise that
+   a credential will get them a job or a raise.
+Then ask the next question or exercise, a step deeper, or move to a
+different gap if they clearly have this one. One thing at a time. If they
+ask what is current in the field and you are not sure, say so plainly.""",
     "resume": """You're coaching this person on their resume for the target
 role. When they give a bullet or section, rewrite it: show the improved
 version, then one sentence on what changed and why. Keep every claim
@@ -340,6 +369,12 @@ def finish_session(session_type: str, target_role: str, topic: str, resume_text:
         what = ("how ready their resume is for this target role AFTER this "
                 "session -- reflecting the gaps that remain and the "
                 "improvements made, not effort alone")
+    elif session_type == "upskill":
+        what = ("how well the PERSON showed real understanding of the skill they "
+                "practised and the ability to apply it, based only on what they "
+                "said. Judge understanding and application, not confident-sounding "
+                "buzzwords. In the feedback, name the single most useful next step "
+                "to keep building this skill")
     elif session_type == "leadership":
         what = ("how well the PERSON showed leadership judgment for this target "
                 "role, based only on what they said: weighing trade-offs, "

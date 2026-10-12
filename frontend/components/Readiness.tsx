@@ -22,6 +22,7 @@ const PART_NAMES: Record<string, string> = {
   resume: "Resume coaching",
   walkthrough: "Task walkthroughs",
   drill: "Knowledge drills",
+  upskill: "Upskilling practice",
   leadership: "Leadership practice",
 };
 
