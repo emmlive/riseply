@@ -27,6 +27,7 @@ const SESSION_TYPES: { value: CareerCoachSessionType; label: string; hint: strin
   { value: "walkthrough", label: "Task walkthrough", hint: "Work through a realistic task from the job, step by step" },
   { value: "interview", label: "Mock interview", hint: "A hiring manager interviews you for this role" },
   { value: "resume", label: "Resume coaching", hint: "Gap analysis for this role, then bullet-by-bullet rewrites" },
+  { value: "upskill", label: "Upskilling", hint: "Already working in your field? Find the next skill worth adding and build it with practice" },
   { value: "leadership", label: "How leaders think", hint: "Moving into management or an executive role? Practice the decisions leaders face and learn how they think" },
 ];
 
@@ -425,11 +426,13 @@ export default function CareerCoachPage() {
               <p className="cc-card-sub">Choose a role and a way to practice. You can end a session any time to get your score.</p>
 
               <div className="cc-group">
-                <label className="cc-label" htmlFor="cc-role">Role or field you&apos;re aiming for</label>
+                <label className="cc-label" htmlFor="cc-role">{type === "upskill" ? "Your role or field" : "Role or field you're aiming for"}</label>
                 <input
                   id="cc-role" className="cc-input cc-input-lg"
                   placeholder={type === "leadership"
                     ? "For example: Engineering manager, Director of IT, CIO"
+                    : type === "upskill"
+                    ? "For example: Cybersecurity analyst, Staff accountant, ICU nurse"
                     : "For example: Data analyst, UX designer, ICU nurse"}
                   value={role} maxLength={120} onChange={(e) => setRole(e.target.value)}
                 />
@@ -472,6 +475,7 @@ export default function CareerCoachPage() {
                   placeholder={
                     type === "resume" ? "For example: Work experience"
                     : type === "leadership" ? "For example: giving hard feedback, budgets, or your first 90 days. Leave blank and the coach will pick one"
+                    : type === "upskill" ? "For example: a tool, a certification area, or a skill you want to build. Leave blank and the coach will pick one"
                     : "Leave blank and the coach will pick one"
                   }
                   value={topic} maxLength={200} onChange={(e) => setTopic(e.target.value)}

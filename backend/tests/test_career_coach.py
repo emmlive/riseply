@@ -332,3 +332,41 @@ def test_leadership_score_judges_thinking_not_buzzwords(monkeypatch):
     assert out["score"] == 72
     prompt = cc.client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "not confident-sounding buzzwords" in prompt.replace("\n", " ")
+
+
+# --- Upskilling practice ---
+
+def test_upskill_session_can_be_started_and_is_saved(db):
+    user = _make_user(db)
+    resp = _start(user, session_type="upskill", role="Cybersecurity analyst",
+                  result={"topic": "Upskilling", "opening_message": "One area worth adding is..."})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["session"]["session_type"] == "upskill"
+
+
+def test_upskill_opening_finds_their_level_before_teaching_and_avoids_inventing(monkeypatch):
+    monkeypatch.setattr(cc, "client", MagicMock())
+    cc.client.messages.create.return_value = _fake("TOPIC: Cloud security\n---\nOne area worth adding is...")
+    out = cc.start_session("upskill", "Cybersecurity analyst", "", "SOC analyst, 4 years.")
+    assert out["topic"] == "Cloud security"
+    prompt = cc.client.messages.create.call_args.kwargs["messages"][0]["content"].replace("\n", " ")
+    assert "keep growing" in prompt and "Do not teach it yet" in prompt
+    assert "no invented statistics" in prompt
+
+
+def test_upskill_reply_teaches_the_gap_and_never_invents_courses(monkeypatch):
+    monkeypatch.setattr(cc, "client", MagicMock())
+    cc.client.messages.create.return_value = _fake("You have the basics...")
+    cc.reply("upskill", "Cybersecurity analyst", "Cloud security", "SOC analyst.", [], "I would check the logs.")
+    system = cc.client.messages.create.call_args.kwargs["system"].replace("\n", " ")
+    assert "smallest real next step" in system and "Never invent course names" in system
+
+
+def test_upskill_score_judges_application_and_names_a_next_step(monkeypatch):
+    monkeypatch.setattr(cc, "client", MagicMock())
+    cc.client.messages.create.return_value = _fake("SCORE: 68\n---\nGood grasp, thin on practice.")
+    out = cc.finish_session("upskill", "Cybersecurity analyst", "Cloud security", "SOC analyst.",
+                            [{"role": "assistant", "content": "Q"}, {"role": "user", "content": "A"}])
+    assert out["score"] == 68
+    prompt = cc.client.messages.create.call_args.kwargs["messages"][0]["content"].replace("\n", " ")
+    assert "apply it" in prompt and "next step" in prompt

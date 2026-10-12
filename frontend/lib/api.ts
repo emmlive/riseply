@@ -628,7 +628,7 @@ export interface CareerCoachMessage extends CoachingMessage {
   visual?: CareerCoachVisual | null;
 }
 
-export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume" | "leadership";
+export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume" | "upskill" | "leadership";
 
 export interface CareerCoachSession {
   id: number;
