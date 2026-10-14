@@ -2,11 +2,20 @@ import io
 from fastapi import HTTPException
 
 
+# A resume is a few pages. Reading a 30-page PDF used to take over 300 MB
+# on a 512 MB server, so only the first pages are read and each page's
+# memory is released before the next one.
+MAX_PDF_PAGES = 8
+
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     import pdfplumber
     try:
+        pages = []
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
+            for page in pdf.pages[:MAX_PDF_PAGES]:
+                pages.append(page.extract_text() or "")
+                page.flush_cache()
         text = "\n".join(pages).strip()
     except Exception:
         raise HTTPException(

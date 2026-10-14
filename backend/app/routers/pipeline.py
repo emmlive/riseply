@@ -5,8 +5,8 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, not_, exists
+from sqlalchemy.orm import Session, defer
+from sqlalchemy import and_, not_, exists, func
 
 from app.database import get_db
 from app import models, schemas
@@ -306,7 +306,14 @@ def _ensure_posting_open(db: Session, app_row: models.Application, job: models.J
         raise HTTPException(status_code=409, detail="This job posting has closed, so we took it off your list.")
 
 
-def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
+def _to_out(app: models.Application, job: models.Job,
+            has_resume: bool | None = None, has_letter: bool | None = None) -> schemas.ApplicationOut:
+    """has_resume / has_letter let the list endpoint skip loading the stored
+    resume file and cover letter just to learn whether they exist."""
+    if has_resume is None:
+        has_resume = bool(app.tailored_resume_data)
+    if has_letter is None:
+        has_letter = bool((app.cover_letter or '').strip())
     return schemas.ApplicationOut(
         id=app.id, status=app.status or "pending_approval",
         matched_profile=app.matched_profile or "",
@@ -323,8 +330,8 @@ def _to_out(app: models.Application, job: models.Job) -> schemas.ApplicationOut:
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
         organization_accent_color=(app.organization.accent_color or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
-        has_tailored_resume_data=bool(app.tailored_resume_data),
-        has_cover_letter=bool((app.cover_letter or '').strip()),
+        has_tailored_resume_data=has_resume,
+        has_cover_letter=has_letter,
         salary_min=job.salary_min, salary_max=job.salary_max,
         salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
         is_archived=bool(app.is_archived), archived_at=app.archived_at,
@@ -346,8 +353,18 @@ def list_applications(
     automatically. archived=True is the inverse -- shows ONLY archived
     applications, for a dedicated Archived view.
     """
-    q = db.query(models.Application, models.Job).join(
+    # The stored resume files, cover letters and job descriptions are big
+    # and this list never shows them, so they are not loaded here: two
+    # cheap flags say whether a resume / letter exists. Loading them for
+    # every row made each page view cost tens of MB on a small server.
+    has_resume = func.coalesce(func.length(models.Application.tailored_resume_data), 0) > 0
+    has_letter = func.coalesce(func.length(models.Application.cover_letter), 0) > 0
+    q = db.query(models.Application, models.Job, has_resume, has_letter).join(
         models.Job, models.Application.job_id == models.Job.id
+    ).options(
+        defer(models.Application.tailored_resume_data),
+        defer(models.Application.cover_letter),
+        defer(models.Job.description),
     ).filter(
         models.Application.user_id == user.id,
         models.Application.is_archived == archived,
@@ -356,7 +373,7 @@ def list_applications(
     if status:
         q = q.filter(models.Application.status == status)
     q = q.order_by(models.Application.match_score.desc())
-    return [_to_out(app, job) for app, job in q.all()]
+    return [_to_out(app, job, bool(r), bool(c)) for app, job, r, c in q.all()]
 
 
 @router.post("/applications/import", response_model=schemas.ApplicationOut)
