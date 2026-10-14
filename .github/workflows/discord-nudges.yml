@@ -22,11 +22,25 @@ jobs:
     steps:
       - name: Send due Discord nudges
         run: |
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            "${{ secrets.BACKEND_URL }}/internal/discord-nudges" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            --max-time 120)
+          # Render can be asleep or restarting for a minute. A 000 (no answer) or
+          # 502/503/504 (Render's proxy saying the app isn't up yet) means the
+          # request never reached the app, so waiting and trying again is safe.
+          # Any other answer, good or bad, is final.
+          for attempt in $(seq 1 10); do
+            response=$(curl -s --max-time 120 -w "\n%{http_code}" -X POST \
+              "${{ secrets.BACKEND_URL }}/internal/discord-nudges" \
+              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}") || true
+            http_code=$(echo "$response" | tail -n1)
+            http_code=${http_code:-000}
+            case "$http_code" in
+              000|502|503|504)
+                echo "Backend not ready (HTTP $http_code, attempt $attempt/10) -- waiting 30s"
+                sleep 30 ;;
+              *) break ;;
+            esac
+          done
           http_code=$(echo "$response" | tail -n1)
+          http_code=${http_code:-000}
           body=$(echo "$response" | sed '$d')
           echo "$body"
           if [ "$http_code" -ne 200 ]; then
