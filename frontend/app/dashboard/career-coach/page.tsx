@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
+import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
@@ -48,6 +48,18 @@ const REEXPLAIN: { style: "visual" | "stepbystep" | "story" | "handson"; label: 
   { style: "stepbystep", label: "Step by step", message: "Can you walk me through that step by step with an example?" },
   { style: "story", label: "Analogy", message: "Can you explain that with an analogy or a real-world example?" },
   { style: "handson", label: "Let me try", message: "Can you give me something to try hands-on instead?" },
+];
+
+// "Draw it as..." -- the person picks the kind of picture the coach draws.
+const DRAW_AS: { kind: CareerCoachVisualKind | ""; label: string }[] = [
+  { kind: "flow", label: "Steps in order" },
+  { kind: "cycle", label: "A cycle that repeats" },
+  { kind: "compare", label: "A comparison table" },
+  { kind: "map", label: "A concept map" },
+  { kind: "matrix", label: "A 2×2 grid" },
+  { kind: "layers", label: "Layers or a pyramid" },
+  { kind: "chart", label: "A bar chart" },
+  { kind: "", label: "Let the coach choose" },
 ];
 
 const typeLabel = (t: CareerCoachSessionType) => SESSION_TYPES.find((x) => x.value === t)?.label ?? t;
@@ -375,7 +387,7 @@ export default function CareerCoachPage() {
     }
   }
 
-  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson" }) {
+  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson"; visualKind?: CareerCoachVisualKind }) {
     const text = override ? override.text : input;
     if (!text.trim() || sending || !active) return;
     dictation.current?.stop();
@@ -386,7 +398,7 @@ export default function CareerCoachPage() {
     setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString() }]);
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud } : { message: text, voice: readAloud }),
+        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud }),
       });
       setMessages((m) => [...m, reply]);
       if (readAloud) startSpeaking(reply);
@@ -587,6 +599,18 @@ export default function CareerCoachPage() {
                                 {r.label}
                               </button>
                             ))}
+                            <select className="btn btn-ghost btn-sm cc-draw" value="" aria-label="Draw it as a picture"
+                                    onChange={(e) => {
+                                      const opt = DRAW_AS[Number(e.target.value)];
+                                      if (!opt) return;
+                                      send({
+                                        text: opt.kind ? `Can you draw that as ${opt.label.toLowerCase()}?` : "Can you draw that as a picture?",
+                                        style: "visual", visualKind: opt.kind || undefined,
+                                      });
+                                    }}>
+                              <option value="" disabled>Draw it as…</option>
+                              {DRAW_AS.map((o, i) => <option key={o.label} value={i}>{o.label}</option>)}
+                            </select>
                           </div>
                         </div>
                       )}

@@ -613,14 +613,21 @@ export type LearningStyle = "auto" | "visual" | "handson" | "story" | "stepbyste
 // A diagram the coach drew while teaching. Data only -- the frontend
 // draws it (components/VisualDiagram.tsx).
 export interface CareerCoachVisual {
-  kind: "flow" | "compare" | "map";
+  kind: "flow" | "cycle" | "compare" | "map" | "matrix" | "layers" | "chart";
   title: string;
-  steps: { label: string; detail: string }[];
+  steps: { label: string; detail: string; icon?: string }[];
   columns: string[];
   rows: { label: string; cells: string[] }[];
   center: string;
-  branches: { label: string; items: string[] }[];
+  branches: { label: string; items: string[]; icon?: string }[];
+  axes?: string[];                                                    // matrix: [horizontal, vertical]
+  quadrants?: { label: string; items: string[]; icon?: string }[];    // top-left, top-right, bottom-left, bottom-right
+  bars?: { label: string; value: number; icon?: string }[];
+  unit?: string;
 }
+
+// The pictures a person can ask the coach to draw.
+export type CareerCoachVisualKind = CareerCoachVisual["kind"];
 
 export interface CareerCoachMessage extends CoachingMessage {
   // Library resources the coach recommended in this message.

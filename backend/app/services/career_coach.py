@@ -331,7 +331,8 @@ session for a score and feedback whenever they're ready."""
 
 
 def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None,
-          learning_style: str = "auto", style: str | None = None, voice: bool = False) -> str:
+          learning_style: str = "auto", style: str | None = None, voice: bool = False,
+          visual_kind: str | None = None) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -343,7 +344,7 @@ above.
 {CAREER_GUARDRAILS}
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
-{visuals_service.teaching_block(learning_style, style, session_type)}
+{visuals_service.teaching_block(learning_style, style, session_type, visual_kind)}
 
 {library_service.prompt_block(library or [])}
 

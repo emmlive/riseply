@@ -84,7 +84,10 @@ def test_style_prompts():
     assert "[[visual]]" in auto and "Explain it differently" in auto
     assert "[[visual]]" in visuals.teaching_block("visual", None, "drill")
     hands_on = visuals.teaching_block("handson", None, "drill")
-    assert "HANDS-ON" in hands_on and "[[visual]]" not in hands_on
+    # hands-on keeps its approach first, and may still use a picture when it clearly helps
+    assert "HANDS-ON" in hands_on and "PICTURES ARE AVAILABLE" in hands_on and "[[visual]]" in hands_on
+    assert hands_on.index("HANDS-ON") < hands_on.index("PICTURES ARE AVAILABLE")
+    assert "PICTURES ARE AVAILABLE" not in visuals.teaching_block("auto", None, "drill")
     # a one-off request beats the session default and says so
     once = visuals.teaching_block("handson", "visual", "drill")
     assert "VISUAL" in once and "THIS reply only" in once and "[[visual]]" in once

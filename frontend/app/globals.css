@@ -1059,3 +1059,6 @@ textarea.cc-input { resize: vertical; }
   .cc-w, .cc-sp, .mc.is-speaking { transition: none; }
   .cc-w-in, .cc-avatar.speaking { animation: none; }
 }
+
+/* "Draw it as…" picker beside the Explain-it-differently buttons */
+.cc-draw { appearance: auto; cursor: pointer; padding-right: 8px; }
