@@ -5,15 +5,16 @@ import { CueStyle } from "@/lib/cues";
 // One memory cue: a coloured card with an object beside the line. Cards for
 // Remember and Write this down can drop the line straight into the notepad.
 export default function MemoryCue({
-  style, text, saved, onSave,
+  style, text, saved, onSave, active,
 }: {
   style: CueStyle;
   text: string;
   saved: boolean;
   onSave?: () => void;
+  active?: boolean;   // being read aloud right now
 }) {
   return (
-    <span className={`mc mc-${style.kind}`} role="note" aria-label={`${style.label}: ${text}`}>
+    <span className={`mc mc-${style.kind}${active ? " is-speaking" : ""}`} role="note" aria-label={`${style.label}: ${text}`}>
       <span className="mc-object" role="img" aria-label={style.objectName}>{style.object}</span>
       <span className="mc-body">
         <span className="mc-label">{style.label}</span>
