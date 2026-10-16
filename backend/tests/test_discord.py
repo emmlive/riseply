@@ -425,3 +425,30 @@ def test_matches_only_go_to_discord_when_opted_in(db):
         dn.notify_digest(db, user, [job, job])
         dn.notify_digest(db, user, [])
     assert post.call_count == 2
+
+
+def test_every_three_hours_always_hits_each_nudge_window_exactly_once():
+    """The job runs at :05 every 3 hours (UTC). For any nudge hour, in any
+    timezone offset (including half-hour ones), exactly one run lands in the
+    3-hour window -- including 22:00 and 23:00, which wrap past midnight."""
+    from app.services.discord_notify import _in_window
+    for offset_minutes in range(-12 * 60, 14 * 60 + 1, 30):
+        for target in range(24):
+            hits = 0
+            for utc_hour in range(0, 24, 3):
+                local_minutes = (utc_hour * 60 + 5 + offset_minutes) % (24 * 60)
+                if _in_window(local_minutes // 60, target):
+                    hits += 1
+            assert hits == 1, (offset_minutes, target, hits)
+
+
+def test_late_evening_window_wraps_past_midnight_but_sends_once(db):
+    c = _conn(db, _user(db))
+    c.nudge_hour = 23
+    db.commit()
+    with patch(POST, return_value=OK) as post:
+        assert dn.run_nudges(db, datetime(2026, 10, 7, 23, 5))["discord_nudges_sent"] == 1
+        assert dn.run_nudges(db, datetime(2026, 10, 8, 1, 5))["discord_nudges_sent"] == 0    # same window, after midnight
+        assert dn.run_nudges(db, datetime(2026, 10, 8, 3, 5))["discord_nudges_sent"] == 0    # window over
+        assert post.call_count == 1
+        assert dn.run_nudges(db, datetime(2026, 10, 8, 23, 5))["discord_nudges_sent"] == 1   # next evening

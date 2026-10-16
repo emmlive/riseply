@@ -1,19 +1,24 @@
 name: Discord nudges
 
-# Hourly trigger for Discord practice nudges, streak reminders and weekly
-# recaps. Each connection chooses its own local hour and timezone; this job
-# just runs every hour and the backend decides who is due (at most one
-# nudge per person per local day, one recap per week), so a late, skipped
-# or doubled run is harmless. GitHub's scheduler can be delayed by many
-# minutes, and the backend allows a 3-hour window after the chosen hour
-# for exactly that reason.
+# Trigger for Discord practice nudges, streak reminders and weekly recaps,
+# every 3 hours. Each connection chooses its own local hour and timezone;
+# this job just runs on the schedule and the backend decides who is due (at
+# most one nudge per person per local day, one recap per week), so a late,
+# skipped or doubled run is harmless.
+#
+# Why every 3 hours and not hourly: every run wakes the Neon database, and
+# running 24 times a day kept it awake around the clock, which is what used
+# up the free plan's compute hours. The backend's nudge window is 3 hours
+# long (NUDGE_WINDOW_HOURS), so a run every 3 hours always lands inside
+# anyone's window exactly once. The only cost is that a nudge can arrive up
+# to 2 hours after the hour the person picked.
 #
 # Uses the same two repo secrets as daily-matching.yml (CRON_SECRET and
 # BACKEND_URL) -- nothing new to configure.
 
 on:
   schedule:
-    - cron: "5 * * * *"
+    - cron: "5 */3 * * *"
   workflow_dispatch: {}
 
 jobs:
