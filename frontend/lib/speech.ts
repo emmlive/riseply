@@ -211,10 +211,20 @@ export function splitForSpeech(text: string, maxLen = 180): string[] {
   return pieces;
 }
 
+// The words the voice will say, in order -- what speak() reports positions in.
+export function spokenWordList(text: string): string[] {
+  return splitForSpeech(cleanForSpeech(text)).join(" ").split(/\s+/).filter(Boolean);
+}
+
 // onEnd fires once, when everything has been read or reading stopped.
 // onProblem fires if the browser never starts speaking, so the person is
 // told instead of left clicking a silent button.
-export function speak(text: string, onEnd?: () => void, onProblem?: (message: string) => void): void {
+// onWord (optional) is told which word, counted as in spokenWordList(), the
+// voice has reached. Browsers that report word boundaries give exact
+// positions; for the rest it is estimated from the voice's usual pace.
+export function speak(
+  text: string, onEnd?: () => void, onProblem?: (message: string) => void, onWord?: (index: number) => void,
+): void {
   if (!speechSynthesisSupported()) { onProblem?.("This browser can't read aloud. Try Chrome or Edge."); onEnd?.(); return; }
   const synth = window.speechSynthesis;
   const run = ++speakRun;
@@ -223,6 +233,9 @@ export function speak(text: string, onEnd?: () => void, onProblem?: (message: st
   const pieces = splitForSpeech(cleanForSpeech(text));
   if (pieces.length === 0) { onEnd?.(); return; }
   const prefs = getVoicePrefs();
+  const counts = pieces.map((p) => p.split(/\s+/).filter(Boolean).length);
+  const offsets: number[] = [];
+  counts.reduce((sum, c, i) => { offsets[i] = sum; return sum + c; }, 0);
   let finished = false;
   let started = false;
   const done = () => { if (!finished) { finished = true; onEnd?.(); } };
@@ -236,9 +249,34 @@ export function speak(text: string, onEnd?: () => void, onProblem?: (message: st
       const voice = synth.getVoices().find((v) => v.voiceURI === prefs.uri);
       if (voice) { u.voice = voice; u.lang = voice.lang; }
     }
-    u.onstart = () => { started = true; };
-    u.onend = () => speakPiece(i + 1);
+    let gotBoundary = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stopTimer = () => { if (timer) { clearInterval(timer); timer = null; } };
+    u.onstart = () => {
+      started = true;
+      if (!onWord) return;
+      onWord(offsets[i]);
+      const t0 = Date.now();
+      const estimate = Math.max(600, (pieces[i].length / (15 * prefs.rate)) * 1000);
+      timer = setInterval(() => {
+        if (run !== speakRun || gotBoundary) { stopTimer(); return; }
+        const elapsed = Date.now() - t0;
+        if (elapsed < 400) return;   // give real word boundaries a moment to show up
+        const frac = Math.min(0.97, elapsed / estimate);
+        onWord(offsets[i] + Math.min(counts[i] - 1, Math.floor(frac * counts[i])));
+      }, 120);
+    };
+    u.onboundary = (e: any) => {
+      if (!onWord || run !== speakRun) return;
+      if (e?.name && e.name !== "word") return;
+      gotBoundary = true;
+      stopTimer();
+      const before = pieces[i].slice(0, e.charIndex || 0).split(/\s+/).filter(Boolean).length;
+      onWord(offsets[i] + Math.min(counts[i] - 1, before));
+    };
+    u.onend = () => { stopTimer(); speakPiece(i + 1); };
     u.onerror = (e: any) => {
+      stopTimer();
       if (run !== speakRun) return;
       if (e?.error === "interrupted" || e?.error === "canceled") return;
       if (i === 0 && !started) onProblem?.("Your browser couldn't play the voice. Check the tab isn't muted, or pick a different voice under Voice settings.");

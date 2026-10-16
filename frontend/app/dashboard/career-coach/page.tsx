@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
@@ -10,10 +10,11 @@ import VoicePicker from "@/components/VoicePicker";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
-import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed, parseCueLine } from "@/lib/cues";
+import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed } from "@/lib/cues";
 import {
-  Dictation, dictationSupported, speak, speechSynthesisSupported, startDictation, stopSpeaking,
+  Dictation, dictationSupported, speak, speechSynthesisSupported, spokenWordList, startDictation, stopSpeaking,
 } from "@/lib/speech";
+import { alignSpoken, currentWordTable, layoutCoachText } from "@/lib/readalong";
 
 // The individual-product AI Career Coach: practice for any role or field
 // the person types in (no employer or application needed), plus resume
@@ -90,6 +91,13 @@ export default function CareerCoachPage() {
   const [readAloud, setReadAloud] = useState(false);
   const [saveDraft, setSaveDraft] = useState<StudyDraft | null>(null);
   const [speakingId, setSpeakingId] = useState<number | null>(null);
+  // Which spoken word the voice is on (-1 = not started), for the read-along highlight.
+  const [spokenAt, setSpokenAt] = useState(-1);
+  // A new text reply types itself in; this is how many of its words are showing.
+  const [reveal, setReveal] = useState<{ id: number; count: number } | null>(null);
+  const revealTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speakingRef = useRef<number | null>(null);
+  speakingRef.current = speakingId;
   const dictation = useRef<Dictation | null>(null);
   const dictationBase = useRef("");
 
@@ -111,8 +119,21 @@ export default function CareerCoachPage() {
     // Scroll the conversation itself, not the whole page, so the header and
     // side column stay where they are.
     const el = winRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el) return;
+    // While the coach reads its newest reply aloud, the highlight leads the
+    // scrolling; jumping to the bottom would fight it.
+    const last = messages[messages.length - 1];
+    if (speakingRef.current !== null && last && last.id === speakingRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [messages, sending]);
+
+  // Keep the newest line in view as a reply types itself in.
+  useEffect(() => {
+    const el = winRef.current;
+    if (el && reveal) el.scrollTop = el.scrollHeight;
+  }, [reveal?.count]);
+
+  useEffect(() => { if (speakingId === null) setSpokenAt(-1); }, [speakingId]);
 
   useEffect(() => {
     setCanDictate(dictationSupported());
@@ -120,7 +141,7 @@ export default function CareerCoachPage() {
     try {
       setReadAloud(localStorage.getItem("cc-read-aloud") === "1");
     } catch { /* storage unavailable -- default off */ }
-    return () => { dictation.current?.stop(); stopSpeaking(); };
+    return () => { dictation.current?.stop(); stopSpeaking(); stopReveal(); };
   }, []);
 
   useEffect(() => {
@@ -253,10 +274,43 @@ export default function CareerCoachPage() {
     });
   }
 
+  function startSpeaking(m: CareerCoachMessage) {
+    stopReveal();
+    setSpeakingId(m.id);
+    setSpokenAt(-1);
+    speak(
+      m.content,
+      () => setSpeakingId((cur) => (cur === m.id ? null : cur)),
+      (msg) => setError(msg),
+      (i) => setSpokenAt(i),
+    );
+  }
+
   function playMessage(m: CareerCoachMessage) {
     if (speakingId === m.id) { stopSpeaking(); setSpeakingId(null); return; }
-    setSpeakingId(m.id);
-    speak(m.content, () => setSpeakingId((cur) => (cur === m.id ? null : cur)), (msg) => setError(msg));
+    startSpeaking(m);
+  }
+
+  function stopReveal() {
+    if (revealTimer.current) { clearInterval(revealTimer.current); revealTimer.current = null; }
+    setReveal(null);
+  }
+
+  // Types a new reply in word by word (about 16 words a second, and 4 seconds
+  // at most however long it is). Skipped for people who ask their device for less motion.
+  function startReveal(m: CareerCoachMessage) {
+    stopReveal();
+    if (prefersReducedMotion()) return;
+    const total = layoutCoachText(m.content).words.length;
+    if (total < 3) return;
+    const step = Math.max(1, Math.ceil(total / 66));
+    let count = 0;
+    setReveal({ id: m.id, count: 0 });
+    revealTimer.current = setInterval(() => {
+      count += step;
+      if (count >= total) stopReveal();
+      else setReveal({ id: m.id, count });
+    }, 60);
   }
 
   function flushNotes() {
@@ -297,7 +351,8 @@ export default function CareerCoachPage() {
       setActive(r.session);
       setMessages([r.opening_message]);
       setTopic("");
-      if (readAloud) { setSpeakingId(r.opening_message.id); speak(r.opening_message.content, () => setSpeakingId(null)); }
+      if (readAloud) startSpeaking(r.opening_message);
+      else startReveal(r.opening_message);
     } catch (err: any) {
       setError(err.message || "Couldn't start a session — try again.");
     } finally {
@@ -324,6 +379,7 @@ export default function CareerCoachPage() {
     const text = override ? override.text : input;
     if (!text.trim() || sending || !active) return;
     dictation.current?.stop();
+    stopReveal();
     if (!override) setInput("");
     setSending(true);
     setError("");
@@ -333,7 +389,8 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud } : { message: text, voice: readAloud }),
       });
       setMessages((m) => [...m, reply]);
-      if (readAloud) { setSpeakingId(reply.id); speak(reply.content, () => setSpeakingId(null)); }
+      if (readAloud) startSpeaking(reply);
+      else startReveal(reply);
     } catch (err: any) {
       setError(err.message || "Coach couldn't respond — your message was saved, try again.");
     } finally {
@@ -506,17 +563,21 @@ export default function CareerCoachPage() {
               <div className="cc-chat-window" aria-live="polite" ref={winRef}>
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>
-                    {m.role === "assistant" && <span className="cc-avatar" aria-hidden>C</span>}
-                    <div className="cc-bubble">
-                      {m.role === "assistant" ? <CoachText text={m.content} notes={notes} onSaveCue={saveCue} /> : m.content}
-                      {m.visual && <VisualDiagram visual={m.visual} />}
-                      {m.resources && m.resources.length > 0 && (
+                    {m.role === "assistant" && <span className={`cc-avatar${speakingId === m.id ? " speaking" : ""}`} aria-hidden>C</span>}
+                    <div className="cc-bubble" onClick={reveal?.id === m.id ? stopReveal : undefined}>
+                      {m.role === "assistant" ? (
+                        <CoachText text={m.content} notes={notes} onSaveCue={saveCue}
+                                   spokenAt={speakingId === m.id ? spokenAt : null}
+                                   reveal={reveal?.id === m.id ? reveal.count : undefined} />
+                      ) : m.content}
+                      {reveal?.id !== m.id && m.visual && <VisualDiagram visual={m.visual} />}
+                      {reveal?.id !== m.id && m.resources && m.resources.length > 0 && (
                         <div style={{ marginTop: 6, whiteSpace: "normal" }}>
                           {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}
                         </div>
                       )}
                       {m.role === "assistant" && m.id === lastCoachId && active?.status === "in_progress" &&
-                        active.session_type !== "interview" && !sending && messages.length > 1 && (
+                        reveal?.id !== m.id && active.session_type !== "interview" && !sending && messages.length > 1 && (
                         <div className="cc-tools">
                           <div className="cc-tools-label">Explain it differently</div>
                           <div className="cc-chips">
@@ -529,7 +590,7 @@ export default function CareerCoachPage() {
                           </div>
                         </div>
                       )}
-                      {m.role === "assistant" && (canSpeak || m.id > 0) && (
+                      {m.role === "assistant" && reveal?.id !== m.id && (canSpeak || m.id > 0) && (
                         <div className="cc-reply-actions">
                           {canSpeak && (
                             <button
@@ -738,35 +799,103 @@ export default function CareerCoachPage() {
 }
 
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Someone who scrolls by hand while the coach is talking is reading something
+// else; the highlight stops pulling the view back for a few seconds.
+let pauseFollowUntil = 0;
+
+function followWord(el: HTMLElement) {
+  if (Date.now() < pauseFollowUntil) return;
+  const win = el.closest(".cc-chat-window") as HTMLElement | null;
+  if (!win) return;
+  const w = el.getBoundingClientRect();
+  const v = win.getBoundingClientRect();
+  if (w.top > v.top + 48 && w.bottom < v.bottom - 64) return;   // comfortably in view
+  win.scrollTo({
+    top: win.scrollTop + (w.top - v.top) - v.height * 0.35,
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+  });
+}
+
 // The coach sometimes writes **bold** and --- rules. Show them as real
-// formatting instead of raw symbols.
-function CoachText({ text, notes, onSaveCue }: {
+// formatting instead of raw symbols. While the reply is being read aloud
+// (spokenAt = the spoken word number) the word being said is highlighted
+// along with its sentence; while it is typing in (reveal = words showing)
+// only that many words are drawn.
+function CoachText({ text, notes, onSaveCue, spokenAt = null, reveal }: {
   text: string; notes: string; onSaveCue: (style: CueStyle, text: string) => void;
+  spokenAt?: number | null; reveal?: number;
 }) {
-  const lines = text.split("\n");
+  const layout = useMemo(() => layoutCoachText(text), [text]);
+  const speaking = spokenAt !== null;
+  const table = useMemo(
+    () => (speaking ? currentWordTable(alignSpoken(layout.words, spokenWordList(text))) : []),
+    [speaking, layout, text],
+  );
+  const cur = speaking && spokenAt >= 0 ? (table[Math.min(spokenAt, table.length - 1)] ?? -1) : -1;
+  const curSentence = cur >= 0 ? layout.sentence[cur] : -2;
+  const curRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (cur >= 0 && curRef.current) followWord(curRef.current);
+  }, [cur]);
+
+  useEffect(() => {
+    if (!speaking) return;
+    const pause = () => { pauseFollowUntil = Date.now() + 4000; };
+    window.addEventListener("wheel", pause, { passive: true });
+    window.addEventListener("touchmove", pause, { passive: true });
+    return () => { window.removeEventListener("wheel", pause); window.removeEventListener("touchmove", pause); };
+  }, [speaking]);
+
+  const typing = reveal !== undefined;
+  let hidden = false;
+  const body = layout.lines.map((line, i) => {
+    if (hidden) return null;
+    if (line.kind === "rule") {
+      return <span key={i} className="cc-rule" aria-hidden />;
+    }
+    if (line.kind === "cue") {
+      if (typing && line.start >= reveal!) { hidden = true; return null; }
+      return (
+        <MemoryCue key={i} style={line.style} text={line.text}
+          active={cur >= line.start && cur < line.end}
+          saved={notes.includes(cueNoteLine(line.style, line.text))}
+          onSave={() => onSaveCue(line.style, line.text)} />
+      );
+    }
+    const firstWord = line.parts.flatMap((p) => p.toks).find((t) => t.w >= 0)?.w;
+    if (typing && firstWord !== undefined && firstWord >= reveal!) { hidden = true; return null; }
+    return (
+      <span key={i}>
+        {line.parts.map((part, j) => {
+          const toks = part.toks.map((t, k) => {
+            if (typing && t.w >= reveal!) return null;
+            const word = t.w >= 0;
+            const idx = word ? t.w : t.p;
+            const inSentence = cur >= 0 && idx >= 0 && layout.sentence[idx] === curSentence;
+            const isNow = word && t.w === cur;
+            if (!word && !inSentence && !typing) return t.s;
+            const cls = [word ? "cc-w" : "cc-sp", inSentence ? "sent" : "", isNow ? "now" : "", typing && word ? "cc-w-in" : ""]
+              .filter(Boolean).join(" ");
+            return <span key={k} className={cls} ref={isNow ? curRef : undefined}>{t.s}</span>;
+          });
+          return part.bold ? <strong key={j}>{toks}</strong> : <span key={j}>{toks}</span>;
+        })}
+        {!line.last && "\n"}
+      </span>
+    );
+  });
+
+  if (!typing) return <>{body}</>;
+  // The typing copy is silent to screen readers; they get the whole reply at once.
   return (
     <>
-      {lines.map((line, i) => {
-        const last = i === lines.length - 1;
-        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-          return <span key={i} className="cc-rule" aria-hidden />;
-        }
-        const cue = parseCueLine(line);
-        if (cue) {
-          return (
-            <MemoryCue key={i} style={cue.style} text={cue.text}
-              saved={notes.includes(cueNoteLine(cue.style, cue.text))}
-              onSave={() => onSaveCue(cue.style, cue.text)} />
-          );
-        }
-        const parts = line.split(/\*\*(.+?)\*\*/g);
-        return (
-          <span key={i}>
-            {parts.map((part, j) => (j % 2 === 1 ? <strong key={j}>{part}</strong> : part))}
-            {!last && "\n"}
-          </span>
-        );
-      })}
+      <span className="visually-hidden">{text}</span>
+      <span aria-hidden="true">{body}</span>
     </>
   );
 }
