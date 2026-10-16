@@ -33,7 +33,7 @@ WEBHOOK_RE = re.compile(
 )
 
 MAX_FAILURES = 5
-NUDGE_WINDOW_HOURS = 3     # tolerate a late or skipped hourly run
+NUDGE_WINDOW_HOURS = 3     # the job runs every 3 hours, so one run always lands inside
 USERNAME = "Riseply Coach"
 COLOR = 0x2F8F6B
 
@@ -270,7 +270,8 @@ def notify_digest(db: Session, user: models.User, matches: list[dict]) -> None:
 
 
 def _in_window(local_hour: int, target_hour: int) -> bool:
-    return target_hour <= local_hour < target_hour + NUDGE_WINDOW_HOURS
+    # Wraps past midnight, so a 22:00 or 23:00 choice still has a full window.
+    return (local_hour - target_hour) % 24 < NUDGE_WINDOW_HOURS
 
 
 def should_nudge(dates: set[date], today: date) -> bool:
@@ -308,8 +309,12 @@ def run_nudges(db: Session, now: datetime | None = None) -> dict:
             tz = _tz(conn.timezone)
             local = now_utc.astimezone(tz)
             today = local.date()
-            if not _in_window(local.hour, conn.nudge_hour if conn.nudge_hour is not None else 18):
+            target_hour = conn.nudge_hour if conn.nudge_hour is not None else 18
+            if not _in_window(local.hour, target_hour):
                 continue
+            # A late-evening window runs past midnight; it still counts as the
+            # day it started, so it can't fire once before and once after 00:00.
+            window_day = today if local.hour >= target_hour else today - timedelta(days=1)
 
             dates = practice_dates(db, conn.user_id, tz, now_utc.replace(tzinfo=None))
             streak = streak_days(dates, today)
@@ -337,8 +342,8 @@ def run_nudges(db: Session, now: datetime | None = None) -> dict:
                         recap_sent = True
                 db.commit()
 
-            if conn.nudge_enabled and conn.last_nudge_date != today:
-                conn.last_nudge_date = today  # one decision per local day, sent or not
+            if conn.nudge_enabled and conn.last_nudge_date != window_day:
+                conn.last_nudge_date = window_day  # one decision per local day, sent or not
                 db.commit()
                 if recap_sent:
                     continue
