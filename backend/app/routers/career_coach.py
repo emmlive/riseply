@@ -173,6 +173,7 @@ def send_message(
             session.session_type, session.target_role, session.topic,
             user.resume_text, history, payload.message, library=offered,
             learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
+            visual_kind=payload.visual_kind,
         )
         reply_text = visuals_service.sanitize(
             library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})

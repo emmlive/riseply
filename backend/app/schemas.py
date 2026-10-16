@@ -341,11 +341,15 @@ class CareerCoachMessageRequest(BaseModel):
     # One-off teaching style for just this reply ("explain it differently");
     # does not change the session's own learning_style.
     style: str | None = Field(default=None, pattern="^(visual|handson|story|stepbystep)$")
+    # With style="visual": which kind of picture to draw (see VisualOut). None
+    # lets the coach choose.
+    visual_kind: str | None = Field(default=None, pattern="^(flow|cycle|compare|map|matrix|layers|chart)$")
 
 
 class VisualStep(BaseModel):
     label: str = Field(max_length=80)
     detail: str = Field(default="", max_length=240)
+    icon: str = Field(default="", max_length=8)      # one emoji, decoration only
 
 
 class VisualRow(BaseModel):
@@ -356,6 +360,13 @@ class VisualRow(BaseModel):
 class VisualBranch(BaseModel):
     label: str = Field(max_length=80)
     items: list[str] = Field(default_factory=list, max_length=5)
+    icon: str = Field(default="", max_length=8)
+
+
+class VisualBar(BaseModel):
+    label: str = Field(max_length=80)
+    value: float = Field(ge=0, le=1e12)
+    icon: str = Field(default="", max_length=8)
 
 
 class VisualOut(BaseModel):
@@ -364,14 +375,22 @@ class VisualOut(BaseModel):
       flow    -- ordered steps (a process, a timeline)
       compare -- a table: columns across, labelled rows down
       map     -- a center idea with labelled branches of short items
+      cycle   -- ordered steps that loop back to the start (uses `steps`)
+      matrix  -- a 2x2 grid: two axes, four labelled quadrants
+      layers  -- a stack or pyramid, top to bottom (uses `steps`)
+      chart   -- horizontal bars of numbers, with a unit
     """
-    kind: str = Field(pattern="^(flow|compare|map)$")
+    kind: str = Field(pattern="^(flow|compare|map|cycle|matrix|layers|chart)$")
     title: str = Field(default="", max_length=120)
     steps: list[VisualStep] = Field(default_factory=list, max_length=8)
     columns: list[str] = Field(default_factory=list, max_length=4)
     rows: list[VisualRow] = Field(default_factory=list, max_length=8)
     center: str = Field(default="", max_length=80)
     branches: list[VisualBranch] = Field(default_factory=list, max_length=6)
+    axes: list[str] = Field(default_factory=list, max_length=2)           # matrix: [horizontal, vertical]
+    quadrants: list[VisualBranch] = Field(default_factory=list, max_length=4)  # top-left, top-right, bottom-left, bottom-right
+    bars: list[VisualBar] = Field(default_factory=list, max_length=8)
+    unit: str = Field(default="", max_length=20)
 
 
 RESOURCE_TYPES = "course|article|video|book|practice|reference|tool"
