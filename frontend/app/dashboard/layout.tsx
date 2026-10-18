@@ -46,6 +46,16 @@ const INDIVIDUAL_NAV = [
 // Pages built as a two-column workspace get a wider content area than the
 // default reading width.
 const WIDE_ROUTES = ["/dashboard/career-coach"];
+// Data-heavy pages (stat cards, lists, tables) use more of the screen; forms
+// and text pages keep the narrower default width.
+const MID_ROUTES = ["/dashboard/rise-index", "/dashboard/applications", "/dashboard/progress", "/dashboard/job-buddy", "/dashboard/admin"];
+
+function widthClass(pathname: string): string {
+  const p = pathname.replace(/\/+$/, "");
+  if (WIDE_ROUTES.some((r) => p.startsWith(r))) return "main-wide";
+  if (p === "/dashboard" || MID_ROUTES.some((r) => p.startsWith(r))) return "main-mid";
+  return "";
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -207,7 +217,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           Log out
         </button>
       </aside>
-      <main className={`main ${WIDE_ROUTES.some((r) => pathname.startsWith(r)) ? "main-wide" : ""}`}>
+      <main className={`main ${widthClass(pathname)}`}>
         {isPreviewActive && (
           <div style={{
             background: "var(--amber-soft, #FBEEE0)", color: "var(--amber, #C97A2B)",
