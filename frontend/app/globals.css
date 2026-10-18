@@ -1106,3 +1106,12 @@ textarea.cc-input { resize: vertical; }
 .fit-delta { font-size: 0.85rem; padding: 3px 10px; border-radius: 999px; background: var(--paper); }
 .fit-delta.up { background: var(--accent-soft); color: var(--accent-hover); }
 .fit-delta.down { background: var(--amber-soft); color: var(--amber); }
+
+/* --- Voice interview --- */
+.cc-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.cc-voicebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.cc-voicebar-state { flex: 1 1 180px; font-size: 0.9rem; color: var(--ink); }
+.cc-rec { color: #C0392B; margin-right: 4px; animation: cc-pulse 1.2s ease-in-out infinite; }
+@keyframes cc-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .cc-rec { animation: none; } }
+.cc-delivery { margin-top: 6px; font-size: 0.78rem; opacity: 0.85; white-space: normal; }

@@ -630,6 +630,8 @@ export interface CareerCoachVisual {
 export type CareerCoachVisualKind = CareerCoachVisual["kind"];
 
 export interface CareerCoachMessage extends CoachingMessage {
+  // How a spoken answer was delivered (voice interview), when it was.
+  delivery?: import("./delivery").Delivery | null;
   // Library resources the coach recommended in this message.
   resources?: LibraryItem[];
   visual?: CareerCoachVisual | null;

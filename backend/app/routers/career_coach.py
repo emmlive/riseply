@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -39,6 +40,15 @@ def _active_library(db: Session) -> list[models.LibraryItem]:
     return db.query(models.LibraryItem).filter(models.LibraryItem.active.is_(True)).all()
 
 
+def _delivery_of(m: models.CareerCoachMessage) -> schemas.DeliveryStats | None:
+    if not (m.delivery or "").strip():
+        return None
+    try:
+        return schemas.DeliveryStats(**json.loads(m.delivery))
+    except Exception:
+        return None
+
+
 def _messages_out(db: Session, rows: list[models.CareerCoachMessage]) -> list[schemas.CareerCoachMessageOut]:
     """Resolves [[lib:ID]] markers in coach messages into real Library
     items (see services/library.py). One batched lookup for the whole
@@ -55,6 +65,7 @@ def _messages_out(db: Session, rows: list[models.CareerCoachMessage]) -> list[sc
             id=m.id, role=m.role, content=text, created_at=m.created_at,
             resources=[schemas.LibraryItemOut.model_validate(i) for i in items],
             visual=visual,
+            delivery=_delivery_of(m),
         ))
     return out
 
@@ -166,6 +177,7 @@ def send_message(
     db.add(models.CareerCoachMessage(
         session_id=session_id, user_id=user.id, role="user", content=payload.message,
         flagged=bool(user_flag), flag_reason=user_flag,
+        delivery=payload.delivery.model_dump_json() if payload.delivery else "",
     ))
     db.commit()
 
@@ -216,7 +228,7 @@ def complete_session(
     rows = _history(db, session_id, user.id)
     if len(rows) < 2:
         raise HTTPException(status_code=400, detail="Exchange at least one reply before ending the session.")
-    history = [{"role": m.role, "content": m.content} for m in rows]
+    history = [{"role": m.role, "content": m.content, "delivery": _delivery_of(m)} for m in rows]
 
     usage.check_and_increment(db, user, ACTION, 1)
     try:

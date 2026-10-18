@@ -475,6 +475,9 @@ class CareerCoachMessage(Base):
 
     flagged = Column(Boolean, default=False, server_default="false")
     flag_reason = Column(String, default="", server_default="")
+    # JSON of schemas.DeliveryStats for an answer spoken in a voice interview
+    # (pace, length, filler counts). Empty for typed answers.
+    delivery = Column(Text, default="", server_default="")
 
 
 class CareerCoachNote(Base):

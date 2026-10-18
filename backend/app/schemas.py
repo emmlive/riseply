@@ -335,9 +335,26 @@ class CareerCoachStartRequest(BaseModel):
     voice: bool = False
 
 
+class DeliveryStats(BaseModel):
+    """How a spoken answer was delivered, measured in the browser from the
+    dictated text and the time spent. Numbers only; never audio."""
+    seconds: int = Field(ge=0, le=900)
+    words: int = Field(ge=0, le=5000)
+    wpm: int = Field(default=0, ge=0, le=500)
+    # Counts of filler phrases found in the transcript, e.g. {"you know": 3}.
+    fillers: dict[str, int] = Field(default_factory=dict, max_length=12)
+
+    @field_validator("fillers")
+    @classmethod
+    def _clean_fillers(cls, v):
+        return {str(k)[:24]: max(0, min(int(n), 200)) for k, n in v.items() if str(k).strip()}
+
+
 class CareerCoachMessageRequest(BaseModel):
     message: str = Field(min_length=1)
     voice: bool = False
+    # Set when the answer was spoken (dictated) in a voice interview.
+    delivery: DeliveryStats | None = None
     # One-off teaching style for just this reply ("explain it differently");
     # does not change the session's own learning_style.
     style: str | None = Field(default=None, pattern="^(visual|handson|story|stepbystep)$")
@@ -451,6 +468,8 @@ class CareerCoachMessageOut(BaseModel):
     created_at: datetime
     resources: list[LibraryItemOut] = []
     visual: VisualOut | None = None
+    # How a spoken answer was delivered (voice interview), when it was.
+    delivery: DeliveryStats | None = None
 
 
 class CareerCoachStartResponse(BaseModel):

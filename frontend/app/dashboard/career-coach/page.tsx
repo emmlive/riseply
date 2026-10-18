@@ -15,6 +15,7 @@ import {
   Dictation, dictationSupported, speak, speechSynthesisSupported, spokenWordList, startDictation, stopSpeaking,
 } from "@/lib/speech";
 import { alignSpoken, currentWordTable, layoutCoachText } from "@/lib/readalong";
+import { analyzeDelivery, clock, countWords, Delivery, deliveryLabel, paceNote } from "@/lib/delivery";
 
 // The individual-product AI Career Coach: practice for any role or field
 // the person types in (no employer or application needed), plus resume
@@ -112,6 +113,16 @@ export default function CareerCoachPage() {
   speakingRef.current = speakingId;
   const dictation = useRef<Dictation | null>(null);
   const dictationBase = useRef("");
+  // Voice interview: the coach asks aloud, the mic opens by itself, and the
+  // person presses Done to send. Delivery (pace, length, fillers) is measured
+  // from the dictated text and the time taken.
+  const [voiceMode, setVoiceMode] = useState(false);
+  const voiceModeRef = useRef(false);
+  const [elapsed, setElapsed] = useState(0);
+  const answerStart = useRef<number | null>(null);
+  const userStopped = useRef(false);
+  const restarts = useRef(0);
+  const inputRef = useRef("");
 
   // Notepad: one note per session, autosaved shortly after you stop typing.
   const [notes, setNotes] = useState("");
@@ -153,8 +164,18 @@ export default function CareerCoachPage() {
     try {
       setReadAloud(localStorage.getItem("cc-read-aloud") === "1");
     } catch { /* storage unavailable -- default off */ }
-    return () => { dictation.current?.stop(); stopSpeaking(); stopReveal(); };
+    try { const v = localStorage.getItem("cc-voice-interview") === "1"; setVoiceMode(v); voiceModeRef.current = v; } catch { /* default off */ }
+    return () => { voiceModeRef.current = false; userStopped.current = true; dictation.current?.stop(); stopSpeaking(); stopReveal(); };
   }, []);
+
+  useEffect(() => { inputRef.current = input; }, [input]);
+
+  // Ticks the answer timer while the mic is open in a voice interview.
+  useEffect(() => {
+    if (!voiceMode || !listening) return;
+    const t = setInterval(() => setElapsed(answerStart.current ? (Date.now() - answerStart.current) / 1000 : 0), 500);
+    return () => clearInterval(t);
+  }, [voiceMode, listening]);
 
   useEffect(() => {
     setShelf([]);
@@ -231,18 +252,58 @@ export default function CareerCoachPage() {
     }, 800);
   }
 
-  function toggleDictation() {
-    if (listening) { dictation.current?.stop(); return; }
+  function stopDictation() {
+    userStopped.current = true;
+    dictation.current?.stop();
+  }
+
+  function beginDictation(): boolean {
     stopSpeaking();
     setSpeakingId(null);
-    dictationBase.current = input.trim() ? input.trimEnd() + " " : "";
+    dictationBase.current = inputRef.current.trim() ? inputRef.current.trimEnd() + " " : "";
+    userStopped.current = false;
+    if (answerStart.current === null) { answerStart.current = Date.now(); setElapsed(0); }
     const d = startDictation(
       (text) => setInput(dictationBase.current + text),
-      (err) => { setListening(false); dictation.current = null; if (err) setError(err); },
+      (err) => {
+        setListening(false); dictation.current = null;
+        if (err) { setError(err); return; }
+        // Browsers end dictation after a pause. In a voice interview keep
+        // listening until the person presses Done.
+        if (voiceModeRef.current && !userStopped.current && answerStart.current !== null && restarts.current < 30) {
+          restarts.current += 1;
+          setTimeout(() => { if (voiceModeRef.current && !userStopped.current && !dictation.current) beginDictation(); }, 250);
+        }
+      },
     );
-    if (!d) { setError("Dictation isn't available in this browser — you can type instead."); return; }
+    if (!d) { setError("Dictation isn't available in this browser — you can type instead."); return false; }
     dictation.current = d;
     setListening(true);
+    return true;
+  }
+
+  function toggleDictation() {
+    if (listening) { stopDictation(); return; }
+    beginDictation();
+  }
+
+  function toggleVoiceMode(on: boolean) {
+    setVoiceMode(on);
+    voiceModeRef.current = on;
+    try { localStorage.setItem("cc-voice-interview", on ? "1" : "0"); } catch { /* ignore */ }
+    if (on && !readAloud) toggleReadAloud(true);
+    if (!on) stopDictation();
+  }
+
+  // Sends the spoken answer with its delivery numbers.
+  async function finishAnswer() {
+    if (!active || sending) return;
+    const secs = answerStart.current ? (Date.now() - answerStart.current) / 1000 : 0;
+    stopDictation();
+    await new Promise((r) => setTimeout(r, 450));   // let the last words arrive
+    const text = inputRef.current.trim();
+    if (!text) { answerStart.current = null; setError("I didn't catch an answer. Try again, or type it."); return; }
+    send(undefined, analyzeDelivery(text, secs));
   }
 
   function toggleReadAloud(on: boolean) {
@@ -286,13 +347,17 @@ export default function CareerCoachPage() {
     });
   }
 
-  function startSpeaking(m: CareerCoachMessage) {
+  function startSpeaking(m: CareerCoachMessage, thenListen = false) {
     stopReveal();
     setSpeakingId(m.id);
     setSpokenAt(-1);
     speak(
       m.content,
-      () => setSpeakingId((cur) => (cur === m.id ? null : cur)),
+      () => {
+        setSpeakingId((cur) => (cur === m.id ? null : cur));
+        // Voice interview: when the question has been asked, open the mic.
+        if (thenListen && voiceModeRef.current) beginDictation();
+      },
       (msg) => setError(msg),
       (i) => setSpokenAt(i),
     );
@@ -359,7 +424,7 @@ export default function CareerCoachPage() {
 
   function closeSession() {
     flushNotes();
-    dictation.current?.stop();
+    stopDictation();
     stopSpeaking();
     setSpeakingId(null);
     setActive(null);
@@ -378,7 +443,7 @@ export default function CareerCoachPage() {
       setActive(r.session);
       setMessages([r.opening_message]);
       setTopic("");
-      if (readAloud) startSpeaking(r.opening_message);
+      if (readAloud) startSpeaking(r.opening_message, voiceModeRef.current && r.session.session_type === "interview");
       else startReveal(r.opening_message);
     } catch (err: any) {
       setError(err.message || "Couldn't start a session — try again.");
@@ -402,21 +467,24 @@ export default function CareerCoachPage() {
     }
   }
 
-  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson"; visualKind?: CareerCoachVisualKind }) {
-    const text = override ? override.text : input;
+  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson"; visualKind?: CareerCoachVisualKind }, delivery?: Delivery) {
+    const text = override ? override.text : inputRef.current;
     if (!text.trim() || sending || !active) return;
-    dictation.current?.stop();
+    stopDictation();
     stopReveal();
+    answerStart.current = null;
+    restarts.current = 0;
+    setElapsed(0);
     if (!override) setInput("");
     setSending(true);
     setError("");
-    setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString() }]);
+    setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString(), ...(delivery ? { delivery } : {}) }]);
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud }),
+        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}) }),
       });
       setMessages((m) => [...m, reply]);
-      if (readAloud) startSpeaking(reply);
+      if (readAloud) startSpeaking(reply, voiceModeRef.current && active.session_type === "interview");
       else startReveal(reply);
     } catch (err: any) {
       setError(err.message || "Coach couldn't respond — your message was saved, try again.");
@@ -431,7 +499,7 @@ export default function CareerCoachPage() {
       setError("Send at least one reply before ending the session.");
       return;
     }
-    dictation.current?.stop();
+    stopDictation();
     setCompleting(true);
     setError("");
     try {
@@ -447,6 +515,7 @@ export default function CareerCoachPage() {
 
   const usedCues = cuesUsed(messages.filter((m) => m.role === "assistant").map((m) => m.content));
   const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+  const voiceReady = canDictate && canSpeak && !!active && active.session_type === "interview" && active.status === "in_progress";
 
   const completedSessions = sessions.filter((s) => s.status === "completed");
   const scoredSessions = completedSessions.filter((s) => s.score !== null);
@@ -566,6 +635,13 @@ export default function CareerCoachPage() {
                 />
               </div>
 
+              {type === "interview" && canDictate && canSpeak && (
+                <label className="cc-check" style={{ marginBottom: 10 }}>
+                  <input type="checkbox" checked={voiceMode} onChange={(e) => toggleVoiceMode(e.target.checked)} />
+                  Voice interview: the coach asks out loud and you answer out loud (we&apos;ll measure pace and filler words)
+                </label>
+              )}
+
               <div className="cc-start-row">
                 <button className="btn btn-primary" onClick={start} disabled={starting || role.trim().length < 2}>
                   {starting ? "Starting…" : "Start session"}
@@ -597,6 +673,11 @@ export default function CareerCoachPage() {
                                    spokenAt={speakingId === m.id ? spokenAt : null}
                                    reveal={reveal?.id === m.id ? reveal.count : undefined} />
                       ) : m.content}
+                      {m.role === "user" && m.delivery && (
+                        <div className="cc-delivery" title="Measured from your spoken answer">
+                          🎙 {deliveryLabel(m.delivery)}{paceNote(m.delivery) ? ` · ${paceNote(m.delivery)}` : ""}
+                        </div>
+                      )}
                       {reveal?.id !== m.id && m.visual && <VisualDiagram visual={m.visual} />}
                       {reveal?.id !== m.id && m.resources && m.resources.length > 0 && (
                         <div style={{ marginTop: 6, whiteSpace: "normal" }}>
@@ -706,6 +787,24 @@ export default function CareerCoachPage() {
                 </div>
               ) : (
                 <div className="cc-composer">
+                  {voiceReady && voiceMode && (
+                    <div className="cc-voicebar" role="status">
+                      <span className="cc-voicebar-state">
+                        {speakingId !== null ? "Coach is asking…"
+                          : listening ? <><span className="cc-rec" aria-hidden>●</span> Recording {clock(elapsed)} · {countWords(input)} words</>
+                          : input.trim() ? "Paused. Keep going or send it." : "Your turn."}
+                      </span>
+                      {speakingId !== null && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => beginDictation()}>Skip and answer</button>
+                      )}
+                      {speakingId === null && !listening && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => beginDictation()}>🎤 {input.trim() ? "Keep going" : "Start answering"}</button>
+                      )}
+                      <button className="btn btn-primary btn-sm" onClick={finishAnswer} disabled={sending || !input.trim()}>
+                        Done — send my answer
+                      </button>
+                    </div>
+                  )}
                   <div className="cc-composer-row">
                     <textarea
                       className="cc-input"
@@ -731,10 +830,18 @@ export default function CareerCoachPage() {
                   </div>
                   <div className="cc-composer-foot">
                     {canSpeak ? (
-                      <label className="cc-check">
-                        <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} />
-                        Read the coach&apos;s replies aloud
-                      </label>
+                      <div className="cc-checks">
+                        <label className="cc-check">
+                          <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} disabled={voiceReady && voiceMode} />
+                          Read the coach&apos;s replies aloud
+                        </label>
+                        {voiceReady && (
+                          <label className="cc-check">
+                            <input type="checkbox" checked={voiceMode} onChange={(e) => toggleVoiceMode(e.target.checked)} />
+                            Voice interview: answer out loud
+                          </label>
+                        )}
+                      </div>
                     ) : <span />}
                     <button className="btn btn-ghost btn-sm" onClick={end} disabled={completing}>
                       {completing ? "Scoring…" : "End session and get feedback"}

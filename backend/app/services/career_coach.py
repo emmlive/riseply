@@ -468,14 +468,37 @@ above.
     return resp.content[0].text.strip()
 
 
+# Spoken answers (voice interview) come with measured delivery numbers. They are
+# facts about HOW the answer was said; the coach uses them for one concrete tip
+# and never invents more than the numbers show.
+DELIVERY_FEEDBACK = """
+SPOKEN ANSWERS: some of the PERSON's answers were spoken aloud, and the lines
+starting "[spoken:" give the measured delivery (length, pace, filler words as
+transcribed). Include ONE concrete delivery tip in the feedback, based only on
+those numbers. Rules of thumb: about 130 to 160 words per minute sounds natural;
+under about 100 is slow and over about 180 is rushed; most interview answers
+land well at 60 to 120 seconds. Speech-to-text often drops "um" and "uh", so do
+NOT claim the person never uses them, and do not speculate beyond the numbers.
+"""
+
+
+def delivery_line(d) -> str:
+    """One transcript line describing how a spoken answer was delivered."""
+    fillers = ", ".join(f"{k} x{n}" for k, n in sorted(d.fillers.items(), key=lambda kv: -kv[1])[:5] if n)
+    return (f"[spoken: {d.seconds}s, {d.words} words, {d.wpm} words per minute"
+            + (f", filler phrases: {fillers}" if fillers else ", no filler phrases found") + "]")
+
+
 def finish_session(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict]) -> dict:
     """Returns {"score": int | None, "feedback": str}. score is None when
     the model didn't follow the format -- stored as "not scored" rather
     than a guessed number."""
     transcript = "\n\n".join(
         f"{'COACH' if m['role'] == 'assistant' else 'PERSON'}: {cues_as_text(m['content'])}"
+        + (f"\n{delivery_line(m['delivery'])}" if m.get("delivery") else "")
         for m in history
     )
+    spoken = any(m.get("delivery") for m in history)
     if session_type == "resume":
         what = ("how ready their resume is for this target role AFTER this "
                 "session -- reflecting the gaps that remain and the "
@@ -505,7 +528,7 @@ generous by default>
 {SEPARATOR}
 <2-4 sentences of concrete feedback: what went well, the single most
 valuable thing to work on next, grounded in specific moments>
-
+{DELIVERY_FEEDBACK if spoken else ""}
 {CAREER_GUARDRAILS}
 
 {_context(resume_text, target_role)}
