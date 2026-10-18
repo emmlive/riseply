@@ -114,9 +114,14 @@ button, input, select, textarea {
 
 .main {
   flex: 1;
-  padding: 40px 48px;
-  max-width: 920px;
+  min-width: 0;
+  padding: 36px 40px;
+  max-width: 1640px;
 }
+/* The page can be wide, but a line of prose and a single text box shouldn't
+   run the full width: keep those to a comfortable measure. */
+.main > div > p, .main > div > .muted { max-width: 100ch; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select { max-width: 720px; }
 
 /* --- Forms --- */
 
