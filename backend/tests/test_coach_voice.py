@@ -85,9 +85,9 @@ def test_voice_flag_reaches_the_coach_and_cleans_the_reply():
         sent = client.post(f"/career-coach/sessions/{sid}/messages", json={"message": "I'd start with assets", "voice": True})
         assert sent.status_code == 200, sent.text
         assert seen["reply_voice"] is True
-        assert sent.json()["content"] == "Great answer.\n\nFirst, rank the risks.\n\nNext step."
+        assert sent.json()["content"] == "First, rank the risks.\n\nNext step."
 
         # Without voice mode nothing is rewritten.
         plain = client.post(f"/career-coach/sessions/{sid}/messages", json={"message": "and then?"})
-        assert plain.json()["content"].startswith("Great answer.\n\n- **First**")
+        assert plain.json()["content"].startswith("- **First**")
         assert seen["reply_voice"] is False

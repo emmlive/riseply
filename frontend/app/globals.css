@@ -1062,3 +1062,6 @@ textarea.cc-input { resize: vertical; }
 
 /* "Draw it as…" picker beside the Explain-it-differently buttons */
 .cc-draw { appearance: auto; cursor: pointer; padding-right: 8px; }
+
+/* A line the coach starts with ">" is a quote block (an alert, a log line, a prompt). */
+.cc-quote { display: block; border-left: 3px solid var(--border-strong); padding-left: 10px; margin: 2px 0; color: var(--ink); }

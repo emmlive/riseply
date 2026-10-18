@@ -894,7 +894,7 @@ function CoachText({ text, notes, onSaveCue, spokenAt = null, reveal }: {
     const firstWord = line.parts.flatMap((p) => p.toks).find((t) => t.w >= 0)?.w;
     if (typing && firstWord !== undefined && firstWord >= reveal!) { hidden = true; return null; }
     return (
-      <span key={i}>
+      <span key={i} className={line.quote ? "cc-quote" : undefined}>
         {line.parts.map((part, j) => {
           const toks = part.toks.map((t, k) => {
             if (typing && t.w >= reveal!) return null;
@@ -907,9 +907,11 @@ function CoachText({ text, notes, onSaveCue, spokenAt = null, reveal }: {
               .filter(Boolean).join(" ");
             return <span key={k} className={cls} ref={isNow ? curRef : undefined}>{t.s}</span>;
           });
-          return part.bold ? <strong key={j}>{toks}</strong> : <span key={j}>{toks}</span>;
+          if (part.bold) return <strong key={j}>{toks}</strong>;
+          if (part.italic) return <em key={j}>{toks}</em>;
+          return <span key={j}>{toks}</span>;
         })}
-        {!line.last && "\n"}
+        {!line.last && !line.quote && "\n"}
       </span>
     );
   });
