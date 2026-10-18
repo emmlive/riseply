@@ -97,3 +97,23 @@ def test_bad_visual_kind_is_rejected(client):
     c, sess = client
     r = c.post(f"/career-coach/sessions/{sess.id}/messages", json={"message": "hi", "visual_kind": "pie"})
     assert r.status_code == 422
+
+
+def test_a_picture_cut_off_mid_way_never_shows_as_raw_code():
+    cut = ('Short, factual, actionable.\n\n[[visual]]{"kind":"flow","title":"Alert","steps":'
+           '[{"label":"Read the alert","icon":"🔍"},{"label":"Triage","icon":"')
+    assert visuals.sanitize(cut) == "Short, factual, actionable."
+    clean, visual = visuals.extract(cut)
+    assert clean == "Short, factual, actionable." and visual is None
+
+
+def test_a_good_picture_survives_and_a_cut_second_one_is_dropped():
+    good = '[[visual]]{"kind":"flow","title":"T","steps":[{"label":"a"},{"label":"b"}]}[[/visual]]'
+    text = f"{good}\nWords here.\n[[visual]]{{\"kind\":\"cycle\",\"ti"
+    clean, visual = visuals.extract(visuals.sanitize(text))
+    assert visual is not None and visual.kind == "flow"
+    assert clean == "Words here." and "[[" not in clean
+
+
+def test_the_prompt_asks_for_the_picture_first():
+    assert "Write the [[visual]] block FIRST" in visuals.teaching_block("visual", None, "drill")

@@ -366,7 +366,7 @@ a few words, even if one was given to you above):
 {_context(resume_text, target_role)}
 """
     resp = client.messages.create(
-        model=MODEL, max_tokens=1100,
+        model=MODEL, max_tokens=1800,
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
@@ -463,7 +463,7 @@ above.
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": new_message})
     resp = client.messages.create(
-        model=MODEL, max_tokens=1100, system=system_prompt, messages=messages,
+        model=MODEL, max_tokens=1800, system=system_prompt, messages=messages,
     )
     return resp.content[0].text.strip()
 

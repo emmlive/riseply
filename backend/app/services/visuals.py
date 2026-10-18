@@ -20,6 +20,9 @@ from pydantic import ValidationError
 from app import schemas
 
 BLOCK_RE = re.compile(r"\[\[visual\]\](.*?)\[\[/visual\]\]", re.DOTALL | re.IGNORECASE)
+# A reply that hit its length limit mid-picture leaves an opening marker with
+# no end. That half-written code is dropped, never shown to the person.
+_OPEN_TAIL_RE = re.compile(r"\[\[visual\]\](?!.*\[\[/visual\]\]).*\Z", re.DOTALL | re.IGNORECASE)
 
 _STR_LIMITS = {"label": 80, "detail": 240, "title": 120, "center": 80}
 
@@ -118,7 +121,7 @@ def sanitize(text: str) -> str:
         kept["done"] = True
         return "[[visual]]" + json.dumps(v.model_dump(), ensure_ascii=False) + "[[/visual]]"
 
-    return BLOCK_RE.sub(swap, text).strip()
+    return _OPEN_TAIL_RE.sub("", BLOCK_RE.sub(swap, text)).strip()
 
 
 def extract(text: str) -> tuple[str, schemas.VisualOut | None]:
@@ -128,7 +131,7 @@ def extract(text: str) -> tuple[str, schemas.VisualOut | None]:
         visual = _parse(m.group(1))
         if visual:
             break
-    clean = BLOCK_RE.sub("", text)
+    clean = _OPEN_TAIL_RE.sub("", BLOCK_RE.sub("", text))
     clean = re.sub(r"[ \t]{2,}", " ", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     return clean, visual
@@ -139,7 +142,8 @@ it as JSON between the markers [[visual]] and [[/visual]] (the app draws it).
 Use it when a picture genuinely helps -- a process, a loop, a comparison,
 how parts relate, a priority grid, a hierarchy, or a few numbers -- and
 ALWAYS also explain the idea in words, because the diagram may not display
-for everyone. Formats (pick the one that fits):
+for everyone. Write the [[visual]] block FIRST in your reply, before the
+words, and keep it compact, so a long reply can never cut it off. Formats (pick the one that fits):
   [[visual]]{"kind":"flow","title":"...","steps":[{"label":"short step","detail":"one line","icon":"🔍"}, ...]}[[/visual]]
   [[visual]]{"kind":"cycle","title":"...","steps":[{"label":"step that leads to the next","detail":"one line"}, ...]}[[/visual]]
   [[visual]]{"kind":"compare","title":"...","columns":["A","B"],"rows":[{"label":"row","cells":["for A","for B"]}, ...]}[[/visual]]
