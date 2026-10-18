@@ -1094,3 +1094,15 @@ textarea.cc-input { resize: vertical; }
 .sg-high .sg-fill { background: var(--amber); }
 .sg-ex { margin: 6px 0 12px; }
 @media (max-width: 560px) { .sg-track { flex: 1; width: auto; } }
+
+/* --- Resume fit: original vs tailored --- */
+.fit-compare { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fit-num { display: flex; flex-direction: column; align-items: center; min-width: 84px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; }
+.fit-num .fit-value { font-size: 1.7rem; line-height: 1.1; color: var(--ink); }
+.fit-num .muted { font-size: 0.78rem; }
+.fit-after { border-color: var(--accent); background: var(--accent-soft); }
+.fit-after .fit-value { color: var(--accent-hover); }
+.fit-arrow { color: var(--ink-muted); font-size: 1.2rem; }
+.fit-delta { font-size: 0.85rem; padding: 3px 10px; border-radius: 999px; background: var(--paper); }
+.fit-delta.up { background: var(--accent-soft); color: var(--accent-hover); }
+.fit-delta.down { background: var(--amber-soft); color: var(--amber); }

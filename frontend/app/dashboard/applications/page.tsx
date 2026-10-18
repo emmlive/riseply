@@ -5,7 +5,7 @@ import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
 import CoverLetter from "@/components/CoverLetter";
 import BackToTop from "@/components/BackToTop";
-import { api, Application, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
+import { api, Application, FitScore, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -71,6 +71,7 @@ export default function ApplicationsPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [fitScores, setFitScores] = useState<Record<number, FitScore | "loading" | string>>({});
   const [keywordGaps, setKeywordGaps] = useState<Record<number, KeywordGaps | "loading" | "none">>({});
   const [followups, setFollowups] = useState<Record<number, Followup | "loading" | "none">>({});
   const [companyStats, setCompanyStats] = useState<Record<string, CompanyStats | "none">>({});
@@ -252,6 +253,17 @@ export default function ApplicationsPage() {
     } catch (err: any) {
       setPreps((p) => ({ ...p, [id]: "none" }));
       alert(err.message || "Couldn't generate interview prep.");
+    }
+  }
+
+  async function compareFit(id: number, refresh = false) {
+    setFitScores((f) => ({ ...f, [id]: "loading" }));
+    try {
+      const result = await api<FitScore>(`/applications/${id}/fit-score${refresh ? "?refresh=true" : ""}`, { method: "POST" });
+      setFitScores((f) => ({ ...f, [id]: result }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Couldn't compare right now. Try again.";
+      setFitScores((f) => ({ ...f, [id]: `error:${msg}` }));
     }
   }
 
@@ -627,6 +639,56 @@ export default function ApplicationsPage() {
                 )}
               </div>
             </div>
+
+            {app.has_tailored_resume_data && (() => {
+              const fit = fitScores[app.id];
+              const done = fit && typeof fit === "object" ? fit : null;
+              const failed = typeof fit === "string" && fit.startsWith("error:") ? fit.slice(6) : "";
+              return (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                  {fit === "loading" && <p className="muted">Comparing your original and tailored resumes…</p>}
+                  {!done && fit !== "loading" && (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => compareFit(app.id)}>
+                        See how much tailoring helped
+                      </button>
+                      {failed && <p className="cc-error" role="alert" style={{ marginTop: 8 }}>{failed}</p>}
+                    </>
+                  )}
+                  {done && (
+                    <>
+                      <h3 style={{ fontSize: "0.95rem", marginBottom: 8 }}>Resume fit for this job</h3>
+                      <div className="fit-compare" aria-label={`Fit score went from ${done.before} to ${done.after}`}>
+                        <div className="fit-num"><span className="fit-value">{done.before}</span><span className="muted">Your original</span></div>
+                        <span className="fit-arrow" aria-hidden="true">→</span>
+                        <div className="fit-num fit-after"><span className="fit-value">{done.after}</span><span className="muted">Tailored</span></div>
+                        <span className={`fit-delta ${done.after >= done.before ? "up" : "down"}`}>
+                          {done.after === done.before ? "No change" : `${done.after > done.before ? "+" : ""}${done.after - done.before} points`}
+                        </span>
+                      </div>
+                      <p className="hint" style={{ margin: "8px 0 6px" }}>{done.after_note}</p>
+                      {done.improved.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                          {done.improved.map((k) => <span key={k} className="pill pill-approved">✓ {k}</span>)}
+                        </div>
+                      )}
+                      {done.still_missing.length > 0 && (
+                        <>
+                          <p className="hint" style={{ margin: "8px 0 4px" }}>Still not on either version (only add what&apos;s true for you):</p>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {done.still_missing.map((k) => <span key={k} className="pill pill-rejected">✗ {k}</span>)}
+                          </div>
+                        </>
+                      )}
+                      <p className="hint" style={{ margin: "10px 0 0" }}>
+                        An AI estimate of how well each resume&apos;s real content covers what the posting asks for.{" "}
+                        <button className="sg-link" onClick={() => compareFit(app.id, true)}>Re-score</button>
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
               {gaps === "loading" && <p className="muted">Checking keyword gaps…</p>}

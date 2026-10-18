@@ -1819,3 +1819,15 @@ class SkillGapOut(BaseModel):
     gaps: list[SkillGapItem] = []
     next_step: str = ""
     jobs_used: int = 0
+
+
+# --- Resume fit score (original vs tailored) ---
+
+class FitScoreOut(BaseModel):
+    before: int
+    after: int
+    before_note: str = ""
+    after_note: str = ""
+    improved: list[str] = []
+    still_missing: list[str] = []
+    cached: bool = False
