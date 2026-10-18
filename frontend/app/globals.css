@@ -116,12 +116,12 @@ button, input, select, textarea {
   flex: 1;
   min-width: 0;
   padding: 36px 40px;
-  max-width: 1640px;
+  max-width: 1040px;
 }
 /* The page can be wide, but a line of prose and a single text box shouldn't
    run the full width: keep those to a comfortable measure. */
 .main > div > p, .main > div > .muted { max-width: 100ch; }
-.field input:not([type="checkbox"]):not([type="radio"]), .field select { max-width: 720px; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select { max-width: 640px; }
 
 /* --- Forms --- */
 
@@ -472,6 +472,9 @@ button, input, select, textarea {
 /* --- Career Coach workspace --- */
 
 .main-wide { max-width: 1520px; }
+/* Data-heavy pages (stat cards, lists, tables) use more of the screen; forms and
+   text pages keep the narrower default. */
+.main-mid { max-width: 1360px; }
 
 .cc-head { max-width: 72ch; margin-bottom: 24px; }
 .cc-head h1 { margin-bottom: 8px; }
