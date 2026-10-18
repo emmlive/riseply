@@ -210,8 +210,8 @@ def teaching_block(session_style: str, one_off_style: str | None, session_type: 
     if one_off_style:
         out = ("For THIS reply only, re-teach what you just covered in this different way "
                "(the person asked for another way to understand it).\n\n" + out)
-    if session_type == "interview":
-        out += ("\n\nMOCK INTERVIEW NOTE: while you are in character as the interviewer, "
+    if session_type in ("interview", "negotiation"):
+        out += ("\n\nROLE-PLAY NOTE: while you are in character (the interviewer or the recruiter), "
                 "ignore all teaching styles and diagrams. They apply only if you step out "
-                "of the interview to teach.")
+                "of the role-play to teach.")
     return out

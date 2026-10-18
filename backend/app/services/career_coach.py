@@ -111,7 +111,7 @@ TEACH WITH REAL TOOLS WHERE THE CAREER HAS THEM:
 def _hands_on(session_type: str) -> str:
     """Tool-based teaching applies everywhere except the mock interview, where
     the coach stays in character as the interviewer."""
-    return "" if session_type == "interview" else HANDS_ON_TOOLS
+    return "" if session_type in IN_CHARACTER else HANDS_ON_TOOLS
 
 
 # A reply that opens with a bare compliment ("Perfect.", "Great job!") gets it
@@ -132,7 +132,7 @@ def strip_praise_opener(text: str, session_type: str = "") -> str:
     """Removes stock-praise openers ("Perfect.", "Great job!", "Exactly, ...").
     Leaves a mock interviewer alone (a hiring manager saying "great, thanks"
     is natural), and never cuts a reply down to nothing."""
-    if session_type == "interview" or not text:
+    if session_type in IN_CHARACTER or not text:
         return text
     m = _PRAISE_OPENER.match(text)
     if not m:
@@ -143,7 +143,10 @@ def strip_praise_opener(text: str, session_type: str = "") -> str:
     return rest[0].upper() + rest[1:]
 
 
-SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "upskill", "leadership")
+SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "upskill", "leadership", "negotiation")
+# Role-plays where the coach stays in character: no teaching cards, no tool
+# coaching, no praise-stripping, until the person asks to step out or the end.
+IN_CHARACTER = ("interview", "negotiation")
 
 # When the person has "read the coach's replies aloud" switched on, the
 # words are spoken by a text-to-speech voice, which reads every symbol out
@@ -263,7 +266,7 @@ def plain_for_voice(text: str) -> str:
 
 def _cue_note(session_type: str) -> str:
     # An interviewer stays in character, so no coaching cards there.
-    return "" if session_type == "interview" else CUE_NOTE
+    return "" if session_type in IN_CHARACTER else CUE_NOTE
 
 
 def _context(resume_text: str, target_role: str) -> str:
@@ -294,6 +297,20 @@ coach and do not explain what you're doing. Open the way a real
 interviewer would (one brief line of context, then ONE realistic
 question suited to this role and this person's background) and wait for
 their answer.""",
+    "negotiation": """You are playing the RECRUITER or hiring manager in a salary
+and offer negotiation role-play. The person has just been offered the target
+role above. Stay in character at all times: do not narrate as a coach and do
+not explain what you are doing.
+
+Open the way a real recruiter would: a warm sentence congratulating them, then
+state the offer (a base salary, and one or two other terms such as a sign-on
+bonus, start date, remote or in-office days, or paid time off) and ask what
+they think. Use round, clearly made-up practice figures that are plausible for
+the role; they are part of the exercise, never real market pay for any
+employer. Privately decide your limits: you have some room above the first
+offer on pay (roughly 5 to 15 percent) and more flexibility on other terms, and
+you will move only when they make a reasoned case or ask well. Wait for their
+answer.""",
     "leadership": """You are coaching someone who wants to move into a
 LEADERSHIP role (the target role above might be a team lead, manager,
 director, VP or CIO/CTO/CISO-level position, or any role that leads people
@@ -370,7 +387,7 @@ a few words, even if one was given to you above):
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
-    default_topic = {"resume": "Resume review", "upskill": "Upskilling", "leadership": "How leaders think"}.get(session_type, "Practice session")
+    default_topic = {"resume": "Resume review", "upskill": "Upskilling", "leadership": "How leaders think", "negotiation": "Offer negotiation"}.get(session_type, "Practice session")
     return {"topic": parsed_topic or topic.strip() or default_topic, "opening_message": opening}
 
 
@@ -389,6 +406,20 @@ follow-up, then the next question. Do NOT coach mid-interview. Only step
 out of character, marked clearly with "[Stepping out of the interview]",
 if they explicitly ask for feedback or the interview has reached its
 natural end.""",
+    "negotiation": """Stay in character as the recruiter. Respond the way a real
+recruiter would: a short, natural reaction, then a realistic move. Hold firm
+on what you would hold firm on, concede only when they earn it (a specific
+reason, a good question, a fair trade) and never just because they asked, and
+say what you can and cannot do. Raise a realistic objection or a constraint
+now and then ("that's above the band for this level"). One new turn at a time,
+and no coaching mid-negotiation. If they say they have a competing offer, treat
+it as true and react accordingly. Never suggest that they claim something false.
+If they ask what the role really pays or for legal or contract advice, step out
+of character briefly with "[Stepping out of the negotiation]", say you cannot
+know their real market and that they should check several current sources
+(salary surveys, postings that state ranges, people in the field) and ask a
+professional about contract terms, then offer to resume. Step out the same way
+if they ask for feedback, or when the deal is clearly reached or they walk away.""",
     "leadership": """You're coaching this person to think like a leader in
 the target role. React to their answer in this order, briefly:
 1. What was sound in their thinking, said plainly and specifically.
@@ -476,7 +507,7 @@ SPOKEN ANSWERS: some of the PERSON's answers were spoken aloud, and the lines
 starting "[spoken:" give the measured delivery (length, pace, filler words as
 transcribed). Include ONE concrete delivery tip in the feedback, based only on
 those numbers. Rules of thumb: about 130 to 160 words per minute sounds natural;
-under about 100 is slow and over about 180 is rushed; most interview answers
+under about 100 is slow and over about 180 is rushed; most spoken interview or negotiation answers
 land well at 60 to 120 seconds. Speech-to-text often drops "um" and "uh", so do
 NOT claim the person never uses them, and do not speculate beyond the numbers.
 """
@@ -509,6 +540,15 @@ def finish_session(session_type: str, target_role: str, topic: str, resume_text:
                 "said. Judge understanding and application, not confident-sounding "
                 "buzzwords. In the feedback, name the single most useful next step "
                 "to keep building this skill")
+    elif session_type == "negotiation":
+        what = ("how well the PERSON negotiated, based only on what they said: "
+                "making a reasoned case instead of just a number, asking questions "
+                "to learn the other side's limits, handling pushback calmly, trading "
+                "terms rather than only demanding, looking at the whole package, "
+                "staying professional and warm, and closing clearly (including "
+                "getting it in writing). Judge the approach, not whether the "
+                "recruiter happened to agree. In the feedback, quote one phrase they "
+                "could use next time and never advise saying anything untrue")
     elif session_type == "leadership":
         what = ("how well the PERSON showed leadership judgment for this target "
                 "role, based only on what they said: weighing trade-offs, "
