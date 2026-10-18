@@ -14,6 +14,7 @@ FREE_LIMITS = {
     "org_ask": settings.free_tier_max_org_ask_per_month,
     "coaching_message": settings.free_tier_max_coaching_messages_per_month,
     "career_coach_message": settings.free_tier_max_career_coach_messages_per_month,
+    "skill_gap": settings.free_tier_max_skill_gap_per_month,
 }
 
 PRO_LIMITS = {
@@ -25,6 +26,7 @@ PRO_LIMITS = {
     "org_ask": settings.pro_tier_max_org_ask_per_month,
     "coaching_message": settings.pro_tier_max_coaching_messages_per_month,
     "career_coach_message": settings.pro_tier_max_career_coach_messages_per_month,
+    "skill_gap": settings.pro_tier_max_skill_gap_per_month,
 }
 
 

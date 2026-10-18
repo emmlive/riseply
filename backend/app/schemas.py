@@ -1785,3 +1785,37 @@ class AdminFeedbackSummary(BaseModel):
     rated: int
     thumbs_up: int
     thumbs_down: int
+
+
+# --- Skill-gap analysis ---
+
+class SkillGapRequest(BaseModel):
+    target_role: str = Field(min_length=2, max_length=120)
+    # True to re-run even when a saved report for this role and resume exists.
+    refresh: bool = False
+
+
+class SkillGapStrength(BaseModel):
+    skill: str
+    evidence: str = ""
+
+
+class SkillGapItem(BaseModel):
+    skill: str
+    importance: str = "medium"
+    seen_in: int = 0
+    why: str = ""
+    tool: str = ""
+    first_exercise: str = ""
+
+
+class SkillGapOut(BaseModel):
+    id: int
+    target_role: str
+    created_at: datetime
+    cached: bool = False
+    summary: str = ""
+    strengths: list[SkillGapStrength] = []
+    gaps: list[SkillGapItem] = []
+    next_step: str = ""
+    jobs_used: int = 0

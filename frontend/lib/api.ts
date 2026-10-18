@@ -1168,3 +1168,25 @@ export interface AdminFeedbackSummary {
   thumbs_up: number;
   thumbs_down: number;
 }
+
+
+export interface SkillGapStrength { skill: string; evidence: string }
+export interface SkillGapItem {
+  skill: string;
+  importance: "high" | "medium" | "low";
+  seen_in: number;
+  why: string;
+  tool: string;
+  first_exercise: string;
+}
+export interface SkillGapReport {
+  id: number;
+  target_role: string;
+  created_at: string;
+  cached: boolean;
+  summary: string;
+  strengths: SkillGapStrength[];
+  gaps: SkillGapItem[];
+  next_step: string;
+  jobs_used: number;
+}
