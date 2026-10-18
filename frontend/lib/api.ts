@@ -1190,3 +1190,13 @@ export interface SkillGapReport {
   next_step: string;
   jobs_used: number;
 }
+
+export interface FitScore {
+  before: number;
+  after: number;
+  before_note: string;
+  after_note: string;
+  improved: string[];
+  still_missing: string[];
+  cached: boolean;
+}

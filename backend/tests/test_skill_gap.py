@@ -41,7 +41,7 @@ def test_validate_drops_junk_and_defaults_importance():
     out = sg.validate({"gaps": [{"skill": ""}, "x", {"skill": "SQL", "importance": "urgent", "seen_in": "two"}],
                        "strengths": [None, {"skill": "Python", "evidence": "x" * 500}]}, 0)
     assert out["gaps"] == [{"skill": "SQL", "importance": "medium", "seen_in": 0, "why": "", "tool": "", "first_exercise": ""}]
-    assert len(out["strengths"][0]["evidence"]) == 160
+    assert len(out["strengths"][0]["evidence"]) <= 200
 
 
 def test_json_extraction_tolerates_fences_and_chatter():
@@ -123,3 +123,12 @@ def test_suggestions_come_from_search_profiles(ctx):
     db.add(models.SearchProfile(user_id=user.id, name="AI Security Engineer", titles=json.dumps(["Security Engineer"])))
     db.commit()
     assert c.get("/skill-gap/suggestions").json() == ["AI Security Engineer", "Security Engineer"]
+
+
+def test_long_text_is_cut_at_a_sentence_or_word_never_mid_word():
+    text = "First sentence is here. " + "Second sentence runs on and on " * 30
+    out = sg._clip(text, 100)
+    assert out == "First sentence is here." or out.endswith("…")
+    assert len(out) <= 101 and not out.endswith("on o")
+    assert sg._clip("short", 100) == "short"
+    assert sg._clip("word " * 40, 22).endswith("…")

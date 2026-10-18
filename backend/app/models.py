@@ -268,6 +268,9 @@ class Application(Base):
     # The tailored cover letter for this application (plain text), written
     # on request and editable. Empty until the person asks for one.
     cover_letter = Column(Text, default="", server_default="")
+    # JSON: the original-vs-tailored resume fit score (services/fit_score.py),
+    # computed once on request. Empty until then.
+    fit_score_data = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     # --- Archivable pattern ---
