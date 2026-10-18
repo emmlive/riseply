@@ -1073,3 +1073,24 @@ textarea.cc-input { resize: vertical; }
 
 /* A line the coach starts with ">" is a quote block (an alert, a log line, a prompt). */
 .cc-quote { display: block; border-left: 3px solid var(--border-strong); padding-left: 10px; margin: 2px 0; color: var(--ink); }
+
+/* --- Skill gaps --- */
+.sg-form .sg-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.sg-form input { flex: 1 1 260px; max-width: 520px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.sg-summary h2 { margin-top: 0; }
+.sg-next { margin: 8px 0 0; }
+.sg-basis { font-size: 0.85rem; margin: 12px 0 0; }
+.sg-link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.sg-link:disabled { opacity: 0.5; cursor: default; }
+.sg-strengths { margin: 0 0 20px; padding-left: 20px; }
+.sg-strengths li { margin: 4px 0; }
+.sg-gap h3 { margin: 0; font-size: 1.05rem; }
+.sg-gap-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.sg-badge { font-size: 0.78rem; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-hover); }
+.sg-high .sg-badge { background: var(--amber-soft); color: var(--amber); }
+.sg-seen { display: flex; align-items: center; gap: 12px; margin: 10px 0 4px; font-size: 0.85rem; }
+.sg-track { flex: 0 1 220px; width: 220px; height: 8px; border-radius: 4px; background: var(--paper); overflow: hidden; }
+.sg-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.sg-high .sg-fill { background: var(--amber); }
+.sg-ex { margin: 6px 0 12px; }
+@media (max-width: 560px) { .sg-track { flex: 1; width: auto; } }

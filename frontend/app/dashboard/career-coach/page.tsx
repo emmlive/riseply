@@ -333,6 +333,21 @@ export default function CareerCoachPage() {
     api(`/career-coach/sessions/${active.id}/notes`, { method: "PUT", body: JSON.stringify({ content: notes }) }).catch(() => {});
   }
 
+  // Arriving from the Skill gaps page: "?role=...&topic=...&type=upskill&style=handson"
+  // fills in the start form so one press of Start begins the practice.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    const r = q.get("role");
+    if (!r) return;
+    setRole(r.slice(0, 120));
+    setTopic((q.get("topic") || "").slice(0, 200));
+    const t = q.get("type");
+    if (t && SESSION_TYPES.some((x) => x.value === t)) setType(t as CareerCoachSessionType);
+    const st = q.get("style");
+    if (st && ["auto", "visual", "handson", "story", "stepbystep"].includes(st)) setLearningStyle(st as LearningStyle);
+  }, []);
+
   // "Practice this now" on the readiness card: set up the start form for the
   // suggested role and session type, ready to press Start.
   function startPractice(roleName: string, sessionType: CareerCoachSessionType) {

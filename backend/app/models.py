@@ -1531,6 +1531,23 @@ class ScoredJob(Base):
     scored_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class SkillGapReport(Base):
+    """A saved skill-gap analysis: the person's resume against a target role
+    and the real job listings we have for it. Stored so reopening the page
+    (or analysing the same role + resume again within a week) costs nothing.
+    `data` is the validated JSON report; `resume_hash` ties it to the resume
+    text it was computed from, so editing the resume invalidates the cache."""
+    __tablename__ = "skill_gap_reports"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    target_role = Column(String, nullable=False)
+    resume_hash = Column(String, default="")
+    jobs_used = Column(Integer, default=0)
+    data = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class NearMissResult(Base):
     """The 'Closest this run' near-misses from the LAST run that didn't
     produce a real match -- a snapshot of 'what came closest last
