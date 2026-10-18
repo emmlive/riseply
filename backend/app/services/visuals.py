@@ -166,7 +166,7 @@ _STYLES = {
     "visual": "TEACHING STYLE -- VISUAL: this person learns best by seeing. Lead with a diagram whenever the idea has a process, structure, comparison, or relationships, then walk through it in words. Use spatial language (\"first box...\") and keep text short.",
     "handson": "TEACHING STYLE -- HANDS-ON: this person learns by doing. Don't explain first. Give a small, concrete exercise or mini-task they can attempt right now, wait for their try, then explain based on what they did.",
     "story": "TEACHING STYLE -- STORIES & ANALOGIES: this person learns through meaning. Anchor the idea in a vivid real-world analogy or a short realistic workplace scenario, then connect it back to the actual concept. Keep the analogy accurate -- say where it breaks down.",
-    "stepbystep": "TEACHING STYLE -- STEP BY STEP: this person learns through worked examples. Show a small example solved in numbered steps with the reasoning for each, then give them a similar one to try. One idea per step.",
+    "stepbystep": "TEACHING STYLE -- STEP BY STEP: this person learns through worked examples. Show a small example solved one step at a time, in plain sentences (\"First...\", \"Next...\") with the reasoning for each, not as a labeled STEP 1 / STEP 2 template. Then give them a similar one to try. One idea per step.",
 }
 
 _AUTO = """TEACHING STYLE -- ADAPTIVE: teach the way that fits the idea and the

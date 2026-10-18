@@ -11,11 +11,11 @@ export function norm(word: string): string {
 }
 
 export interface Tok { s: string; w: number; p: number } // a chunk of text; w = word number (-1 for spaces / symbols); p = the word just before
-export interface TextPart { bold: boolean; toks: Tok[] }
+export interface TextPart { bold: boolean; italic: boolean; toks: Tok[] }
 export type Line =
   | { kind: "rule" }
   | { kind: "cue"; style: CueStyle; text: string; start: number; end: number }
-  | { kind: "text"; parts: TextPart[]; last: boolean };
+  | { kind: "text"; parts: TextPart[]; last: boolean; quote: boolean };
 
 export interface Layout {
   lines: Line[];
@@ -48,7 +48,16 @@ export function layoutCoachText(text: string): Layout {
       lines.push({ kind: "cue", style: cue.style, text: cue.text, start, end: words.length });
       return;
     }
-    const parts: TextPart[] = line.split(/\*\*(.+?)\*\*/g).map((part, j) => {
+    // A ">" at the start of a line is a quote block; a "* " or "- " is a bullet.
+    let body = line;
+    const quote = /^\s*>\s?/.test(body);
+    if (quote) body = body.replace(/^\s*>\s?/, "");
+    body = body.replace(/^(\s*)[*-]\s+(?=\S)/, "$1\u2022 ");
+    // **bold** and *italic* become real formatting instead of showing asterisks.
+    const parts: TextPart[] = body.split(/(\*\*[^*\n]+?\*\*|\*[^*\s][^*\n]*?\*)/g).filter((x) => x !== "").map((raw) => {
+      const bold = /^\*\*[^*]+\*\*$/.test(raw);
+      const italic = !bold && /^\*[^*]+\*$/.test(raw);
+      const part = bold ? raw.slice(2, -2) : italic ? raw.slice(1, -1) : raw;
       let prev = words.length - 1;
       const toks: Tok[] = part.split(/(\s+)/).filter((s) => s !== "").map((s) => {
         const n = /\s/.test(s[0]) ? "" : norm(s);
@@ -59,10 +68,10 @@ export function layoutCoachText(text: string): Layout {
         prev = w;
         return { s, w, p: prev };
       });
-      return { bold: j % 2 === 1, toks };
+      return { bold, italic, toks };
     });
     sent++;   // a new line starts a new sentence
-    lines.push({ kind: "text", parts, last: i === lineList.length - 1 });
+    lines.push({ kind: "text", parts, last: i === lineList.length - 1, quote });
   });
   return { lines, words, sentence };
 }

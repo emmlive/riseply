@@ -107,6 +107,7 @@ def start_session(
         library_service.strip_unoffered_markers(result["opening_message"], {i.id for i in offered})
     )
     opening_text = career_coach_service.limit_cues(opening_text)
+    opening_text = career_coach_service.strip_praise_opener(opening_text, payload.session_type)
     if payload.voice:
         opening_text = career_coach_service.plain_for_voice(opening_text)
     flag = safety_flags.scan(opening_text)
@@ -179,6 +180,7 @@ def send_message(
             library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})
         )
         reply_text = career_coach_service.limit_cues(reply_text)
+        reply_text = career_coach_service.strip_praise_opener(reply_text, session.session_type)
         if payload.voice:
             reply_text = career_coach_service.plain_for_voice(reply_text)
     except Exception as e:

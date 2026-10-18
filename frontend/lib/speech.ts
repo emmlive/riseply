@@ -72,6 +72,7 @@ export function cleanForSpeech(text: string): string {
   t = t.replace(/https?:\/\/\S+/g, "the link");
   t = t.replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,}|={3,})[ \t]*$/gm, "");          // horizontal rules
   t = t.replace(/^[ \t]{0,3}#{1,6}[ \t]*/gm, "");                              // headings
+  t = t.replace(/^[ \t]*>[ \t]?/gm, "");                                       // quote-block markers
   t = t.replace(/^[ \t]*(?:[-*\u2022\u25AA\u25CF\u25E6\u2013])[ \t]+/gm, "");  // bullet markers
   t = t.replace(/\*+/g, "");                                                   // bold / italic stars
   t = t.replace(/(^|[\s(])_+|_+(?=[\s).,!?:;]|$)/gm, "$1");                    // emphasis underscores

@@ -38,6 +38,63 @@ IMPORTANT -- SCOPE AND SAFETY:
 - Be a real coach: specific and honest, not automatically flattering.
 """
 
+# How the coach sounds. Left alone, the model drifts into a script: it opens
+# every reply with "Great!" or "Perfect.", builds a scenario out of ALL-CAPS
+# labels and "STEP 1 --" headings, and narrates its own structure. That reads
+# like a bot, and constant praise stops meaning anything.
+HUMAN_VOICE = """
+SOUND LIKE A PERSON, NOT A SCRIPT:
+- Talk the way a sharp, friendly colleague would across a desk: plain words,
+  contractions, short paragraphs, sentences that vary in length and in how they
+  start.
+- START WITH THE SUBSTANCE. Never open with stock praise or filler: no "Great",
+  "Perfect", "Excellent", "Awesome", "Fantastic", "Absolutely", "Exactly", "Good
+  question" or "Nice job". Praise only when it is earned, and make it specific
+  (say WHAT they got right: "you caught that the login came at 2:47 AM"), at
+  most once in a reply, and never at every step. If their answer was off or
+  thin, say so kindly and directly, then help.
+- Don't announce what you are about to do ("Let's work through a scenario
+  step by step. I'll solve one, then give you one to try"). Just do it.
+- No ALL-CAPS labels or headings, no "STEP 1 --" scaffolding, no horizontal
+  rules, no quote-block lines starting with ">". For a worked example, walk
+  through it in plain sentences ("First...", "Next...", "That's when...").
+  Set a scene the way a person would ("It's 2:47 AM and your SIEM just flagged
+  a login...") instead of a labeled data sheet. A short list is fine only when
+  the items really are a list.
+- Use **bold** rarely, for one key term at most. Don't use single asterisks
+  for italics or write labels like "Reasoning:" in asterisks.
+- Don't repeat phrases or sentence shapes from your earlier replies.
+"""
+
+# A reply that opens with a bare compliment ("Perfect.", "Great job!") gets it
+# cut, so a slip in the model's habits never reaches the person. Only a leading
+# interjection that is followed by real content is removed.
+_PRAISE_WORD = (
+    r"great|perfect|excellent|awesome|fantastic|wonderful|brilliant|amazing|terrific|superb|"
+    r"nice|good|absolutely|exactly|precisely|spot on|well done|nailed it|love it|right on"
+)
+_PRAISE_TAIL = r"(?:\s+(?:job|work|answer|question|point|call|catch|start|thinking|instinct|response|one|stuff|effort|try))?"
+_PRAISE_OPENER = re.compile(
+    rf"^\s*(?:(?:{_PRAISE_WORD}){_PRAISE_TAIL}\s*[.!,;:\u2014-]+\s*)+",
+    re.IGNORECASE,
+)
+
+
+def strip_praise_opener(text: str, session_type: str = "") -> str:
+    """Removes stock-praise openers ("Perfect.", "Great job!", "Exactly, ...").
+    Leaves a mock interviewer alone (a hiring manager saying "great, thanks"
+    is natural), and never cuts a reply down to nothing."""
+    if session_type == "interview" or not text:
+        return text
+    m = _PRAISE_OPENER.match(text)
+    if not m:
+        return text
+    rest = text[m.end():].lstrip()
+    if len(rest) < 25 or rest.startswith(("[[cue:", "[[visual]]")):
+        return text
+    return rest[0].upper() + rest[1:]
+
+
 SESSION_TYPES = ("drill", "walkthrough", "interview", "resume", "upskill", "leadership")
 
 # When the person has "read the coach's replies aloud" switched on, the
@@ -133,6 +190,7 @@ def _plain_segment(text: str) -> str:
     t = re.sub(r"https?://\S+", "the link", t)
     t = re.sub(r"(?m)^[ \t]*(?:-{3,}|\*{3,}|_{3,}|={3,})[ \t]*$", "", t)   # horizontal rules
     t = re.sub(r"(?m)^[ \t]{0,3}#{1,6}[ \t]*", "", t)                   # headings
+    t = re.sub(r"(?m)^[ \t]*>[ \t]?", "", t)                             # quote-block markers
     t = re.sub(r"(?m)^[ \t]*(?:[-*\u2022\u25AA\u25CF\u25E6]|\u2013)[ \t]+", "", t)  # bullet markers
     t = re.sub(r"[*]+", "", t)                                          # bold / italic stars
     t = re.sub(r"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])", "", t)         # emphasis underscores
@@ -249,6 +307,7 @@ a few words, even if one was given to you above):
 <your opening message to the person, following the instructions above>
 
 {CAREER_GUARDRAILS}
+{HUMAN_VOICE}
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, None, session_type)}
@@ -271,9 +330,9 @@ _REPLY_FRAMING = {
 right track and why, filling in what they missed. Then ask ONE natural
 follow-up that deepens the same topic -- or, if they clearly have it,
 wrap up honestly.""",
-    "walkthrough": """React to what they said about this step: affirm what's
-right, correct what's off, fill in the real approach if they missed
-something important. Then move to the next concrete step, or wrap up if
+    "walkthrough": """React to what they said about this step: name
+specifically what's right (no stock praise), correct what's off, fill in
+the real approach if they missed something important. Then move to the next concrete step, or wrap up if
 the task is genuinely complete.""",
     "interview": """Stay in character as the interviewer. React the way a
 real interviewer would -- a brief acknowledgment, maybe a probing
@@ -342,6 +401,7 @@ above.
 {_WRAP_UP_NOTE}
 
 {CAREER_GUARDRAILS}
+{HUMAN_VOICE}
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, style, session_type, visual_kind)}
