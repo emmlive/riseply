@@ -132,3 +132,22 @@ def test_long_text_is_cut_at_a_sentence_or_word_never_mid_word():
     assert len(out) <= 101 and not out.endswith("on o")
     assert sg._clip("short", 100) == "short"
     assert sg._clip("word " * 40, 22).endswith("…")
+
+
+def test_old_cut_off_reports_are_stale_hidden_and_redone_free(ctx):
+    from app.services import usage
+    c, user, db = ctx
+    old = models.SkillGapReport(user_id=user.id, target_role="Security Analyst", resume_hash=sg.resume_hash(user.resume_text),
+                                jobs_used=3, data=json.dumps({"summary": "cut off mid-wor", "gaps": [], "strengths": []}))
+    db.add(old); db.commit()
+    assert c.get("/skill-gap/latest").json() == []          # not shown on the page
+    before = usage.get_usage(db, user.id, "skill_gap")
+    with patch.object(sg.client.messages, "create", return_value=_reply(GOOD)):
+        r = c.post("/skill-gap", json={"target_role": "Security Analyst"})
+    assert r.status_code == 200 and r.json()["cached"] is False
+    db.expire_all()
+    assert usage.get_usage(db, user.id, "skill_gap") == before   # free
+    assert len(c.get("/skill-gap/latest").json()) == 1           # the new one shows
+    with patch.object(sg.client.messages, "create", return_value=_reply(GOOD)) as create:
+        assert c.post("/skill-gap", json={"target_role": "Security Analyst"}).json()["cached"] is True
+        assert create.call_count == 0

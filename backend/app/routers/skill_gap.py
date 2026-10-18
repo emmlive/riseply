@@ -38,8 +38,8 @@ def role_suggestions(db: Session = Depends(get_db), user: models.User = Depends(
 
 @router.get("/latest", response_model=list[schemas.SkillGapOut])
 def latest(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    rows = db.query(models.SkillGapReport).filter_by(user_id=user.id).order_by(models.SkillGapReport.id.desc()).limit(5).all()
-    return [_out(r) for r in rows]
+    rows = db.query(models.SkillGapReport).filter_by(user_id=user.id).order_by(models.SkillGapReport.id.desc()).limit(10).all()
+    return [_out(r) for r in rows if skill_gap_service.is_current(r)][:5]
 
 
 @router.post("", response_model=schemas.SkillGapOut)
@@ -50,15 +50,21 @@ def run(payload: schemas.SkillGapRequest, db: Session = Depends(get_db), user: m
 
     rhash = skill_gap_service.resume_hash(user.resume_text)
     cached = skill_gap_service.find_cached(db, user.id, role, rhash)
-    if cached and not payload.refresh:
+    current = bool(cached) and skill_gap_service.is_current(cached)
+    if current and not payload.refresh:
         return _out(cached, cached=True)
 
-    usage.check_and_increment(db, user, ACTION, 1)
+    # A saved report from before the text-length fix is stale: redoing it is
+    # free, since the earlier one was cut short through no fault of the person.
+    redo_of_stale = bool(cached) and not current
+    if not redo_of_stale:
+        usage.check_and_increment(db, user, ACTION, 1)
     jobs = skill_gap_service.gather_jobs(db, user, role)
     try:
         report = skill_gap_service.analyze(role, user.resume_text, jobs)
     except Exception:
-        usage.decrement(db, user.id, ACTION, 1)
+        if not redo_of_stale:
+            usage.decrement(db, user.id, ACTION, 1)
         raise HTTPException(
             status_code=502,
             detail="Couldn't analyze your skills right now -- this attempt wasn't counted against your limit. Try again shortly.",

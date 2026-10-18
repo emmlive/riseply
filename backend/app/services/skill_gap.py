@@ -24,6 +24,9 @@ client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROP
 MODEL = "claude-sonnet-4-6"
 
 MAX_JOBS = 12
+# Bump when the saved report's shape or text limits change. Older saved
+# reports (text cut short by the earlier, tighter limits) are treated as stale.
+REPORT_VERSION = 2
 CACHE_DAYS = 7
 _STOP = {"and", "the", "for", "with", "of", "a", "an", "to", "in", "at", "senior", "junior", "lead", "sr", "jr"}
 _IMPORTANCE = {"high": 0, "medium": 1, "low": 2}
@@ -169,6 +172,7 @@ def validate(raw: dict, jobs_used: int) -> dict:
         "gaps": gaps,
         "next_step": _clip(raw.get("next_step"), 400),
         "jobs_used": jobs_used,
+        "v": REPORT_VERSION,
     }
 
 
@@ -192,3 +196,10 @@ def find_cached(db: Session, user_id: int, role: str, rhash: str) -> models.Skil
         .filter(models.SkillGapReport.target_role.ilike(role.strip()))
         .order_by(models.SkillGapReport.id.desc()).first()
     )
+
+
+def is_current(row: models.SkillGapReport) -> bool:
+    try:
+        return int(json.loads(row.data or "{}").get("v", 1)) >= REPORT_VERSION
+    except Exception:
+        return False
