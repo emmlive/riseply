@@ -81,3 +81,14 @@ def test_the_reply_endpoint_cuts_a_praise_opener(client):
         r = c.post(f"/career-coach/sessions/{sess.id}/messages", json={"message": "The login time looks odd."})
     assert r.status_code == 200, r.text
     assert r.json()["content"].startswith("You spotted the 2:47 AM login")
+
+
+def test_coach_prompts_teach_with_real_tools_except_mock_interviews():
+    for fn, args in ((cc.start_session, ("drill", "Security Analyst", "", "Resume")),
+                     (cc.reply, ("walkthrough", "Security Analyst", "t", "Resume", [], "teach me Qualys"))):
+        prompt = _captured_prompt(fn, *args)
+        assert "TEACH WITH REAL TOOLS" in prompt and "Qualys Community" in prompt
+        assert "Never invent download links" in prompt
+        assert "systems they own or have written" in prompt
+    interview = _captured_prompt(cc.reply, "interview", "Security Analyst", "t", "Resume", [], "hello")
+    assert "TEACH WITH REAL TOOLS" not in interview

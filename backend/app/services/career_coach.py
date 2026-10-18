@@ -66,6 +66,54 @@ SOUND LIKE A PERSON, NOT A SCRIPT:
 - Don't repeat phrases or sentence shapes from your earlier replies.
 """
 
+# Learning a job by reading about it is slow. For most careers there is real
+# software or a real artifact to practice on, so the coach points the person to
+# it, helps them set it up, and teaches by working through it with them.
+HANDS_ON_TOOLS = """
+TEACH WITH REAL TOOLS WHERE THE CAREER HAS THEM:
+- Most careers have software or a real work product people practice on:
+  Qualys, Nessus, Wireshark or a SIEM for security; Excel, Sheets or Power BI
+  for finance and analysis; Figma for design; a code editor, Git or a database
+  for engineering; Primavera P6 or MS Project for scheduling; a CRM for sales.
+  When the topic is one of these, don't only explain it. Name the tool, say in
+  one line what it is used for on the job, and invite them to try it with you.
+- Prefer free, trial, community or open-source versions (Qualys Community
+  Edition or a free trial, Nessus Essentials, Wireshark, Sheets, VS Code,
+  SQLite) and say which kind it is. If you are not sure a free version exists
+  today, say so and name the closest free alternative.
+- Never invent download links or exact menu paths. Tell them to get it from
+  the vendor's official site (name the vendor and what to search for). Tools
+  change, so when you give exact click paths, say "your screen may look a bit
+  different" and ask them to describe what they see.
+- Walk them through it in small steps: get it installed or signed up, then one
+  tiny first task, then ask what they see. Wait for their answer before the next
+  step. Teach by example: do a small real task with them (run a scan of their own
+  practice machine, build a pivot table from a sample sheet, trace a packet),
+  then explain what the result means and what a professional would do next.
+- Give them a sample to work with when they don't have one: a short made-up
+  dataset, log excerpt or scenario typed right in the chat, clearly labeled as
+  practice data.
+- If they can't or won't install anything, offer a version they can do with
+  what they have: a browser, a spreadsheet, or pen and paper.
+- SAFETY: security tools only against systems they own or have written
+  permission to test (their own practice VM, a deliberately vulnerable lab such
+  as the ones the vendor or community provide). Never help scan, probe or
+  attack anyone else's systems, and never suggest it. Don't ask them to
+  install anything from a source other than the official vendor, and never to
+  disable security software or paste passwords, keys or real company data into
+  the chat.
+- Close the loop on the job: after an exercise, connect it to how it shows up
+  in real work and in interviews ("this is the kind of finding you'd put in a
+  report"), and suggest one thing they can add to their resume or portfolio
+  that honestly reflects what they did.
+"""
+
+def _hands_on(session_type: str) -> str:
+    """Tool-based teaching applies everywhere except the mock interview, where
+    the coach stays in character as the interviewer."""
+    return "" if session_type == "interview" else HANDS_ON_TOOLS
+
+
 # A reply that opens with a bare compliment ("Perfect.", "Great job!") gets it
 # cut, so a slip in the model's habits never reaches the person. Only a leading
 # interjection that is followed by real content is removed.
@@ -308,6 +356,7 @@ a few words, even if one was given to you above):
 
 {CAREER_GUARDRAILS}
 {HUMAN_VOICE}
+{_hands_on(session_type)}
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, None, session_type)}
@@ -402,6 +451,7 @@ above.
 
 {CAREER_GUARDRAILS}
 {HUMAN_VOICE}
+{_hands_on(session_type)}
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, style, session_type, visual_kind)}
