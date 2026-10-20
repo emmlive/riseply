@@ -12,7 +12,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import cover_letter as cover_letter_service
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -956,11 +956,16 @@ def approve_application(
 
 @router.post("/applications/{application_id}/reject")
 def reject_application(
-    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+    application_id: int,
+    payload: schemas.RejectRequest | None = None,
+    db: Session = Depends(get_db), user: models.User = Depends(get_current_user),
 ):
     app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
+    if payload and payload.reason in match_feedback.REASONS:
+        app_row.reject_reason = payload.reason
+        app_row.reject_note = match_feedback.clean_note(payload.note)
     app_row.status = "rejected"
     app_row.status_updated_at = datetime.utcnow()
     db.commit()

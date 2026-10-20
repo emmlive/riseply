@@ -65,12 +65,24 @@ function nextStepLine(app: Application): string {
   }
 }
 
+const REJECT_REASONS: [string, string][] = [
+  ["level_too_junior", "Too junior"],
+  ["level_too_senior", "Too senior"],
+  ["pay", "Pay too low"],
+  ["location", "Location"],
+  ["field", "Wrong field"],
+  ["company", "Not this company"],
+  ["tools", "Wrong tools"],
+  ["not_interested", "Not interested"],
+];
+
 export default function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [rejecting, setRejecting] = useState<number | null>(null);
   const [briefs, setBriefs] = useState<Record<number, CompanyBrief | "loading" | string>>({});
   const [netDrafts, setNetDrafts] = useState<Record<number, Networking | "loading" | string>>({});
   const [netOpen, setNetOpen] = useState<Record<number, boolean>>({});
@@ -184,11 +196,12 @@ export default function ApplicationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apps]);
 
-  async function act(id: number, action: "approve" | "reject" | "mark-submitted" | "mark-interviewing" | "mark-accepted") {
+  async function act(id: number, action: "approve" | "reject" | "mark-submitted" | "mark-interviewing" | "mark-accepted", reason = "") {
     setBusyId(id);
     setActionError("");
+    setRejecting(null);
     try {
-      await api(`/applications/${id}/${action}`, { method: "POST" });
+      await api(`/applications/${id}/${action}`, { method: "POST", ...(reason ? { body: JSON.stringify({ reason }) } : {}) });
     } catch (e: any) {
       // e.g. the posting closed since it was matched: say so, and the
       // refresh below moves it out of the way.
@@ -634,7 +647,18 @@ export default function ApplicationsPage() {
                     <button className="btn btn-primary btn-sm" disabled={busyId === app.id}
                             onClick={() => act(app.id, "approve")}>Approve</button>
                     <button className="btn btn-danger-ghost btn-sm" disabled={busyId === app.id}
-                            onClick={() => act(app.id, "reject")}>Reject</button>
+                            onClick={() => setRejecting(rejecting === app.id ? null : app.id)} aria-expanded={rejecting === app.id}>Reject</button>
+                  </div>
+                )}
+                {app.status === "pending_approval" && rejecting === app.id && (
+                  <div className="rej-why" role="group" aria-label="Why are you rejecting this match?">
+                    <span className="hint">What was off? It teaches the matcher what to skip next time.</span>
+                    <div className="rej-chips">
+                      {REJECT_REASONS.map(([key, label]) => (
+                        <button key={key} className="pill rej-chip" onClick={() => act(app.id, "reject", key)}>{label}</button>
+                      ))}
+                      <button className="sg-link" onClick={() => act(app.id, "reject")}>Just reject</button>
+                    </div>
                   </div>
                 )}
                 {app.status === "pending_approval" && (
