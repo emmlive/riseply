@@ -89,3 +89,32 @@ def test_failure_is_refunded_and_nothing_saved(ctx):
     db.expire_all()
     assert usage.get_usage(db, user.id, "career_path") == before
     assert db.query(models.CareerPathPlan).filter_by(user_id=user.id).count() == 0
+
+
+def test_long_text_ends_at_a_full_sentence_not_mid_thought():
+    text = "You already do audit work. " * 6 + "This last sentence is the one that would get cut off in the middle of a thought"
+    out = cp._clip(text, 100)
+    assert out.endswith(".") and not out.endswith("…") and len(out) <= 100
+
+
+def test_prompt_speaks_to_the_person_and_asks_for_finished_sentences():
+    p = cp._prompt("Analyst", "resume", 12, 5)
+    assert 'as "you"' in p and "Finish every sentence" in p
+
+
+def test_old_plans_are_hidden_and_rebuilt_free(ctx):
+    from app.services import usage
+    c, user, db = ctx
+    body = {"target_role": "Cloud Security Engineer", "months": 12, "hours_per_week": 5}
+    old = {k: v for k, v in GOOD.items()}  # no "version": written before the fix
+    db.add(models.CareerPathPlan(user_id=user.id, target_role=body["target_role"], resume_hash=cp.resume_hash(user.resume_text),
+                                 months=12, hours_per_week=5, data=json.dumps(old)))
+    db.commit()
+    before = usage.get_usage(db, user.id, "career_path")
+    assert c.get("/career-path/latest").json() is None
+    with patch.object(cp.client.messages, "create", return_value=_reply(GOOD)) as create:
+        r = c.post("/career-path", json=body)
+        assert r.status_code == 200 and create.call_count == 1 and r.json()["cached"] is False
+    db.expire_all()
+    assert usage.get_usage(db, user.id, "career_path") == before          # free
+    assert c.get("/career-path/latest").json()["target_role"] == "Cloud Security Engineer"

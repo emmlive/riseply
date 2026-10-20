@@ -19,6 +19,13 @@ function practiceLink(role: string, skill: string): string {
   return `/dashboard/career-coach?${q.toString()}`;
 }
 
+// One coach session for a whole stage: the stage and its skills are the topic.
+function stageLink(role: string, stage: { name: string; skills: string[] }): string {
+  const topic = `${stage.name}: ${stage.skills.join(", ")}`.slice(0, 200);
+  const q = new URLSearchParams({ role, topic, type: "upskill", style: "handson" });
+  return `/dashboard/career-coach?${q.toString()}`;
+}
+
 export default function CareerPathPage() {
   const [role, setRole] = useState("");
   const [months, setMonths] = useState(12);
@@ -101,6 +108,13 @@ export default function CareerPathPage() {
             <p className="cp-fit"><span className={`sg-badge cp-fit-${plan.fit}`}>{FIT_LABEL[plan.fit] || plan.fit}</span></p>
             {plan.realistic_timeline && <p className="sg-next"><strong>Realistic timeline:</strong> {plan.realistic_timeline}</p>}
             {plan.honest_note && <p className="muted sg-basis">{plan.honest_note}</p>}
+            {plan.stages[0] && (
+              <p style={{ margin: "14px 0 0" }}>
+                <Link className="btn btn-primary" href={stageLink(plan.target_role, plan.stages[0])}>
+                  Start training: {plan.stages[0].name}
+                </Link>
+              </p>
+            )}
           </div>
 
           {plan.bridge_roles.length > 0 && (
@@ -122,6 +136,7 @@ export default function CareerPathPage() {
                 {s.when && <span className="sg-badge">{s.when}</span>}
               </div>
               {s.goal && <p>{s.goal}</p>}
+              {s.skills.length > 0 && <p className="muted" style={{ margin: "8px 0 2px", fontSize: "0.85rem" }}>Skills in this stage (click one to practice just that):</p>}
               {s.skills.length > 0 && (
                 <div className="cp-skills">
                   {s.skills.map((k) => (
@@ -131,6 +146,11 @@ export default function CareerPathPage() {
               )}
               {s.proof && <p className="sg-ex"><strong>Build this:</strong> {s.proof}</p>}
               {s.milestone && <p className="muted" style={{ margin: 0 }}>Done when: {s.milestone}</p>}
+              <p style={{ margin: "12px 0 0" }}>
+                <Link className={i === 0 ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"} href={stageLink(plan.target_role, s)}>
+                  Train this stage with the Career Coach
+                </Link>
+              </p>
             </div>
           ))}
 
