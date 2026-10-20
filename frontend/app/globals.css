@@ -1115,3 +1115,10 @@ textarea.cc-input { resize: vertical; }
 @keyframes cc-pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .cc-rec { animation: none; } }
 .cc-delivery { margin-top: 6px; font-size: 0.78rem; opacity: 0.85; white-space: normal; }
+
+.net-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.net-row .input { flex: 1 1 180px; min-width: 0; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.net-row .input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.net-draft { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+.net-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 0.9rem; }
+.net-text { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.5; font-size: 0.92rem; }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
 import CoverLetter from "@/components/CoverLetter";
 import BackToTop from "@/components/BackToTop";
-import { api, Application, FitScore, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
+import { api, Application, FitScore, Networking, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -71,6 +71,10 @@ export default function ApplicationsPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [netDrafts, setNetDrafts] = useState<Record<number, Networking | "loading" | string>>({});
+  const [netOpen, setNetOpen] = useState<Record<number, boolean>>({});
+  const [netContact, setNetContact] = useState<Record<number, { name: string; role: string }>>({});
+  const [netCopied, setNetCopied] = useState("");
   const [fitScores, setFitScores] = useState<Record<number, FitScore | "loading" | string>>({});
   const [keywordGaps, setKeywordGaps] = useState<Record<number, KeywordGaps | "loading" | "none">>({});
   const [followups, setFollowups] = useState<Record<number, Followup | "loading" | "none">>({});
@@ -253,6 +257,31 @@ export default function ApplicationsPage() {
     } catch (err: any) {
       setPreps((p) => ({ ...p, [id]: "none" }));
       alert(err.message || "Couldn't generate interview prep.");
+    }
+  }
+
+  async function writeNetworking(id: number, refresh = false) {
+    const c = netContact[id] || { name: "", role: "" };
+    setNetDrafts((d) => ({ ...d, [id]: "loading" }));
+    try {
+      const result = await api<Networking>(`/applications/${id}/networking`, {
+        method: "POST",
+        body: JSON.stringify({ contact_name: c.name.trim(), contact_role: c.role.trim(), refresh }),
+      });
+      setNetDrafts((d) => ({ ...d, [id]: result }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Couldn't write the messages right now. Try again.";
+      setNetDrafts((d) => ({ ...d, [id]: `error:${msg}` }));
+    }
+  }
+
+  async function copyDraft(key: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNetCopied(key);
+      setTimeout(() => setNetCopied((k) => (k === key ? "" : k)), 1800);
+    } catch {
+      /* clipboard blocked: the text is still selectable on screen */
     }
   }
 
@@ -683,6 +712,64 @@ export default function ApplicationsPage() {
                       <p className="hint" style={{ margin: "10px 0 0" }}>
                         An AI estimate of how well each resume&apos;s real content covers what the posting asks for.{" "}
                         <button className="sg-link" onClick={() => compareFit(app.id, true)}>Re-score</button>
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
+            {(() => {
+              const net = netDrafts[app.id];
+              const done = net && typeof net === "object" ? net : null;
+              const failed = typeof net === "string" && net.startsWith("error:") ? net.slice(6) : "";
+              const contact = netContact[app.id] || { name: "", role: "" };
+              return (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                  {net === "loading" && <p className="muted">Writing your messages…</p>}
+                  {!done && net !== "loading" && (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setNetOpen((o) => ({ ...o, [app.id]: !o[app.id] }))} aria-expanded={!!netOpen[app.id]}>
+                        Write networking messages
+                      </button>
+                      {netOpen[app.id] && (
+                        <div className="net-form">
+                          <p className="hint" style={{ margin: "8px 0" }}>
+                            Optional: who will you write to? The messages address them by name. Leave it blank for a general set.
+                          </p>
+                          <div className="net-row">
+                            <input className="input" placeholder="Their name" aria-label="Contact name" maxLength={80} value={contact.name}
+                              onChange={(e) => setNetContact((c) => ({ ...c, [app.id]: { ...contact, name: e.target.value } }))} />
+                            <input className="input" placeholder="Their role (recruiter, manager…)" aria-label="Contact role" maxLength={120} value={contact.role}
+                              onChange={(e) => setNetContact((c) => ({ ...c, [app.id]: { ...contact, role: e.target.value } }))} />
+                            <button className="btn btn-primary btn-sm" onClick={() => writeNetworking(app.id)}>Write messages</button>
+                          </div>
+                        </div>
+                      )}
+                      {failed && <p className="cc-error" role="alert" style={{ marginTop: 8 }}>{failed}</p>}
+                    </>
+                  )}
+                  {done && (
+                    <>
+                      <h3 style={{ fontSize: "0.95rem", marginBottom: 4 }}>Networking messages</h3>
+                      {done.tip && <p className="hint" style={{ margin: "0 0 10px" }}>{done.tip}</p>}
+                      {done.drafts.map((d) => {
+                        const key = `${app.id}-${d.kind}`;
+                        return (
+                          <div key={d.kind} className="net-draft">
+                            <div className="net-head">
+                              <strong>{d.label}</strong>
+                              <button className="sg-link" onClick={() => copyDraft(key, d.text)}>{netCopied === key ? "Copied" : "Copy"}</button>
+                            </div>
+                            <p className="net-text">{d.text}</p>
+                          </div>
+                        );
+                      })}
+                      <p className="hint" style={{ margin: "10px 0 0" }}>
+                        Nothing is sent for you. Fill in anything in [brackets] before you send, and only say what&apos;s true.{" "}
+                        <button className="sg-link" onClick={() => { setNetDrafts((d) => { const n = { ...d }; delete n[app.id]; return n; }); setNetOpen((o) => ({ ...o, [app.id]: true })); }}>
+                          Write for someone else
+                        </button>
                       </p>
                     </>
                   )}

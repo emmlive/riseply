@@ -1850,3 +1850,23 @@ class FitScoreOut(BaseModel):
     improved: list[str] = []
     still_missing: list[str] = []
     cached: bool = False
+
+
+# --- Networking drafts ---
+
+class NetworkingRequest(BaseModel):
+    contact_name: str = Field("", max_length=80)
+    contact_role: str = Field("", max_length=120)
+    refresh: bool = False
+
+
+class NetworkingDraft(BaseModel):
+    kind: str
+    label: str
+    text: str
+
+
+class NetworkingOut(BaseModel):
+    drafts: list[NetworkingDraft]
+    tip: str = ""
+    cached: bool = False
