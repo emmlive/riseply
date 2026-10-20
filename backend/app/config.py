@@ -272,6 +272,7 @@ class Settings(BaseSettings):
     free_tier_max_fit_score_per_month: int = 10
     free_tier_max_networking_per_month: int = 5
     free_tier_max_company_brief_per_month: int = 5
+    free_tier_max_career_path_per_month: int = 2
 
     # --- Pro tier limits ---
     pro_tier_max_matches_per_month: int = 300
@@ -287,6 +288,7 @@ class Settings(BaseSettings):
     pro_tier_max_fit_score_per_month: int = 100
     pro_tier_max_networking_per_month: int = 100
     pro_tier_max_company_brief_per_month: int = 100
+    pro_tier_max_career_path_per_month: int = 20
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---
     # Reuses cron_secret (above) -- both scheduled jobs are triggered the

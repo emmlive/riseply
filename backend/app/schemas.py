@@ -1883,3 +1883,43 @@ class CompanyBriefOut(BaseModel):
     questions_to_ask: list[str] = []
     verify: list[str] = []
     cached: bool = False
+
+
+# --- Career path plan ---
+
+class CareerPathRequest(BaseModel):
+    target_role: str = Field(..., min_length=2, max_length=120)
+    months: int = Field(12, ge=3, le=36)
+    hours_per_week: int = Field(5, ge=1, le=40)
+    refresh: bool = False
+
+
+class CareerPathStage(BaseModel):
+    name: str
+    when: str = ""
+    goal: str = ""
+    skills: list[str] = []
+    proof: str = ""
+    milestone: str = ""
+
+
+class CareerPathBridge(BaseModel):
+    title: str
+    why: str = ""
+
+
+class CareerPathOut(BaseModel):
+    id: int
+    target_role: str
+    months: int
+    hours_per_week: int
+    created_at: datetime
+    where_you_are: str
+    target_summary: str = ""
+    fit: str = "stretch"
+    realistic_timeline: str = ""
+    bridge_roles: list[CareerPathBridge] = []
+    stages: list[CareerPathStage]
+    first_week: list[str] = []
+    honest_note: str = ""
+    cached: bool = False
