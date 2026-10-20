@@ -1870,3 +1870,16 @@ class NetworkingOut(BaseModel):
     drafts: list[NetworkingDraft]
     tip: str = ""
     cached: bool = False
+
+
+# --- Company brief ---
+
+class CompanyBriefOut(BaseModel):
+    known: bool = True
+    background: str = ""
+    the_role: str = ""
+    read_between_lines: list[str] = []
+    talking_points: list[str] = []
+    questions_to_ask: list[str] = []
+    verify: list[str] = []
+    cached: bool = False

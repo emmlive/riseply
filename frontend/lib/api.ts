@@ -1193,6 +1193,10 @@ export interface SkillGapReport {
   jobs_used: number;
 }
 
+export interface CompanyBrief {
+  known: boolean; background: string; the_role: string; read_between_lines: string[];
+  talking_points: string[]; questions_to_ask: string[]; verify: string[]; cached: boolean;
+}
 export interface NetworkingDraft { kind: string; label: string; text: string }
 export interface Networking { drafts: NetworkingDraft[]; tip: string; cached: boolean }
 

@@ -5,7 +5,7 @@ import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
 import CoverLetter from "@/components/CoverLetter";
 import BackToTop from "@/components/BackToTop";
-import { api, Application, FitScore, Networking, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
+import { api, Application, FitScore, Networking, CompanyBrief, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -71,6 +71,7 @@ export default function ApplicationsPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
   const [preps, setPreps] = useState<Record<number, InterviewPrep | "loading" | "none">>({});
+  const [briefs, setBriefs] = useState<Record<number, CompanyBrief | "loading" | string>>({});
   const [netDrafts, setNetDrafts] = useState<Record<number, Networking | "loading" | string>>({});
   const [netOpen, setNetOpen] = useState<Record<number, boolean>>({});
   const [netContact, setNetContact] = useState<Record<number, { name: string; role: string }>>({});
@@ -257,6 +258,17 @@ export default function ApplicationsPage() {
     } catch (err: any) {
       setPreps((p) => ({ ...p, [id]: "none" }));
       alert(err.message || "Couldn't generate interview prep.");
+    }
+  }
+
+  async function writeBrief(id: number, refresh = false) {
+    setBriefs((b) => ({ ...b, [id]: "loading" }));
+    try {
+      const result = await api<CompanyBrief>(`/applications/${id}/company-brief${refresh ? "?refresh=true" : ""}`, { method: "POST" });
+      setBriefs((b) => ({ ...b, [id]: result }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Couldn't write the brief right now. Try again.";
+      setBriefs((b) => ({ ...b, [id]: `error:${msg}` }));
     }
   }
 
@@ -712,6 +724,44 @@ export default function ApplicationsPage() {
                       <p className="hint" style={{ margin: "10px 0 0" }}>
                         An AI estimate of how well each resume&apos;s real content covers what the posting asks for.{" "}
                         <button className="sg-link" onClick={() => compareFit(app.id, true)}>Re-score</button>
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
+            {(() => {
+              const br = briefs[app.id];
+              const done = br && typeof br === "object" ? br : null;
+              const failed = typeof br === "string" && br.startsWith("error:") ? br.slice(6) : "";
+              const list = (title: string, items: string[]) => items.length > 0 && (
+                <>
+                  <h4 className="brief-h">{title}</h4>
+                  <ul className="brief-list">{items.map((x) => <li key={x}>{x}</li>)}</ul>
+                </>
+              );
+              return (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                  {br === "loading" && <p className="muted">Reading the posting and writing your brief…</p>}
+                  {!done && br !== "loading" && (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => writeBrief(app.id)}>Brief me on this company</button>
+                      {failed && <p className="cc-error" role="alert" style={{ marginTop: 8 }}>{failed}</p>}
+                    </>
+                  )}
+                  {done && (
+                    <>
+                      <h3 style={{ fontSize: "0.95rem", marginBottom: 6 }}>Company brief</h3>
+                      <p className="brief-p"><strong>The company.</strong> {done.background}</p>
+                      <p className="brief-p"><strong>The role.</strong> {done.the_role}</p>
+                      {list("Reading between the lines", done.read_between_lines)}
+                      {list("Your talking points", done.talking_points)}
+                      {list("Questions to ask them", done.questions_to_ask)}
+                      {list("Look up before you talk to them", done.verify)}
+                      <p className="hint" style={{ margin: "10px 0 0" }}>
+                        {done.known ? "Company background is general knowledge and may be out of date; the role comes from the posting." : "This company wasn't recognised, so the brief sticks to the posting."}{" "}
+                        <button className="sg-link" onClick={() => writeBrief(app.id, true)}>Rewrite</button>
                       </p>
                     </>
                   )}
