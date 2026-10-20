@@ -16,6 +16,7 @@ FREE_LIMITS = {
     "career_coach_message": settings.free_tier_max_career_coach_messages_per_month,
     "skill_gap": settings.free_tier_max_skill_gap_per_month,
     "fit_score": settings.free_tier_max_fit_score_per_month,
+    "networking": settings.free_tier_max_networking_per_month,
 }
 
 PRO_LIMITS = {
@@ -29,6 +30,7 @@ PRO_LIMITS = {
     "career_coach_message": settings.pro_tier_max_career_coach_messages_per_month,
     "skill_gap": settings.pro_tier_max_skill_gap_per_month,
     "fit_score": settings.pro_tier_max_fit_score_per_month,
+    "networking": settings.pro_tier_max_networking_per_month,
 }
 
 

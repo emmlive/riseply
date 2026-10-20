@@ -365,6 +365,7 @@ def list_applications(
         defer(models.Application.tailored_resume_data),
         defer(models.Application.cover_letter),
         defer(models.Application.fit_score_data),
+        defer(models.Application.networking_data),
         defer(models.Job.description),
     ).filter(
         models.Application.user_id == user.id,

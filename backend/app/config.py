@@ -270,6 +270,7 @@ class Settings(BaseSettings):
     free_tier_max_career_coach_messages_per_month: int = 20
     free_tier_max_skill_gap_per_month: int = 3
     free_tier_max_fit_score_per_month: int = 10
+    free_tier_max_networking_per_month: int = 5
 
     # --- Pro tier limits ---
     pro_tier_max_matches_per_month: int = 300
@@ -283,6 +284,7 @@ class Settings(BaseSettings):
     pro_tier_max_career_coach_messages_per_month: int = 250
     pro_tier_max_skill_gap_per_month: int = 25
     pro_tier_max_fit_score_per_month: int = 100
+    pro_tier_max_networking_per_month: int = 100
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---
     # Reuses cron_secret (above) -- both scheduled jobs are triggered the

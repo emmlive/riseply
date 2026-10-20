@@ -271,6 +271,8 @@ class Application(Base):
     # JSON: the original-vs-tailored resume fit score (services/fit_score.py),
     # computed once on request. Empty until then.
     fit_score_data = Column(Text, default="", server_default="")
+    # JSON: networking drafts for this job (services/networking.py).
+    networking_data = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     # --- Archivable pattern ---

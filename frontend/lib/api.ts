@@ -1193,6 +1193,9 @@ export interface SkillGapReport {
   jobs_used: number;
 }
 
+export interface NetworkingDraft { kind: string; label: string; text: string }
+export interface Networking { drafts: NetworkingDraft[]; tip: string; cached: boolean }
+
 export interface FitScore {
   before: number;
   after: number;
