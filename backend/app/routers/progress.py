@@ -5,6 +5,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import progress as progress_service
+from app.services import next_actions as next_actions_service
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -28,3 +29,10 @@ def get_readiness(
     """Per-role readiness to get the job and to do the job, from the coach's
     scored sessions. A lighter call for the Career Coach page."""
     return progress_service.build_readiness(db, user)
+
+
+@router.get("/next-actions", response_model=list[schemas.NextAction])
+def get_next_actions(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Up to four suggestions for what to do next, from what the person already
+    has. Read-only, no AI call, not metered."""
+    return next_actions_service.build(db, user)
