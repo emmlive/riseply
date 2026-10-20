@@ -1140,3 +1140,8 @@ textarea.cc-input { resize: vertical; }
 .rej-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .rej-chip { cursor: pointer; background: var(--surface); border: 1px solid var(--border-strong); font: inherit; font-size: 0.82rem; }
 .rej-chip:hover { border-color: var(--accent); }
+
+.na-list { list-style: none; margin: 0; padding: 0; }
+.na-list li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-top: 1px solid var(--border); }
+.na-list li:first-child { border-top: 0; padding-top: 0; }
+@media (max-width: 560px) { .na-list li { flex-direction: column; align-items: flex-start; } }

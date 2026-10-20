@@ -1930,3 +1930,13 @@ class CareerPathOut(BaseModel):
 class RejectRequest(BaseModel):
     reason: str = Field("", max_length=40)
     note: str = Field("", max_length=300)
+
+
+# --- Dashboard "Do this next" ---
+
+class NextAction(BaseModel):
+    key: str
+    title: str
+    detail: str = ""
+    href: str
+    cta: str = "Open"
