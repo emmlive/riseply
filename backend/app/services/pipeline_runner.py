@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms, match_feedback
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, report as source_report
 from app.services import discovery_sources
 from app.config import settings
@@ -759,6 +759,13 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         "keywords_excluded": json.loads(p.keywords_excluded),
         "active": p.active,
     } for p in profiles_rows]
+
+    # What the person has told us by rejecting matches (and why) rides along
+    # as a soft signal; empty until there is enough of it to mean something.
+    feedback_notes = match_feedback.notes_for(db, user.id)
+    if feedback_notes:
+        for prof in profiles:
+            prof["feedback_notes"] = feedback_notes
 
     already_applied_subq = db.query(models.Application.job_id).filter(
         models.Application.user_id == user.id

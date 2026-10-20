@@ -1923,3 +1923,10 @@ class CareerPathOut(BaseModel):
     first_week: list[str] = []
     honest_note: str = ""
     cached: bool = False
+
+
+# --- Why a match was rejected (teaches the matcher) ---
+
+class RejectRequest(BaseModel):
+    reason: str = Field("", max_length=40)
+    note: str = Field("", max_length=300)

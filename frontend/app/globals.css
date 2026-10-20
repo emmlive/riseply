@@ -1135,3 +1135,8 @@ textarea.cc-input { resize: vertical; }
 .cp-skills { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .cp-skill { text-decoration: none; cursor: pointer; }
 .cp-skill:hover { border-color: var(--accent); }
+
+.rej-why { flex-basis: 100%; margin-top: 8px; }
+.rej-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.rej-chip { cursor: pointer; background: var(--surface); border: 1px solid var(--border-strong); font: inherit; font-size: 0.82rem; }
+.rej-chip:hover { border-color: var(--accent); }

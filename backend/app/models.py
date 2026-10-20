@@ -275,6 +275,10 @@ class Application(Base):
     networking_data = Column(Text, default="", server_default="")
     # JSON: company/role brief for this job (services/company_brief.py).
     company_brief_data = Column(Text, default="", server_default="")
+    # Why the person rejected this match (a key from services/match_feedback.REASONS)
+    # and an optional short note. Feeds the matcher as a soft signal.
+    reject_reason = Column(String, default="", server_default="")
+    reject_note = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     # --- Archivable pattern ---
