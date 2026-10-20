@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,6 +12,7 @@ from app.services import usage, rise_index, safety_flags
 from app.services import library as library_service
 from app.services import visuals as visuals_service
 from app.services import discord_notify
+from app.services import videos as videos_service
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -286,3 +287,40 @@ def save_notes(
     db.commit()
     db.refresh(note)
     return note
+
+
+@router.get("/videos", response_model=schemas.CoachVideosOut)
+def coach_videos(
+    q: str = Query(..., min_length=2, max_length=100),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Real, embeddable YouTube videos for a topic, found by search (the model
+    never names videos). Always returns a link to the YouTube search too, so it
+    works with no API key and when the monthly in-app allowance is used up.
+    Cached results are free; only a fresh YouTube search is metered."""
+    query = videos_service.normalize(q)
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail="Say what you want a video about.")
+    out = {"query": query, "videos": [], "search_url": videos_service.search_url(query), "note": ""}
+    if not videos_service.enabled():
+        return out
+    found = videos_service.cached(db, query)
+    if found is None:
+        try:
+            usage.check_and_increment(db, user, "coach_video", 1)
+        except HTTPException:
+            out["note"] = "You've used this month's in-app videos. The YouTube link still works."
+            return out
+        try:
+            found = videos_service.fetch(query)
+        except Exception as e:
+            usage.decrement(db, user.id, "coach_video", 1)
+            print(f"[videos] YouTube search failed for {query!r}: {e}")
+            out["note"] = "Couldn't load videos just now. The YouTube link still works."
+            return out
+        videos_service.save(db, query, found)
+    out["videos"] = found
+    if not found:
+        out["note"] = "No embeddable videos found for that. Try the YouTube link or different words."
+    return out

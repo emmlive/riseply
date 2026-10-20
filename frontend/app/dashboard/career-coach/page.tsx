@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
+import CoachVideos from "@/components/CoachVideos";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
 import { ReadinessCard } from "@/components/Readiness";
@@ -670,6 +671,7 @@ export default function CareerCoachPage() {
               </div>
 
               <CueKey used={usedCues} />
+              {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
               <div className="cc-chat-window" aria-live="polite" ref={winRef}>
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>

@@ -1564,6 +1564,17 @@ class CareerPathPlan(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class VideoSearchCache(Base):
+    """A month's memory of one video search (services/videos.py), so popular
+    topics don't spend YouTube API quota twice."""
+    __tablename__ = "video_search_cache"
+
+    id = Column(Integer, primary_key=True)
+    query_key = Column(String, nullable=False, unique=True, index=True)
+    data = Column(Text, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class SkillGapReport(Base):
     """A saved skill-gap analysis: the person's resume against a target role
     and the real job listings we have for it. Stored so reopening the page

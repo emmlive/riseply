@@ -1940,3 +1940,19 @@ class NextAction(BaseModel):
     detail: str = ""
     href: str
     cta: str = "Open"
+
+
+# --- Career Coach videos ---
+
+class CoachVideo(BaseModel):
+    id: str
+    title: str
+    channel: str = ""
+    thumb: str = ""
+
+
+class CoachVideosOut(BaseModel):
+    query: str
+    videos: list[CoachVideo] = []
+    search_url: str
+    note: str = ""

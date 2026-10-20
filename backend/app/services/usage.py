@@ -19,6 +19,7 @@ FREE_LIMITS = {
     "networking": settings.free_tier_max_networking_per_month,
     "company_brief": settings.free_tier_max_company_brief_per_month,
     "career_path": settings.free_tier_max_career_path_per_month,
+    "coach_video": settings.free_tier_max_coach_video_per_month,
 }
 
 PRO_LIMITS = {
@@ -35,6 +36,7 @@ PRO_LIMITS = {
     "networking": settings.pro_tier_max_networking_per_month,
     "company_brief": settings.pro_tier_max_company_brief_per_month,
     "career_path": settings.pro_tier_max_career_path_per_month,
+    "coach_video": settings.pro_tier_max_coach_video_per_month,
 }
 
 
