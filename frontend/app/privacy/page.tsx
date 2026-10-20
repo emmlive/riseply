@@ -12,7 +12,7 @@ export default function PrivacyPage() {
     <div className="auth-shell" style={{ alignItems: "flex-start", paddingTop: 60 }}>
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
         <h1>Privacy Policy</h1>
-        <p className="muted">Last updated: August 2026</p>
+        <p className="muted">Last updated: October 2026</p>
 
         <p><em>
           This is a starting template, not a substitute for legal advice —
@@ -57,6 +57,35 @@ export default function PrivacyPage() {
           Your data is retained as long as your account is active.
           Contact us if you'd like your account and associated data
           deleted.
+        </p>
+
+        <h2>Riseply Autofill browser extension</h2>
+        <p>
+          The Riseply Autofill extension for Chrome runs on web pages so it can
+          recognise job postings and application forms. Recognising a page
+          happens inside your browser and nothing is sent anywhere. The
+          extension sends data to Riseply only when you click a button in its
+          sidebar:
+        </p>
+        <ul>
+          <li>
+            <strong>Score my resume</strong>, <strong>Generate cover letter</strong> and
+            <strong> suggested answers</strong> send the text of the job posting
+            you are viewing, and the question you asked about, to Riseply so
+            your resume can be compared with it. Your resume is already stored
+            in your account.
+          </li>
+          <li>
+            <strong>Autofill this page</strong> fetches your saved name, email,
+            phone, location and profile links from your account and types them
+            into the form on the page. It does not submit the form.
+          </li>
+        </ul>
+        <p>
+          The extension stores one thing in your browser: a sign-in token, so
+          you stay logged in. Logging out removes it. We do not sell this data,
+          use it for advertising, or use it for anything other than the feature
+          you clicked. We do not read or keep your browsing history.
         </p>
 
         <h2>Job Buddy conversations</h2>

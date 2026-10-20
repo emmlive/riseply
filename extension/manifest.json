@@ -28,9 +28,8 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage"],
   "host_permissions": [
-    "https://riseply.onrender.com/*",
-    "https://riseply.com/*"
+    "https://riseply.onrender.com/*"
   ]
 }
