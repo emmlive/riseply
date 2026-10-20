@@ -17,6 +17,10 @@ router = APIRouter(prefix="/career-path", tags=["career-path"])
 ACTION = "career_path"
 
 
+def _is_stale(row: models.CareerPathPlan) -> bool:
+    return json.loads(row.data or "{}").get("version", 1) < career_path_service.PLAN_VERSION
+
+
 def _out(row: models.CareerPathPlan, cached: bool = False) -> schemas.CareerPathOut:
     data = json.loads(row.data or "{}")
     return schemas.CareerPathOut(
@@ -31,6 +35,8 @@ def latest(db: Session = Depends(get_db), user: models.User = Depends(get_curren
     if not row:
         return None
     try:
+        if _is_stale(row):
+            return None  # written under older rules: show the empty form; rebuilding is free
         return _out(row)
     except Exception:
         return None  # unreadable saved plan: show the empty form
@@ -43,21 +49,26 @@ def build(payload: schemas.CareerPathRequest, db: Session = Depends(get_db), use
         raise HTTPException(status_code=400, detail="Add your resume first -- the plan starts from where it says you are.")
 
     rhash = career_path_service.resume_hash(user.resume_text)
+    redo_of_stale = False
     if not payload.refresh:
         same = db.query(models.CareerPathPlan).filter_by(
             user_id=user.id, resume_hash=rhash, months=payload.months, hours_per_week=payload.hours_per_week,
         ).order_by(models.CareerPathPlan.id.desc()).first()
         if same and same.target_role.lower() == role.lower():
             try:
-                return _out(same, cached=True)
+                if not _is_stale(same):
+                    return _out(same, cached=True)
+                redo_of_stale = True  # saved under older rules (cut-off text): redoing it is free
             except Exception:
                 pass  # unreadable saved plan: write a new one
 
-    usage.check_and_increment(db, user, ACTION, 1)
+    if not redo_of_stale:
+        usage.check_and_increment(db, user, ACTION, 1)
     try:
         result = career_path_service.plan(role, user.resume_text, payload.months, payload.hours_per_week)
     except Exception:
-        usage.decrement(db, user.id, ACTION, 1)
+        if not redo_of_stale:
+            usage.decrement(db, user.id, ACTION, 1)
         raise HTTPException(
             status_code=502,
             detail="Couldn't build your plan right now -- this attempt wasn't counted against your limit. Try again shortly.",
