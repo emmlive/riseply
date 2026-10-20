@@ -1541,6 +1541,23 @@ class ScoredJob(Base):
     scored_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
+class CareerPathPlan(Base):
+    """A saved career path plan (services/career_path.py): staged route from
+    the person's resume to a target role. `data` is the validated JSON plan;
+    `resume_hash` lets the same request be served free while the resume is
+    unchanged."""
+    __tablename__ = "career_path_plans"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    target_role = Column(String, nullable=False)
+    resume_hash = Column(String, default="")
+    months = Column(Integer, default=12)
+    hours_per_week = Column(Integer, default=5)
+    data = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
 class SkillGapReport(Base):
     """A saved skill-gap analysis: the person's resume against a target role
     and the real job listings we have for it. Stored so reopening the page

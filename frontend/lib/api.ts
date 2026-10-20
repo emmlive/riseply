@@ -1209,3 +1209,11 @@ export interface FitScore {
   still_missing: string[];
   cached: boolean;
 }
+
+export interface CareerPathStage { name: string; when: string; goal: string; skills: string[]; proof: string; milestone: string }
+export interface CareerPath {
+  id: number; target_role: string; months: number; hours_per_week: number; created_at: string;
+  where_you_are: string; target_summary: string; fit: string; realistic_timeline: string;
+  bridge_roles: { title: string; why: string }[]; stages: CareerPathStage[];
+  first_week: string[]; honest_note: string; cached: boolean;
+}

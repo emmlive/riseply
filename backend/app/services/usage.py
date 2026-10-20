@@ -18,6 +18,7 @@ FREE_LIMITS = {
     "fit_score": settings.free_tier_max_fit_score_per_month,
     "networking": settings.free_tier_max_networking_per_month,
     "company_brief": settings.free_tier_max_company_brief_per_month,
+    "career_path": settings.free_tier_max_career_path_per_month,
 }
 
 PRO_LIMITS = {
@@ -33,6 +34,7 @@ PRO_LIMITS = {
     "fit_score": settings.pro_tier_max_fit_score_per_month,
     "networking": settings.pro_tier_max_networking_per_month,
     "company_brief": settings.pro_tier_max_company_brief_per_month,
+    "career_path": settings.pro_tier_max_career_path_per_month,
 }
 
 
