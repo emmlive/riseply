@@ -278,6 +278,8 @@ class Application(Base):
     # Why the person rejected this match (a key from services/match_feedback.REASONS)
     # and an optional short note. Feeds the matcher as a soft signal.
     reject_reason = Column(String, default="", server_default="")
+    # When we emailed a reminder to follow up on this submitted application (once only).
+    follow_up_nudged_at = Column(DateTime, nullable=True)
     reject_note = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
