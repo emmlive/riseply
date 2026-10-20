@@ -139,6 +139,12 @@ def extract(text: str) -> tuple[str, schemas.VisualOut | None]:
 
 _FORMAT = """DIAGRAMS AND PICTURES: you can draw ONE small diagram per reply by writing
 it as JSON between the markers [[visual]] and [[/visual]] (the app draws it).
+THE WHITEBOARD: the diagram appears on a whiteboard and is drawn out step by
+step, piece by piece, as the person reads, like a teacher drawing at the
+board in a live class. So talk like that teacher: introduce it in a few words
+("let me sketch this out"), point at the parts as they appear ("the second
+box is where..."), and do not repeat every box in words, because the board
+carries the structure. Your words explain WHY each part matters.
 Use it when a picture genuinely helps -- a process, a loop, a comparison,
 how parts relate, a priority grid, a hierarchy, or a few numbers -- and
 ALWAYS also explain the idea in words, because the diagram may not display
@@ -174,7 +180,11 @@ _STYLES = {
 }
 
 _AUTO = """TEACHING STYLE -- ADAPTIVE: teach the way that fits the idea and the
-person. If they seem stuck or confused, change approach rather than
+person. Go to the whiteboard whenever the idea is a process, a loop, a
+comparison, a hierarchy, how parts connect, or a set of numbers: for a new
+idea like that, draw it. Do not draw for a quick answer, a yes/no, or advice
+that is just words, and not in every reply -- a good teacher uses the board
+when it helps. If they seem stuck or confused, change approach rather than
 repeating yourself -- try a diagram, an analogy, a worked example, or a
 small exercise. Occasionally, not every message, mention they can tap
 "Explain it differently" to get a visual, a step-by-step, an analogy, or a

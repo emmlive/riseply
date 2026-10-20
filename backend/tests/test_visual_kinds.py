@@ -117,3 +117,15 @@ def test_a_good_picture_survives_and_a_cut_second_one_is_dropped():
 
 def test_the_prompt_asks_for_the_picture_first():
     assert "Write the [[visual]] block FIRST" in visuals.teaching_block("visual", None, "drill")
+
+
+def test_coach_is_told_to_teach_at_the_whiteboard_like_a_live_class():
+    block = visuals.teaching_block("auto", None, "walkthrough")
+    assert "THE WHITEBOARD" in block and "live class" in block and "let me sketch this out" in block
+    assert "do not repeat every box" in block
+    assert "whenever the idea is a process" in block and "Do not draw for a quick answer" in block
+
+
+def test_whiteboard_guidance_does_not_reach_role_play_replies():
+    block = visuals.teaching_block("auto", None, "interview")
+    assert "ignore all teaching styles and diagrams" in block
