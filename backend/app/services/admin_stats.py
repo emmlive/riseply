@@ -12,6 +12,16 @@ ESTIMATED_COST_PER_ACTION = {
     "interview_prep": 0.020,
     "onboarding_plan": 0.025,
     "job_buddy_message": 0.010,
+    "org_ask": 0.012,
+    "coaching_message": 0.010,
+    # The Career Coach re-sends its long instructions, the person's context
+    # and the conversation on every message, so it is the costliest per call.
+    "career_coach_message": 0.030,
+    "skill_gap": 0.030,
+    "fit_score": 0.015,
+    "networking": 0.020,
+    "company_brief": 0.020,
+    "career_path": 0.025,
 }
 
 
