@@ -22,6 +22,7 @@ ESTIMATED_COST_PER_ACTION = {
     "networking": 0.020,
     "company_brief": 0.020,
     "career_path": 0.025,
+    "coach_video": 0.0001,  # a YouTube search is quota, not dollars; kept above zero so it shows up
 }
 
 

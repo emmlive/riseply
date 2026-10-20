@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # no SMTP_HOST/PORT/USER/PASS combination can work around that, so
     # this uses Resend's HTTPS API instead (port 443, never blocked).
     resend_api_key: str = ""
+    # YouTube Data API v3 key for the Career Coach's "watch a video" panel.
+    # Empty = the panel offers only a link that opens the YouTube search.
+    youtube_api_key: str = ""
     # Must be on a domain verified in the Resend dashboard (riseply.com)
     # -- Resend rejects sends from unverified domains.
     resend_from_email: str = "support@riseply.com"
@@ -273,6 +276,7 @@ class Settings(BaseSettings):
     free_tier_max_networking_per_month: int = 5
     free_tier_max_company_brief_per_month: int = 5
     free_tier_max_career_path_per_month: int = 2
+    free_tier_max_coach_video_per_month: int = 15
 
     # --- Pro tier limits ---
     pro_tier_max_matches_per_month: int = 300
@@ -289,6 +293,7 @@ class Settings(BaseSettings):
     pro_tier_max_networking_per_month: int = 100
     pro_tier_max_company_brief_per_month: int = 100
     pro_tier_max_career_path_per_month: int = 20
+    pro_tier_max_coach_video_per_month: int = 150
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---
     # Reuses cron_secret (above) -- both scheduled jobs are triggered the
