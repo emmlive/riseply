@@ -30,6 +30,7 @@ const SESSION_TYPES: { value: CareerCoachSessionType; label: string; hint: strin
   { value: "interview", label: "Mock interview", hint: "A hiring manager interviews you for this role" },
   { value: "resume", label: "Resume coaching", hint: "Gap analysis for this role, then bullet-by-bullet rewrites" },
   { value: "upskill", label: "Upskilling", hint: "Already working in your field? Find the next skill worth adding and build it with practice" },
+  { value: "negotiation", label: "Salary negotiation", hint: "Got an offer, or about to? Negotiate with a recruiter in a safe role-play, then get scored" },
   { value: "leadership", label: "How leaders think", hint: "Moving into management or an executive role? Practice the decisions leaders face and learn how they think" },
 ];
 
@@ -62,6 +63,9 @@ const DRAW_AS: { kind: CareerCoachVisualKind | ""; label: string }[] = [
   { kind: "chart", label: "A bar chart" },
   { kind: "", label: "Let the coach choose" },
 ];
+
+// Role-plays where the coach stays in character (no teaching cards mid-scene).
+const IN_CHARACTER: string[] = ["interview", "negotiation"];
 
 const typeLabel = (t: CareerCoachSessionType) => SESSION_TYPES.find((x) => x.value === t)?.label ?? t;
 
@@ -443,7 +447,7 @@ export default function CareerCoachPage() {
       setActive(r.session);
       setMessages([r.opening_message]);
       setTopic("");
-      if (readAloud) startSpeaking(r.opening_message, voiceModeRef.current && r.session.session_type === "interview");
+      if (readAloud) startSpeaking(r.opening_message, voiceModeRef.current && IN_CHARACTER.includes(r.session.session_type));
       else startReveal(r.opening_message);
     } catch (err: any) {
       setError(err.message || "Couldn't start a session — try again.");
@@ -484,7 +488,7 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}) }),
       });
       setMessages((m) => [...m, reply]);
-      if (readAloud) startSpeaking(reply, voiceModeRef.current && active.session_type === "interview");
+      if (readAloud) startSpeaking(reply, voiceModeRef.current && IN_CHARACTER.includes(active.session_type));
       else startReveal(reply);
     } catch (err: any) {
       setError(err.message || "Coach couldn't respond — your message was saved, try again.");
@@ -515,7 +519,7 @@ export default function CareerCoachPage() {
 
   const usedCues = cuesUsed(messages.filter((m) => m.role === "assistant").map((m) => m.content));
   const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
-  const voiceReady = canDictate && canSpeak && !!active && active.session_type === "interview" && active.status === "in_progress";
+  const voiceReady = canDictate && canSpeak && !!active && IN_CHARACTER.includes(active.session_type) && active.status === "in_progress";
 
   const completedSessions = sessions.filter((s) => s.status === "completed");
   const scoredSessions = completedSessions.filter((s) => s.score !== null);
@@ -555,7 +559,7 @@ export default function CareerCoachPage() {
       <div className={`cc-head ${active ? "is-compact" : ""}`}>
         <h1>Career Coach</h1>
         <p>
-          Practice for any role you&apos;re aiming for with drills, real tasks, mock interviews and resume
+          Practice for any role you&apos;re aiming for with drills, real tasks, mock interviews, offer negotiation and resume
           coaching, and get honest scores and feedback. The coach uses your resume for context
           (<Link href="/dashboard/resume">edit it here</Link>) and never invents experience for you.{" "}
           <Link href="/dashboard/career-coach/study">Open your study folders</Link> to review notes you&apos;ve saved.
@@ -584,6 +588,8 @@ export default function CareerCoachPage() {
                   id="cc-role" className="cc-input cc-input-lg"
                   placeholder={type === "leadership"
                     ? "For example: Engineering manager, Director of IT, CIO"
+                    : type === "negotiation"
+                    ? "The role you were offered, for example: Security analyst"
                     : type === "upskill"
                     ? "For example: Cybersecurity analyst, Staff accountant, ICU nurse"
                     : "For example: Data analyst, UX designer, ICU nurse"}
@@ -628,6 +634,7 @@ export default function CareerCoachPage() {
                   placeholder={
                     type === "resume" ? "For example: Work experience"
                     : type === "leadership" ? "For example: giving hard feedback, budgets, or your first 90 days. Leave blank and the coach will pick one"
+                    : type === "negotiation" ? "For example: base salary, sign-on bonus, remote days. Leave blank and the coach will pick one"
                     : type === "upskill" ? "For example: a tool, a certification area, or a skill you want to build. Leave blank and the coach will pick one"
                     : "Leave blank and the coach will pick one"
                   }
@@ -635,10 +642,10 @@ export default function CareerCoachPage() {
                 />
               </div>
 
-              {type === "interview" && canDictate && canSpeak && (
+              {IN_CHARACTER.includes(type) && canDictate && canSpeak && (
                 <label className="cc-check" style={{ marginBottom: 10 }}>
                   <input type="checkbox" checked={voiceMode} onChange={(e) => toggleVoiceMode(e.target.checked)} />
-                  Voice interview: the coach asks out loud and you answer out loud (we&apos;ll measure pace and filler words)
+                  Voice mode: the {type === "negotiation" ? "recruiter" : "coach"} speaks out loud and you answer out loud (we&apos;ll measure pace and filler words)
                 </label>
               )}
 
@@ -685,7 +692,7 @@ export default function CareerCoachPage() {
                         </div>
                       )}
                       {m.role === "assistant" && m.id === lastCoachId && active?.status === "in_progress" &&
-                        reveal?.id !== m.id && active.session_type !== "interview" && !sending && messages.length > 1 && (
+                        reveal?.id !== m.id && !IN_CHARACTER.includes(active.session_type) && !sending && messages.length > 1 && (
                         <div className="cc-tools">
                           <div className="cc-tools-label">Explain it differently</div>
                           <div className="cc-chips">
@@ -838,7 +845,7 @@ export default function CareerCoachPage() {
                         {voiceReady && (
                           <label className="cc-check">
                             <input type="checkbox" checked={voiceMode} onChange={(e) => toggleVoiceMode(e.target.checked)} />
-                            Voice interview: answer out loud
+                            Voice mode: answer out loud
                           </label>
                         )}
                       </div>

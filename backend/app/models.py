@@ -445,7 +445,7 @@ class CareerCoachSession(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    session_type = Column(String, nullable=False)  # drill | walkthrough | interview | resume | upskill | leadership
+    session_type = Column(String, nullable=False)  # drill | walkthrough | interview | resume | upskill | leadership | negotiation
     target_role = Column(String, nullable=False)  # free text the person typed, e.g. "IT Auditor"
     topic = Column(String, default="", server_default="")
     # How the person likes to learn: auto | visual | handson | story |

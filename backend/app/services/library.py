@@ -51,7 +51,7 @@ learn something, or you're closing out a topic. Rules:
   so plainly and describe the KIND of resource worth looking for instead
   (no specific names).
 - Don't recommend something just to recommend something; most messages
-  need none. Never interrupt a mock interview with one."""
+  need none. Never interrupt a mock interview or a negotiation role-play with one."""
     if not offered:
         return rules + "\n\nAvailable resources: (none relevant right now -- do not recommend any)"
     lines = [
