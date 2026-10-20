@@ -12,7 +12,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import cover_letter as cover_letter_service
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback, interview_auto
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -1207,14 +1207,19 @@ def auto_submit_application(
 
 @router.post("/applications/{application_id}/mark-interviewing")
 def mark_interviewing(
-    application_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+    application_id: int, background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), user: models.User = Depends(get_current_user),
 ):
     app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
+    newly = app_row.status != "interviewing"
     app_row.status = "interviewing"
     app_row.status_updated_at = datetime.utcnow()
     db.commit()
+    if newly:
+        # Interview prep + a "here's what to do next" email, in the background.
+        background_tasks.add_task(interview_auto.prepare, app_row.id)
     # No points here — landing an interview is an outcome, not effort.
     # We still log the check-in for streak purposes only.
     rise_index.record_activity(db, user)
