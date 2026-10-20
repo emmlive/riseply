@@ -17,6 +17,7 @@ FREE_LIMITS = {
     "skill_gap": settings.free_tier_max_skill_gap_per_month,
     "fit_score": settings.free_tier_max_fit_score_per_month,
     "networking": settings.free_tier_max_networking_per_month,
+    "company_brief": settings.free_tier_max_company_brief_per_month,
 }
 
 PRO_LIMITS = {
@@ -31,6 +32,7 @@ PRO_LIMITS = {
     "skill_gap": settings.pro_tier_max_skill_gap_per_month,
     "fit_score": settings.pro_tier_max_fit_score_per_month,
     "networking": settings.pro_tier_max_networking_per_month,
+    "company_brief": settings.pro_tier_max_company_brief_per_month,
 }
 
 

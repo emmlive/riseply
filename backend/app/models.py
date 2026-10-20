@@ -273,6 +273,8 @@ class Application(Base):
     fit_score_data = Column(Text, default="", server_default="")
     # JSON: networking drafts for this job (services/networking.py).
     networking_data = Column(Text, default="", server_default="")
+    # JSON: company/role brief for this job (services/company_brief.py).
+    company_brief_data = Column(Text, default="", server_default="")
     notes = Column(Text, default="", server_default="")
 
     # --- Archivable pattern ---
