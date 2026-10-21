@@ -38,3 +38,25 @@ def test_implicit_profile_searches_near_home_when_placeable():
 def test_fallback_is_off_by_default():
     assert settings.match_location_fallback is False
     assert settings.match_radius_miles == 50
+
+
+def test_resume_fit_flags_a_different_field():
+    from app.services import resume_fit
+    resume = "Security engineer. AWS, Python, Splunk, SIEM, incident response, CISSP, penetration testing, Kubernetes."
+    sec = "Security Engineer. We use AWS, Splunk, SIEM, Python and Kubernetes. Incident response and penetration testing experience. CISSP preferred. Security Security."
+    nurse = "Registered Nurse. Provide patient care, administer medication, charting in Epic, ICU, BLS, ACLS certification. Patient care, patient safety, patient care."
+    assert resume_fit.check(resume, sec)["fits"] is True
+    assert resume_fit.check(resume, nurse)["fits"] is False
+    assert resume_fit.check(resume, "A job.")["fits"] is None
+    assert resume_fit.check("", nurse)["fits"] is None
+
+
+def test_best_match_skips_other_field_without_scoring(monkeypatch):
+    called = []
+    monkeypatch.setattr(matcher, "score_job", lambda *a, **k: called.append(1) or {"score": 90, "reason": "x"})
+    resume = "Security engineer. AWS, Python, Splunk, SIEM, incident response, CISSP, penetration testing, Kubernetes."
+    job = {"title": "Security Engineer", "company": "Acme", "location": "Remote", "description":
+           "Registered Nurse. Provide patient care, administer medication, charting in Epic, ICU, BLS, ACLS certification. Patient care, patient safety, patient care."}
+    prof = {"name": "p", "titles": ["Security Engineer"], "locations": [], "min_match_score": 60, "exclude_companies": []}
+    r = matcher.best_profile_match(job, resume, [prof])
+    assert r["profile_name"] is None and not called

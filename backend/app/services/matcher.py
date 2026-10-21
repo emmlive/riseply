@@ -4,7 +4,7 @@ import os
 from anthropic import Anthropic
 
 from app.config import settings
-from app.services import geo
+from app.services import geo, resume_fit
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
@@ -207,8 +207,9 @@ Location: {job['location']}
 Description:
 {job['description'][:3500]}
 
+First decide what kind of work this job really is and whether the resume shows that kind of work.
 Respond ONLY with JSON, no other text, in this exact shape:
-{{"score": <0-100 integer>, "reason": "<one sentence>"}}
+{{"same_field": <true if the resume shows experience in this kind of work, else false>, "score": <0-100 integer>, "reason": "<one sentence>"}}
 """
     resp = client.messages.create(
         model=settings.matching_model,
@@ -242,7 +243,11 @@ Respond ONLY with JSON, no other text, in this exact shape:
     if "score" not in result or not isinstance(result.get("score"), (int, float)):
         raise ValueError(f"Model response was missing a valid 'score' field: {result!r}")
 
-    return {"score": int(result["score"]), "reason": result.get("reason", "")}
+    score = int(result["score"])
+    if result.get("same_field") is False:
+        # Whatever else lines up, a job in a field the resume doesn't show is not a match.
+        score = min(score, 39)
+    return {"score": score, "reason": result.get("reason", "")}
 
 
 def best_profile_match(job: dict, resume_text: str, profiles: list[dict], ignore_location: bool = False) -> dict:
@@ -275,6 +280,8 @@ def best_profile_match(job: dict, resume_text: str, profiles: list[dict], ignore
             continue
         if job["company"].lower() in {c.lower() for c in profile.get("exclude_companies", [])}:
             continue
+        if resume_fit.check(resume_text, job.get("description", ""))["fits"] is False:
+            continue  # shares almost none of the posting's key terms: a different field
         if not ignore_location and not _location_matches(profile.get("locations", []), job.get("location", ""), job.get("title", ""), profile.get("radius_miles")):
             continue
         result = score_job(resume_text, job, profile)
