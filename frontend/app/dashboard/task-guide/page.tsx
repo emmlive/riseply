@@ -115,7 +115,7 @@ function StepsActions({ guide }: { guide: TaskGuide }) {
 
   return (
     <>
-      <div className="tg-actions" style={{ marginTop: 12 }}>
+      <div className="tg-actions" style={{ marginTop: 12, marginBottom: 4 }}>
         <details className="tg-menu">
           <summary className="btn btn-primary">Download steps</summary>
           <div className="tg-menu-list">
@@ -362,9 +362,12 @@ export default function TaskGuidePage() {
           )}
 
           <h2>Steps</h2>
+          <div style={{ margin: "-4px 0 14px" }}><StepsActions guide={guide} /></div>
           {guide.steps.map((s) => (
             <StepCard key={`${guide.id}-${s.id}`} guide={guide} step={s} done={guide.done.includes(s.id)} onToggle={() => toggle(s.id)} />
           ))}
+
+          <div style={{ margin: "4px 0 0" }}><StepsActions guide={guide} /></div>
 
           <div className="tg-two" style={{ margin: "16px 0" }}>
             {guide.quality_check.length > 0 && (
