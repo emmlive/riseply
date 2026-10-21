@@ -118,3 +118,65 @@ def test_retailor_passes_the_facts(ctx):
         r = c.post(f"/applications/{application.id}/retailor")
     assert r.status_code == 200, r.text
     assert m.call_args.kwargs["facts"][0]["skill"] == "Python"
+
+
+# ---- ATS readiness number and PDF ---------------------------------------
+from app.services import ats_ready
+
+
+def _fmt(*oks):
+    return [{"label": f"f{i}", "ok": ok, "detail": ""} for i, ok in enumerate(oks)]
+
+
+def test_ready_score_weights_and_label():
+    full = ats_ready.compute(_fmt(True, True), {"found": 10, "total": 10}, [{"label": "CISA", "ok": True, "detail": ""}])
+    assert full["score"] == 100 and full["label"] == "Strong"
+    half_kw = ats_ready.compute(_fmt(True, True), {"found": 5, "total": 10}, [{"label": "CISA", "ok": True, "detail": ""}])
+    assert half_kw["score"] == 75 and half_kw["label"] == "Fair" and "key word" in half_kw["next"]
+    bad = ats_ready.compute(_fmt(False, False), {"found": 0, "total": 10}, [{"label": "CISSP", "ok": False, "detail": ""}])
+    assert bad["score"] == 0 and bad["label"] == "Needs work"
+
+
+def test_ready_redistributes_when_no_requirements_or_keywords():
+    no_req = ats_ready.compute(_fmt(True, True), {"found": 5, "total": 10}, [])
+    assert no_req["score"] == round(100 * (30 * 1 + 50 * 0.5) / 80)
+    assert [p for p in no_req["parts"] if p["name"] == "Requirements"][0]["score"] is None
+    only_fmt = ats_ready.compute(_fmt(True, False), {"found": 0, "total": 0}, [])
+    assert only_fmt["score"] == 50
+
+
+def test_ready_next_step_points_at_the_biggest_loss():
+    r = ats_ready.compute(_fmt(True, True), {"found": 10, "total": 10}, [{"label": "CISSP", "ok": False, "detail": ""}])
+    assert "CISSP" in r["next"]
+    r = ats_ready.compute(_fmt(True, False), {"found": 10, "total": 10}, [])
+    assert "format" in r["next"].lower()
+
+
+def test_resume_check_includes_ready(ctx):
+    c, _, _, application = ctx
+    body = c.get(f"/applications/{application.id}/resume-check").json()
+    assert 0 <= body["ready"]["score"] <= 100 and len(body["ready"]["parts"]) == 3
+
+
+def test_pdf_has_real_text_in_order_and_downloads(ctx):
+    import io
+    import pdfplumber
+    c, user, db, application = ctx
+    r = c.get(f"/applications/{application.id}/tailored-resume.pdf")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert 'filename="x.pdf"' in r.headers["content-disposition"]
+    with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        assert len(pdf.pages) == 1
+    assert "Jane Doe" in text and "EXPERIENCE" in text and "IT Auditor" in text and "2018" in text
+    assert "Led SOX and ITGC audits using SQL" in text
+    assert text.index("Jane Doe") < text.index("EXPERIENCE") < text.index("Led SOX")
+
+
+def test_pdf_escapes_markup_and_needs_a_resume(ctx):
+    c, user, db, application = ctx
+    blocks = [{"type": "name", "text": "A & B <Co>"}, {"type": "bullet", "text": "R&D <b>bold</b> work"}]
+    assert resume_customizer.build_pdf_from_blocks(blocks).startswith(b"%PDF")
+    other = models.Application(user_id=user.id, job_id=application.job_id)
+    db.add(other); db.commit(); db.refresh(other)
+    assert c.get(f"/applications/{other.id}/tailored-resume.pdf").status_code == 404

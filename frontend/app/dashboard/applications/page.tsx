@@ -602,6 +602,18 @@ export default function ApplicationsPage() {
                       Download tailored resume
                     </a>
                   )}
+                  {app.has_tailored_resume_data && (
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        downloadFile(`/applications/${app.id}/tailored-resume.pdf`, "tailored_resume.pdf")
+                          .catch((err) => alert(err.message));
+                      }}
+                    >
+                      PDF
+                    </a>
+                  )}
                   {!app.has_tailored_resume_data && app.tailored_resume_path && (
                     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span className="hint">Resume file unavailable (generated before a recent fix)</span>

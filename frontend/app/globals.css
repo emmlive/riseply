@@ -633,6 +633,15 @@ textarea.cc-input { resize: vertical; }
 .wb-focus.wb-fade th, .wb-focus.wb-fade td { background: rgba(242, 182, 0, 0.35) !important; }
 @media (prefers-reduced-motion: reduce) { .wb-focus { transition: none; } }
 
+.rc-ready { display: flex; gap: 14px; align-items: center; margin: 4px 0 12px; }
+.rc-score { flex: none; width: 74px; height: 74px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 5px solid var(--border); line-height: 1; }
+.rc-score.good { border-color: var(--accent); } .rc-score.fair { border-color: var(--amber); } .rc-score.low { border-color: var(--danger); }
+.rc-num { font-size: 1.5rem; font-weight: 700; } .rc-of { font-size: 0.68rem; color: var(--ink-muted); margin-top: 2px; }
+.rc-ready-body { flex: 1; min-width: 0; }
+.rc-parts { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.84rem; }
+.rc-parts li { display: grid; grid-template-columns: 92px 1fr 28px; gap: 8px; align-items: center; margin: 2px 0; }
+.rc-bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.rc-bar i { display: block; height: 100%; background: var(--accent); }
 .rc-miss { border: 0; cursor: pointer; font-family: inherit; }
 .rc-miss:hover, .rc-miss:focus-visible { outline: 2px solid var(--danger); outline-offset: 1px; }
 .rc-add { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--paper, transparent); }

@@ -85,6 +85,18 @@ export default function ResumePreview({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  async function downloadPdf() {
+    setDownloading(true);
+    setError("");
+    try {
+      await downloadFile(`/applications/${applicationId}/tailored-resume.pdf`, "tailored_resume.pdf");
+    } catch (e: any) {
+      setError(e?.message || "Couldn't download that file.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function download() {
     setDownloading(true);
     setError("");
@@ -231,6 +243,7 @@ export default function ResumePreview({
                 <button className="btn btn-primary btn-sm" onClick={download} disabled={downloading || !data}>
                   {downloading ? "Downloading…" : "Download .docx"}
                 </button>
+                <button className="btn btn-ghost btn-sm" onClick={downloadPdf} disabled={downloading || !data}>Download PDF</button>
                 <button ref={closeRef} className="btn btn-ghost btn-sm" onClick={requestClose}>Close</button>
               </>
             )}

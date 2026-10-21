@@ -433,6 +433,64 @@ _METRICS = {
 }
 
 
+def build_pdf_from_blocks(blocks: list[dict]) -> bytes:
+    """The same resume as a PDF with real, selectable text: one column, a
+    standard font, no images, tables or text boxes, so applicant tracking
+    systems read it in order. Built from the blocks, so it always matches the
+    .docx and anything the person edited."""
+    from xml.sax.saxutils import escape
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer
+
+    ink, accent, muted = HexColor("#16233D"), HexColor("#1F7A6C"), HexColor("#5B6472")
+
+    def st(name, size, **kw):
+        return ParagraphStyle(name, fontName=kw.pop("font", "Helvetica"), fontSize=size, leading=kw.pop("leading", size * 1.25),
+                              textColor=kw.pop("color", ink), alignment=TA_LEFT, **kw)
+
+    S = {
+        "name": st("name", 22, font="Helvetica-Bold", spaceAfter=2),
+        "headline": st("headline", 11, color=accent, spaceAfter=2),
+        "contact": st("contact", 9, color=muted, spaceAfter=4),
+        "heading": st("heading", 10, font="Helvetica-Bold", color=accent, spaceBefore=10, spaceAfter=2, keepWithNext=1),
+        "entry": st("entry", 10, font="Helvetica-Bold", spaceBefore=5, keepWithNext=1),
+        "sub": st("sub", 9.5, font="Helvetica-Oblique", color=muted, spaceAfter=1, keepWithNext=1),
+        "text": st("text", 10, spaceAfter=3, leading=13),
+        "skills": st("skills", 9.5, spaceAfter=2, leading=12.5),
+        "bullet": st("bullet", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5),
+    }
+    esc = lambda t: escape(str(t or ""))
+
+    story = []
+    for b in blocks:
+        t = b.get("type")
+        if t in ("name", "headline", "contact", "sub", "text"):
+            story.append(Paragraph(esc(b.get("text")), S[t]))
+        elif t == "heading":
+            story.append(Paragraph(esc(b.get("text", "")).upper(), S["heading"]))
+            story.append(HRFlowable(width="100%", thickness=0.6, color=accent, spaceBefore=0, spaceAfter=3))
+        elif t == "entry":
+            right = f' <font name="Helvetica" size="9" color="#5B6472">  |  {esc(b.get("right"))}</font>' if b.get("right") else ""
+            story.append(Paragraph(esc(b.get("left")) + right, S["entry"]))
+        elif t == "bullet":
+            story.append(Paragraph(esc(b.get("text")), S["bullet"], bulletText="\u2022"))
+        elif t == "skills":
+            label = f"<b>{esc(b.get('label'))}:</b> " if b.get("label") else ""
+            story.append(Paragraph(label + esc(b.get("text")), S["skills"]))
+
+    buf = io.BytesIO()
+    name = next((b.get("text", "") for b in blocks if b.get("type") == "name"), "")
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.8 * inch, rightMargin=0.8 * inch,
+                            topMargin=0.65 * inch, bottomMargin=0.6 * inch,
+                            title=f"{name} resume".strip(), author=name)
+    doc.build(story or [Spacer(1, 1)])
+    return buf.getvalue()
+
+
 def _block_text(b: dict) -> str:
     t = b.get("type")
     if t == "entry":
