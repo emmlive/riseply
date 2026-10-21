@@ -1894,6 +1894,19 @@ class ResumeCheckItem(BaseModel):
     detail: str
 
 
+class ReadyPart(BaseModel):
+    name: str
+    score: int | None = None
+    weight: int = 0
+
+
+class ReadyOut(BaseModel):
+    score: int
+    label: str
+    next: str = ""
+    parts: list[ReadyPart] = []
+
+
 class ResumeCheckOut(BaseModel):
     terms: list[ResumeCheckTerm]
     total: int
@@ -1901,6 +1914,7 @@ class ResumeCheckOut(BaseModel):
     found_before: int
     checks: list[ResumeCheckItem] = []
     facts: list[ResumeFactOut] = []
+    ready: ReadyOut | None = None
 
 
 # --- Networking drafts ---

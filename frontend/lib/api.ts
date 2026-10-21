@@ -1225,6 +1225,7 @@ export interface ResumeCheck {
   total: number; found: number; found_before: number;
   checks: { label: string; ok: boolean; detail: string }[];
   facts: ResumeFact[];
+  ready?: { score: number; label: string; next: string; parts: { name: string; score: number | null; weight: number }[] } | null;
 }
 
 export interface CareerPathStage { name: string; when: string; goal: string; skills: string[]; proof: string; milestone: string }

@@ -67,6 +67,26 @@ export default function ResumeCheck({ applicationId, onRetailor, busy }: {
       {data && (
         <>
           <h3 style={{ fontSize: "0.95rem", marginBottom: 6 }}>Will it get through screening?</h3>
+          {data.ready && (
+            <div className="rc-ready" aria-label={`ATS readiness ${data.ready.score} out of 100, ${data.ready.label}`}>
+              <div className={`rc-score ${data.ready.score >= 80 ? "good" : data.ready.score >= 60 ? "fair" : "low"}`}>
+                <span className="rc-num">{data.ready.score}</span><span className="rc-of">/100</span>
+              </div>
+              <div className="rc-ready-body">
+                <strong>ATS readiness: {data.ready.label}</strong>
+                <ul className="rc-parts">
+                  {data.ready.parts.filter((p) => p.score !== null).map((p) => (
+                    <li key={p.name}>
+                      <span>{p.name}</span>
+                      <span className="rc-bar" aria-hidden><i style={{ width: `${p.score}%` }} /></span>
+                      <span className="muted">{p.score}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="hint" style={{ margin: "4px 0 0" }}>{data.ready.next}</p>
+              </div>
+            </div>
+          )}
           <p style={{ margin: "0 0 8px" }}>
             <strong>{data.found} of {data.total}</strong> key words from this posting are on your tailored resume
             {data.found_before < data.found ? <span className="muted"> (your original had {data.found_before})</span> : null}.
@@ -132,7 +152,7 @@ export default function ResumeCheck({ applicationId, onRetailor, busy }: {
           )}
           {error && <p className="cc-error" role="alert" style={{ marginTop: 8 }}>{error}</p>}
           <p className="hint" style={{ margin: "10px 0 0" }}>
-            Key words are matched against the posting&apos;s own wording, so they show what a keyword search would find.
+            An estimate of how a keyword and requirements screen would treat this resume, not a prediction for any one employer&apos;s system.
           </p>
         </>
       )}

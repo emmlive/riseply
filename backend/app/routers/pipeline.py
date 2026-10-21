@@ -533,6 +533,31 @@ def download_tailored_resume(
     )
 
 
+@router.get("/applications/{application_id}/tailored-resume.pdf")
+def download_tailored_resume_pdf(
+    application_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The tailored resume as a text-based PDF (one column, standard font), made
+    from the stored document each time so it matches the .docx and any edits."""
+    from fastapi.responses import Response
+
+    app_row = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app_row.tailored_resume_data:
+        raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
+    try:
+        pdf = resume_customizer.build_pdf_from_blocks(resume_customizer.docx_to_blocks(app_row.tailored_resume_data))
+    except Exception as e:
+        print(f"[resume_customizer] PDF build failed for application {application_id}: {e}")
+        raise HTTPException(status_code=422, detail="This resume couldn't be turned into a PDF. Download the Word file instead.")
+    stem = (app_row.tailored_resume_path or "tailored_resume.docx").rsplit(".", 1)[0]
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
+
+
 class ResumeBlockIn(BaseModel):
     type: Literal["name", "headline", "contact", "heading", "entry", "sub", "bullet", "skills", "text"]
     text: str = Field("", max_length=2500)
