@@ -13,6 +13,7 @@ from app.services import library as library_service
 from app.services import visuals as visuals_service
 from app.services import discord_notify
 from app.services import videos as videos_service
+from app.services import coach_notebook, lesson as lesson_service
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -22,6 +23,14 @@ from app.services import videos as videos_service
 router = APIRouter(prefix="/career-coach", tags=["career-coach"])
 
 ACTION = "career_coach_message"
+
+
+def _notebook_items(db: Session, user: models.User, session_type: str) -> list[dict]:
+    """The coach's notes for learning sessions, when the person keeps them on."""
+    if session_type in career_coach_service.IN_CHARACTER:
+        return []
+    row = coach_notebook.get_row(db, user.id)
+    return coach_notebook.items_of(row) if row.enabled else []
 
 
 def _get_owned_session(db: Session, session_id: int, user_id: int) -> models.CareerCoachSession:
@@ -92,11 +101,12 @@ def start_session(
 
     usage.check_and_increment(db, user, ACTION, 1)
     target_role = payload.target_role.strip()
+    notes = _notebook_items(db, user, payload.session_type)
     offered = library_service.retrieve(_active_library(db), f"{target_role} {payload.topic}")
     try:
         result = career_coach_service.start_session(
             payload.session_type, target_role, payload.topic, user.resume_text, library=offered,
-            learning_style=payload.learning_style, voice=payload.voice,
+            learning_style=payload.learning_style, voice=payload.voice, notebook=notes,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -110,6 +120,7 @@ def start_session(
         user_id=user.id, session_type=payload.session_type,
         target_role=payload.target_role.strip(), topic=result["topic"],
         learning_style=payload.learning_style,
+        plan=lesson_service.dump(result["goals"]) if result.get("goals") else "",
     )
     db.add(session)
     db.commit()
@@ -170,6 +181,7 @@ def send_message(
     usage.check_and_increment(db, user, ACTION, 1)
 
     history = [{"role": m.role, "content": m.content} for m in _history(db, session_id, user.id)]
+    notes = _notebook_items(db, user, session.session_type)
     offered = library_service.retrieve(
         _active_library(db), f"{session.target_role} {session.topic} {payload.message}",
     )
@@ -187,8 +199,16 @@ def send_message(
             session.session_type, session.target_role, session.topic,
             user.resume_text, history, payload.message, library=offered,
             learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
-            visual_kind=payload.visual_kind,
+            visual_kind=payload.visual_kind, notebook=notes, plan=session.lesson,
         )
+        plan = session.lesson
+        if plan and session.session_type in lesson_service.LESSON_TYPES:
+            reply_text, done = lesson_service.extract_covered(reply_text, len(plan["goals"]))
+            if done - set(plan.get("covered") or []):
+                session.plan = lesson_service.dump(plan["goals"], set(plan.get("covered") or []) | done)
+                db.commit()
+        else:
+            reply_text, _ = lesson_service.extract_covered(reply_text, 0)
         reply_text = visuals_service.sanitize(
             library_service.strip_unoffered_markers(reply_text, {i.id for i in offered})
         )
@@ -212,7 +232,9 @@ def send_message(
     db.add(reply_msg)
     db.commit()
     db.refresh(reply_msg)
-    return _messages_out(db, [reply_msg])[0]
+    out = _messages_out(db, [reply_msg])[0]
+    out.lesson = session.lesson
+    return out
 
 
 @router.post("/sessions/{session_id}/complete", response_model=schemas.CareerCoachSessionOut)
@@ -232,9 +254,15 @@ def complete_session(
     history = [{"role": m.role, "content": m.content, "delivery": _delivery_of(m)} for m in rows]
 
     usage.check_and_increment(db, user, ACTION, 1)
+    nb_row = None
+    remember = False
+    if session.session_type not in career_coach_service.IN_CHARACTER:
+        nb_row = coach_notebook.get_row(db, user.id)
+        remember = bool(nb_row.enabled)
     try:
         result = career_coach_service.finish_session(
             session.session_type, session.target_role, session.topic, user.resume_text, history,
+            notebook=coach_notebook.items_of(nb_row) if remember else None, remember=remember,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -248,6 +276,13 @@ def complete_session(
     session.score = result["score"]
     session.feedback = result["feedback"]
     session.completed_at = datetime.utcnow()
+    if remember:
+        try:
+            session.homework = coach_notebook.save_update(db, nb_row, result.get("notebook"))
+        except Exception as e:
+            db.rollback()
+            print(f"[career-coach] Notebook update failed for user {user.id}: {e}")
+            session.status = "completed"
     db.commit()
     db.refresh(session)
     rise_index.award_points(db, user, "career_coach_session_completed", "Completed a Career Coach session")
@@ -324,3 +359,38 @@ def coach_videos(
     if not found:
         out["note"] = "No embeddable videos found for that. Try the YouTube link or different words."
     return out
+
+
+# --- What the coach remembers (see services/coach_notebook.py) -----------
+def _notebook_out(row: models.CoachNotebook) -> schemas.CoachNotebookOut:
+    return schemas.CoachNotebookOut(enabled=bool(row.enabled), items=coach_notebook.items_of(row))
+
+
+@router.get("/notebook", response_model=schemas.CoachNotebookOut)
+def get_notebook(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    return _notebook_out(coach_notebook.get_row(db, user.id))
+
+
+@router.put("/notebook", response_model=schemas.CoachNotebookOut)
+def set_notebook(payload: schemas.CoachNotebookSettings, db: Session = Depends(get_db),
+                 user: models.User = Depends(get_current_user)):
+    row = coach_notebook.get_row(db, user.id)
+    row.enabled = payload.enabled
+    db.commit()
+    return _notebook_out(row)
+
+
+@router.delete("/notebook/{item_id}", response_model=schemas.CoachNotebookOut)
+def delete_notebook_item(item_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    row = coach_notebook.get_row(db, user.id)
+    row.items = json.dumps([i for i in coach_notebook.items_of(row) if i["id"] != item_id])
+    db.commit()
+    return _notebook_out(row)
+
+
+@router.delete("/notebook", response_model=schemas.CoachNotebookOut)
+def clear_notebook(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    row = coach_notebook.get_row(db, user.id)
+    row.items = "[]"
+    db.commit()
+    return _notebook_out(row)

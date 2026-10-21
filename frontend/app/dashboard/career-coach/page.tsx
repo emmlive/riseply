@@ -6,6 +6,7 @@ import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCo
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import CoachVideos from "@/components/CoachVideos";
+import CoachNotebook from "@/components/CoachNotebook";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
 import { ReadinessCard } from "@/components/Readiness";
@@ -489,6 +490,11 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}) }),
       });
       setMessages((m) => [...m, reply]);
+      if (reply.lesson) {
+        const lesson = reply.lesson;
+        setActive((a) => (a && a.id === active.id ? { ...a, lesson } : a));
+        setSessions((rows) => rows.map((row) => (row.id === active.id ? { ...row, lesson } : row)));
+      }
       if (readAloud) startSpeaking(reply, voiceModeRef.current && IN_CHARACTER.includes(active.session_type));
       else startReveal(reply);
     } catch (err: any) {
@@ -672,6 +678,21 @@ export default function CareerCoachPage() {
 
               <CueKey used={usedCues} />
               {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
+              {active.lesson && active.lesson.goals.length > 0 && (
+                <div className="cc-lesson" aria-label="Today's lesson">
+                  <strong>Today&apos;s lesson</strong>
+                  <ul>
+                    {active.lesson.goals.map((g, i) => {
+                      const done = active.lesson!.covered.includes(i + 1);
+                      return (
+                        <li key={i} className={done ? "done" : ""}>
+                          <span aria-hidden>{done ? "✓" : "○"}</span> {g}{done ? " (done)" : ""}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               <div className="cc-chat-window" aria-live="polite" ref={winRef}>
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>
@@ -789,6 +810,9 @@ export default function CareerCoachPage() {
                   <div>
                     <h3>Coach feedback</h3>
                     <p>{active.feedback}</p>
+                    {active.homework && (
+                      <p className="cc-homework"><strong>Before next time:</strong> {active.homework}</p>
+                    )}
                     <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={saveFeedback}>
                       Save to study folder
                     </button>
@@ -945,6 +969,7 @@ export default function CareerCoachPage() {
           {canSpeak && <VoicePicker />}
 
           {sessionList}
+          <CoachNotebook />
         </div>
       </div>
 

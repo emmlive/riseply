@@ -96,6 +96,18 @@ export default function PrivacyPage() {
           purpose beyond providing the feature to you.
         </p>
 
+        <h2>Career Coach notes</h2>
+        <p>
+          After a learning session, the Career Coach saves a few short notes
+          about how you learn (what clicked, what is still shaky, one piece of
+          homework) so the next session can pick up where you stopped. The
+          notes are visible only to you under <strong>What your coach
+          remembers</strong> on the Career Coach page, where you can delete any
+          note, clear them all, or turn remembering off. We tell the coach not
+          to save personal details, and interview and negotiation role-plays
+          never use the notes.
+        </p>
+
         <p style={{ marginTop: 32 }}>
           See also our <Link href="/terms">Terms of Service</Link>.
         </p>

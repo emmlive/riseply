@@ -317,6 +317,9 @@ class CareerCoachSessionOut(BaseModel):
     created_at: datetime
     completed_at: datetime | None
     learning_style: str = "auto"
+    # Lesson plan for a learning session: {"goals": [...], "covered": [1-based]}.
+    lesson: dict | None = None
+    homework: str = ""
 
     class Config:
         from_attributes = True
@@ -470,6 +473,25 @@ class CareerCoachMessageOut(BaseModel):
     visual: VisualOut | None = None
     # How a spoken answer was delivered (voice interview), when it was.
     delivery: DeliveryStats | None = None
+    # Updated lesson checklist after this reply (learning sessions only).
+    lesson: dict | None = None
+
+
+class CoachNotebookItemOut(BaseModel):
+    id: str
+    kind: str
+    text: str
+    topic: str = ""
+    at: str = ""
+
+
+class CoachNotebookOut(BaseModel):
+    enabled: bool
+    items: list[CoachNotebookItemOut]
+
+
+class CoachNotebookSettings(BaseModel):
+    enabled: bool
 
 
 class CareerCoachStartResponse(BaseModel):

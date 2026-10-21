@@ -263,7 +263,7 @@ def test_start_session_parses_topic(monkeypatch):
     monkeypatch.setattr(cc, "client", MagicMock())
     cc.client.messages.create.return_value = _fake("TOPIC: Window functions\n---\nExplain ROW_NUMBER vs RANK.")
     out = cc.start_session("drill", "Data Analyst", "", "resume")
-    assert out == {"topic": "Window functions", "opening_message": "Explain ROW_NUMBER vs RANK."}
+    assert out == {"topic": "Window functions", "opening_message": "Explain ROW_NUMBER vs RANK.", "goals": None}
 
 
 def test_start_session_falls_back_when_marker_missing(monkeypatch):

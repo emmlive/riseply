@@ -635,7 +635,14 @@ export interface CareerCoachMessage extends CoachingMessage {
   // Library resources the coach recommended in this message.
   resources?: LibraryItem[];
   visual?: CareerCoachVisual | null;
+  // Updated lesson checklist after this reply (learning sessions).
+  lesson?: CoachLesson | null;
 }
+
+export interface CoachLesson { goals: string[]; covered: number[] }
+
+export interface CoachNotebookItem { id: string; kind: "strong" | "shaky" | "style" | "goal" | "homework"; text: string; topic?: string; at?: string }
+export interface CoachNotebook { enabled: boolean; items: CoachNotebookItem[] }
 
 export type CareerCoachSessionType = "drill" | "walkthrough" | "interview" | "resume" | "upskill" | "leadership" | "negotiation";
 
@@ -650,6 +657,8 @@ export interface CareerCoachSession {
   feedback: string;
   created_at: string;
   completed_at: string | null;
+  lesson?: CoachLesson | null;
+  homework?: string;
 }
 
 export interface CompanyStats {
