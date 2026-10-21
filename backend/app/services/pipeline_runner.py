@@ -19,6 +19,7 @@ from app.services import matcher, resume_customizer, notifier, usage, rise_index
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, report as source_report
 from app.services import discovery_sources
 from app.config import settings
+from app.services import resume_fit
 
 
 def _collect_active_location_hints(db: Session) -> list[str]:
@@ -808,7 +809,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # memory for a capped run is bounded by max_jobs full postings,
     # not the whole backlog.
     unseen_rows = db.query(
-        models.Job.id, models.Job.title,
+        models.Job.id, models.Job.title, models.Job.location,
         # Only the start of the description, for the relevance check below
         # (the full text is fetched later for the few jobs actually scored).
         func.substr(models.Job.description, 1, 800).label("snippet"),
@@ -826,6 +827,18 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     if settings.match_relevance_check:
         unseen_rows = [r for r in unseen_rows if search_terms.title_fits(r.title, profiles, r.snippet or "")]
     off_target = before_gate - len(unseen_rows)
+
+    # Free check on where the job is, BEFORE the budget cap below. Jobs that are
+    # nowhere near any profile's places used to be picked first (newest first),
+    # burn the whole cap and the person's match quota, and leave the real
+    # candidates unreached. They stay unscored, so editing a profile's places
+    # brings them back.
+    if not settings.match_location_fallback:
+        unseen_rows = [
+            r for r in unseen_rows
+            if any(matcher._location_matches(p.get("locations", []), r.location or "", r.title or "", p.get("radius_miles"))
+                   for p in profiles)
+        ]
 
     hit_job_cap = False
     if max_jobs is not None and len(unseen_rows) > max_jobs:
@@ -896,6 +909,19 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
 
     job_dicts = {job_row.id: _job_dict(job_row) for job_row in unseen_jobs}
     resume_text = user.resume_text
+
+    # Free check on the resume: a posting that shares almost none of its key
+    # terms with the resume is a different field. Mark it seen (no AI call, no
+    # quota used) so it does not take a slot in every future run.
+    fit_skipped = [j.id for j in unseen_jobs if resume_fit.check(resume_text, j.description or "")["fits"] is False]
+    if fit_skipped:
+        insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+        for jid in fit_skipped:
+            db.execute(insert_fn(models.ScoredJob).values(user_id=user.id, job_id=jid)
+                       .on_conflict_do_nothing(index_elements=["user_id", "job_id"]))
+        db.commit()
+        skip_set = set(fit_skipped)
+        unseen_jobs = [j for j in unseen_jobs if j.id not in skip_set]
 
     to_score = []
     for job_row in unseen_jobs:
