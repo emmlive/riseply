@@ -1,12 +1,13 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import doc_export
 from app.services import task_guide as task_guide_service
 from app.services import usage
 
@@ -120,3 +121,64 @@ def delete_guide(guide_id: int, db: Session = Depends(get_db), user: models.User
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+_TYPES = {
+    "md": "text/markdown; charset=utf-8",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def _file(data: bytes | str, fmt: str, name: str) -> Response:
+    body = data.encode("utf-8") if isinstance(data, str) else data
+    return Response(content=body, media_type=_TYPES[fmt], headers={
+        "Content-Disposition": f'attachment; filename="{doc_export.safe_name(name, fmt)}"',
+        "Cache-Control": "no-store",
+    })
+
+
+def _render(md: str, fmt: str, title: str) -> bytes | str:
+    if fmt == "md":
+        return md
+    blocks = doc_export.parse(md)
+    return {"docx": doc_export.to_docx, "pdf": doc_export.to_pdf, "xlsx": doc_export.to_xlsx}[fmt](blocks, title)
+
+
+@router.get("/{guide_id}/export")
+def export_guide(
+    guide_id: int,
+    format: str = Query("docx", pattern="^(docx|pdf|md)$"),
+    include_templates: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The whole guide (steps ticked as saved) as a file to keep, print or send."""
+    row = _get(db, user.id, guide_id)
+    data = json.loads(row.data or "{}")
+    md = doc_export.guide_markdown(data, _done(row), include_materials=include_templates)
+    return _file(_render(md, format, row.title), format, f"{row.title or 'task-guide'} steps")
+
+
+@router.get("/{guide_id}/materials/{index}/export")
+def export_material(
+    guide_id: int,
+    index: int,
+    format: str = Query("docx", pattern="^(docx|pdf|xlsx|md)$"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """One template as Word, PDF, Excel (its tables become sheets) or markdown."""
+    row = _get(db, user.id, guide_id)
+    mats = json.loads(row.data or "{}").get("materials", [])
+    if index < 0 or index >= len(mats):
+        raise HTTPException(status_code=404, detail="Template not found")
+    m = mats[index]
+    return _file(_render(m["template"], format, m["name"]), format, m["name"])
+
+
+@router.get("/{guide_id}/share-text")
+def share_text(guide_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    row = _get(db, user.id, guide_id)
+    return {"text": doc_export.share_text(json.loads(row.data or "{}"), _done(row))}

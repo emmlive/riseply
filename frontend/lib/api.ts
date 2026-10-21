@@ -1248,7 +1248,7 @@ export interface TaskGuide {
   id: number; title: string; task_text: string; role: string; level: string; created_at: string;
   goal: string; deliverable: string; why_it_matters: string; confirm_first: string[];
   requirements: { item: string; why: string }[];
-  materials: { name: string; purpose: string; template: string }[];
+  materials: { name: string; kind?: string; purpose: string; template: string }[];
   steps: TaskGuideStep[]; quality_check: string[]; common_mistakes: string[]; total_time: string; done: string[];
 }
 export interface TaskGuideListItem { id: number; title: string; created_at: string; steps: number; done: number }
