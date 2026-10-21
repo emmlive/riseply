@@ -30,7 +30,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from app.config import settings
-from app.services import job_terms
+from app.services import job_terms, resume_fit
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
@@ -84,6 +84,44 @@ force in any that the resume or the confirmed experience does not support.
 """
 
 
+def _closeness_block(base_resume: str, job: dict) -> str:
+    """What was measured about how near this job is to the resume, so the model
+    chooses how far to reposition it (standard / transferable / career_change)."""
+    fit = resume_fit.check(base_resume, job.get("description") or "")
+    lines = []
+    if fit["fits"] is not None:
+        lines.append(f"- Share of the posting's key terms found on the resume: {round(fit['share'] * 100)}% "
+                     f"(under about 25% usually means a different field).")
+    if isinstance(job.get("match_score"), (int, float)):
+        lines.append(f"- Match score from the scorer: {int(job['match_score'])} out of 100.")
+    measured = "\n".join(lines) or "- Nothing measured; judge it yourself from the posting and the resume."
+    return f"""
+HOW CLOSE THIS JOB IS TO THE RESUME (measured):
+{measured}
+
+DECIDE THE APPROACH FIRST, from those numbers and your own reading, and put it in "approach":
+- "standard": the resume already shows this kind of work. Follow the rules above.
+- "transferable": a related field or level. Most of the posting is within reach. Lead with the
+  experience that carries over and use the posting's wording for it; shorten what does not.
+- "career_change": the resume is mostly in a different field. Do not pretend otherwise and do not
+  hide the real history. Build the strongest HONEST case for this person using pointers from
+  their own resume:
+  * Headline: built from the candidate's real strengths that matter for this posting, in the
+    posting's language (e.g. "Operations Professional | Process Improvement, Reporting, Stakeholder
+    Management"). Never claim the target job title as one they have held.
+  * Summary (3 lines at most): say plainly where they are coming from and the direction, then two or
+    three strengths from the resume that this job needs, each with its evidence.
+  * Put a "Transferable Skills" section (kind "skills") right after the summary, made only of skills,
+    tools and knowledge that are on the resume or in the confirmed experience, labelled in the
+    posting's words only where the meaning is truly the same.
+  * Keep every real employer, title and date. Inside each role, put first (and reword toward the
+    posting's language) the bullets that show a transferable skill such as analysis, reporting,
+    communication, project or vendor management, compliance, training, customer work; shorten the rest.
+    Put the education and certifications that relate to the target first.
+  * Add nothing that is not there: no new skills, results, tools or titles.
+"""
+
+
 def _build_prompt(base_resume: str, job: dict, facts: list[dict] | None = None) -> str:
     return f"""Rewrite this resume so it is strongly tailored to the target job below, the way an
 expert recruiter-turned-resume-writer would: it must clear automated screening AND make a
@@ -114,11 +152,12 @@ Rules:
 - Keep roughly the same overall length as the original (one to two pages, never more).
 - Keep every employer, title and date exactly as in the original.
 - Plain text only: no tables, columns, icons, or special characters.
-{_terms_block(job)}{_facts_block(facts)}
+{_terms_block(job)}{_facts_block(facts)}{_closeness_block(base_resume, job)}
 Return ONLY one JSON object, no markdown fences, in this shape:
 
 {{
-  "rationale": "2-3 sentences to the candidate ('you'): what you moved up or emphasized and which parts of the posting that responds to. Concrete, not generic. If the resume already fit well, say so plainly.",
+  "approach": "standard | transferable | career_change",
+  "rationale": "2-3 sentences to the candidate ('you'): what you moved up or emphasized and which parts of the posting that responds to. Concrete, not generic. If the resume already fit well, say so plainly. For transferable, begin with 'Stretch role.' For career_change, begin with 'Career-change resume.' and use up to 5 sentences: what carries over, the real gaps a resume cannot honestly close (say so plainly if the job needs a licence or credential they lack), and one or two concrete things to do next (a course, certification or small project).",
   "resume": {{
     "name": "Full name",
     "headline": "One-line professional title/specialty built from the candidate's real titles (or empty string)",
@@ -137,7 +176,8 @@ Return ONLY one JSON object, no markdown fences, in this shape:
   }}
 }}
 
-Use only the sections the original resume has (plus the summary). Section
+Use only the sections the original resume has (plus the summary, and for career_change the
+Transferable Skills section). Section
 kinds: "text", "bullets", "skills", "entries". Omit contact items that aren't
 in the original.
 
@@ -181,7 +221,12 @@ def tailor_resume(base_resume: str, job: dict, facts: list[dict] | None = None) 
     if data and isinstance(data.get("resume"), dict):
         blocks = structure_to_blocks(data["resume"])
         if blocks:
-            return str(data.get("rationale") or "").strip(), blocks
+            rationale = str(data.get("rationale") or "").strip()
+            # The label is what tells the person this resume was repositioned.
+            label = {"career_change": "Career-change resume.", "transferable": "Stretch role."}.get(str(data.get("approach") or "").strip())
+            if label and not rationale.startswith(label):
+                rationale = f"{label} {rationale}".strip()
+            return rationale, blocks
 
     # The model didn't return usable JSON -- keep the tailoring anyway by
     # treating whatever came back as plain resume text.

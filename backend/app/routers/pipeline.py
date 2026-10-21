@@ -431,10 +431,15 @@ def import_job(
                 "keywords_required": json.loads(p.keywords_required),
                 "keywords_excluded": json.loads(p.keywords_excluded), "active": p.active,
             } for p in profile_rows]
-            best = matcher.best_profile_match(job_dict, user.resume_text, profiles)
+            # The person chose this job, so where it is and how far it sits from
+            # their resume are not reasons to skip it; the score just says so.
+            best = matcher.best_profile_match(job_dict, user.resume_text, profiles, ignore_location=True, ignore_fit=True)
             profile_name, score, reason = best["profile_name"], best["score"], best["reason"]
+            if profile_name is None:  # every profile excludes this company: score it anyway
+                result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60, "ignore_location": True})
+                profile_name, score, reason = "From your resume", result["score"], result["reason"]
         else:
-            result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60})
+            result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60, "ignore_location": True})
             profile_name, score, reason = "From your resume", result["score"], result["reason"]
     except Exception as e:
         usage.decrement(db, user.id, "match", 1)
@@ -876,6 +881,7 @@ def retailor_resume(
         job_dict = {
             "title": job.title, "company": job.company,
             "location": job.location, "url": job.url, "description": job.description,
+            "match_score": app_row.match_score,
         }
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
             user.id, user.resume_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id)
