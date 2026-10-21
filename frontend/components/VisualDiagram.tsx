@@ -28,7 +28,9 @@ function formatNumber(n: number): string {
   try { return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n); } catch { return String(n); }
 }
 
-export default function VisualDiagram({ visual }: { visual: CareerCoachVisual }) {
+// `focus` is the part the coach is talking about right now (see lib/whiteboard.ts).
+export default function VisualDiagram({ visual, focus = -1 }: { visual: CareerCoachVisual; focus?: number }) {
+  const on = (i: number) => (focus === i ? " wb-focus" : "");
   const title = visual.title || "Diagram";
   const [run, setRun] = useState(0);   // bumping this redraws the board from the start
   return (
@@ -42,7 +44,7 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
       {(visual.kind === "flow" || visual.kind === "cycle") && (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
           {visual.steps.map((s, i) => (
-            <li key={i} className="wb-draw" style={{ display: "flex", flexDirection: "column", alignItems: "stretch", ...step(i) }}>
+            <li key={i} className={`wb-draw${on(i)}`} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", ...step(i) }}>
               <div style={{ ...box, display: "flex", gap: 10, alignItems: "baseline" }}>
                 <span className="ticket" style={{ minWidth: 24, textAlign: "center" }}>{i + 1}</span>
                 <span>
@@ -76,7 +78,7 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
             const width = n > 1 ? 44 + (56 * i) / (n - 1) : 100;   // narrow at the top, wide at the base
             const tint = Math.round(10 + (90 * i) / Math.max(1, n - 1));
             return (
-              <li key={i} className="wb-draw" style={{
+              <li key={i} className={`wb-draw${on(i)}`} style={{
                 ...step(i), ...box, width: `${width}%`, textAlign: "center",
                 background: `color-mix(in srgb, var(--accent) ${tint}%, var(--surface))`,
                 color: tint > 75 ? "#fff" : "var(--ink)", borderColor: "var(--accent)",
@@ -97,7 +99,7 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
           }}>{visual.axes[1]} →</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
             {visual.quadrants.map((q, i) => (
-              <div key={i} className="wb-draw" style={{ ...step(i), ...box, background: i === 0 ? "var(--accent-soft)" : "var(--paper)", minHeight: 84, minWidth: 0, overflowWrap: "break-word", fontSize: 13.5, padding: "6px 8px" }}>
+              <div key={i} className={`wb-draw${on(i)}`} style={{ ...step(i), ...box, background: i === 0 ? "var(--accent-soft)" : "var(--paper)", minHeight: 84, minWidth: 0, overflowWrap: "break-word", fontSize: 13.5, padding: "6px 8px" }}>
                 <div style={{ fontWeight: 600 }}><Icon icon={q.icon} />{q.label}</div>
                 {q.items.length > 0 && (
                   <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
@@ -118,7 +120,7 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
         return (
           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
             {visual.bars.map((b, i) => (
-              <li key={i} className="wb-draw" style={step(i)}>
+              <li key={i} className={`wb-draw${on(i)}`} style={step(i)}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 14 }}>
                   <span><Icon icon={b.icon} />{b.label}</span>
                   <strong>{formatNumber(b.value)}{visual.unit ? ` ${visual.unit}` : ""}</strong>
@@ -143,7 +145,7 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
             </thead>
             <tbody>
               {visual.rows.map((r, i) => (
-                <tr key={i} className="wb-fade" style={step(i)}>
+                <tr key={i} className={`wb-fade${on(i)}`} style={step(i)}>
                   <th scope="row" style={{ ...box, textAlign: "left" }}>{r.label}</th>
                   {visual.columns.map((_, j) => <td key={j} style={box}>{r.cells[j] ?? ""}</td>)}
                 </tr>
@@ -155,12 +157,12 @@ export default function VisualDiagram({ visual }: { visual: CareerCoachVisual })
 
       {visual.kind === "map" && (
         <div>
-          <div className="wb-draw" style={{ ...step(0), ...box, textAlign: "center", fontWeight: 700, marginBottom: 8, borderColor: "var(--accent)", background: "var(--accent-soft)" }}>
+          <div className={`wb-draw${on(0)}`} style={{ ...step(0), ...box, textAlign: "center", fontWeight: 700, marginBottom: 8, borderColor: "var(--accent)", background: "var(--accent-soft)" }}>
             {visual.center}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
             {visual.branches.map((b, i) => (
-              <div key={i} className="wb-draw" style={{ ...step(i + 1), ...box }}>
+              <div key={i} className={`wb-draw${on(i + 1)}`} style={{ ...step(i + 1), ...box }}>
                 <div style={{ fontWeight: 600 }}><Icon icon={b.icon} />{b.label}</div>
                 <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
                   {b.items.map((it, j) => <li key={j}>{it}</li>)}

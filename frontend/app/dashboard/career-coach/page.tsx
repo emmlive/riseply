@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
+import { focusIndex } from "@/lib/whiteboard";
 import CoachVideos from "@/components/CoachVideos";
 import CoachNotebook from "@/components/CoachNotebook";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
@@ -708,7 +709,9 @@ export default function CareerCoachPage() {
                           🎙 {deliveryLabel(m.delivery)}{paceNote(m.delivery) ? ` · ${paceNote(m.delivery)}` : ""}
                         </div>
                       )}
-                      {reveal?.id !== m.id && m.visual && <VisualDiagram visual={m.visual} />}
+                      {reveal?.id !== m.id && m.visual && (
+                        <VisualDiagram visual={m.visual} focus={speakingId === m.id && spokenAt >= 0 ? focusIndex(m.visual, spokenWordList(m.content), spokenAt) : -1} />
+                      )}
                       {reveal?.id !== m.id && m.resources && m.resources.length > 0 && (
                         <div style={{ marginTop: 6, whiteSpace: "normal" }}>
                           {m.resources.map((r) => <ResourceCard key={r.id} item={r} compact />)}

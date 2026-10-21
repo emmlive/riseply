@@ -628,6 +628,11 @@ textarea.cc-input { resize: vertical; }
 .cc-notebook .kind { display: block; font-size: 0.74rem; color: var(--ink-muted); }
 .cc-notebook .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
+.wb-focus { outline: 3px solid #f2b600; outline-offset: 3px; border-radius: 6px; box-shadow: 0 0 0 7px rgba(242, 182, 0, 0.22); transition: box-shadow 0.25s, outline-color 0.25s; }
+.wb-focus.wb-fade { outline: none; box-shadow: none; }
+.wb-focus.wb-fade th, .wb-focus.wb-fade td { background: rgba(242, 182, 0, 0.35) !important; }
+@media (prefers-reduced-motion: reduce) { .wb-focus { transition: none; } }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;
