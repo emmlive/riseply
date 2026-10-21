@@ -194,8 +194,16 @@ def test_uncapped_run_scores_everything_regardless_of_relevance_ordering(db):
         scored_titles.append(job["title"])
         return {"profile_name": None, "score": 40, "reason": "not a great fit", "meets_threshold": False}
 
-    with patch.object(matcher, "best_profile_match", side_effect=fake_best_match):
-        pipeline_runner.run_matching_for_user(db, user, max_jobs=None)
+    # The title gate would (rightly) skip the marketing job; this test is
+    # about ordering/capping, so switch the gate off for its duration.
+    from app.config import settings
+    old = settings.match_relevance_check
+    settings.match_relevance_check = False
+    try:
+        with patch.object(matcher, "best_profile_match", side_effect=fake_best_match):
+            pipeline_runner.run_matching_for_user(db, user, max_jobs=None)
+    finally:
+        settings.match_relevance_check = old
 
     assert set(scored_titles) == {"Security Engineer", "Marketing Coordinator"}
 

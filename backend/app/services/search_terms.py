@@ -13,6 +13,7 @@ Two jobs:
 
 Everything here is deterministic and makes no network calls.
 """
+from app.services import geo
 import re
 
 # Words that name a kind of job but not which job. "Manager" alone says
@@ -141,19 +142,20 @@ def implicit_profile(resume_text: str, location: str = "") -> dict | None:
     titles = resume_job_titles(resume_text)
     if not titles:
         return None
+    # Search near home when we can place it (a radius, so nearby towns still count);
+    # if we can't, search anywhere as before rather than risk hiding everything.
+    home = (location or "").strip()
     return {
         "name": "From your resume",
         "titles": titles,
-        "locations": [],
+        "locations": [home] if home and geo.resolve(home) else [],
         "seniority": [],
         "min_match_score": 70,
         "exclude_companies": [],
         "keywords_required": [],
         "keywords_excluded": [],
         "active": True,
-        # Not a hard filter (a hard city match would hide nearby towns); the
-        # scorer reads it as context.
-        "home_location": (location or "").strip(),
+        "home_location": home,
     }
 
 

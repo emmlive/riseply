@@ -125,6 +125,7 @@ export interface SearchProfile {
   keywords_required: string[];
   keywords_excluded: string[];
   active: boolean;
+  radius_miles?: number | null;
 }
 
 export interface Application {

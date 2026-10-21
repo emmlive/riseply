@@ -13,6 +13,7 @@ const EMPTY: Omit<SearchProfile, "id"> = {
   keywords_required: [],
   keywords_excluded: [],
   active: true,
+  radius_miles: null,
 };
 
 export default function ProfilesPage() {
@@ -102,7 +103,7 @@ export default function ProfilesPage() {
                 {p.titles.map((t) => <span key={t} className="tag">{t}</span>)}
               </div>
               <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
-                {p.locations.join(", ") || "Any location"} · minimum match {p.min_match_score}%
+                {p.locations.join(", ") ? `${p.locations.join(", ")} (within ${p.radius_miles ?? 50} mi)` : "Any location"} · minimum match {p.min_match_score}%
               </p>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -141,10 +142,17 @@ export default function ProfilesPage() {
                    onChange={(e) => { setLocationsText(e.target.value); setEditing({ ...editing, locations: splitList(e.target.value) }); }}
                    placeholder="Remote" />
             <p className="hint">
-              Locations are a strict filter: a job outside every location listed here won&apos;t match,
-              no matter how well the title fits. Add &quot;Remote&quot; if you&apos;re open to it, since many
-              of the jobs we find are remote.
+              Jobs outside these places (and the distance below) won&apos;t match, however well the title fits.
+              Add &quot;Remote&quot; if you&apos;re open to it, since many of the jobs we find are remote.
             </p>
+          </div>
+
+          <div className="field">
+            <label>How far from those places</label>
+            <select value={editing.radius_miles ?? 50}
+                    onChange={(e) => setEditing({ ...editing, radius_miles: Number(e.target.value) })}>
+              {[10, 25, 50, 100, 200].map((m) => <option key={m} value={m}>Within {m} miles</option>)}
+            </select>
           </div>
 
           <div className="field">

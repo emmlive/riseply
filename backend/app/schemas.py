@@ -115,6 +115,7 @@ class SearchProfileIn(BaseModel):
     keywords_required: list[str] = []
     keywords_excluded: list[str] = []
     active: bool = True
+    radius_miles: int | None = None
 
 
 class SearchProfileOut(SearchProfileIn):

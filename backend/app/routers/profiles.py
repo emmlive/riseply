@@ -22,6 +22,7 @@ def _to_out(p: models.SearchProfile) -> schemas.SearchProfileOut:
         keywords_required=json.loads(p.keywords_required),
         keywords_excluded=json.loads(p.keywords_excluded),
         active=p.active,
+        radius_miles=p.radius_miles,
     )
 
 
@@ -57,6 +58,7 @@ def create_profile(
         keywords_required=json.dumps(payload.keywords_required),
         keywords_excluded=json.dumps(payload.keywords_excluded),
         active=payload.active,
+        radius_miles=payload.radius_miles,
     )
     db.add(p)
     db.commit()
@@ -84,6 +86,7 @@ def update_profile(
     p.keywords_required = json.dumps(payload.keywords_required)
     p.keywords_excluded = json.dumps(payload.keywords_excluded)
     p.active = payload.active
+    p.radius_miles = payload.radius_miles
     db.commit()
     db.refresh(p)
     return _to_out(p)

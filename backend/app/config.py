@@ -214,6 +214,12 @@ class Settings(BaseSettings):
     # with the person's search (saves AI cost). Set MATCH_RELEVANCE_CHECK=false
     # to score everything again.
     match_relevance_check: bool = True
+    # How far from a searched place a job may be and still count as "near it".
+    # A search profile can set its own (SearchProfile.radius_miles).
+    match_radius_miles: int = 50
+    # Show jobs outside the person's locations as "Outside your preferred
+    # location" when a run finds nothing. Off: those jobs are not shown at all.
+    match_location_fallback: bool = False
     # Nightly look at jobs people are still sitting on: how many per run,
     # and how long before the same job is looked at again.
     pending_recheck_per_run: int = 40
