@@ -320,6 +320,8 @@ class CareerCoachSessionOut(BaseModel):
     # Lesson plan for a learning session: {"goals": [...], "covered": [1-based]}.
     lesson: dict | None = None
     homework: str = ""
+    quiz_result: str = ""
+    quizzed: bool = False
 
     class Config:
         from_attributes = True
@@ -336,6 +338,9 @@ class CareerCoachStartRequest(BaseModel):
     # True when "read the coach's replies aloud" is on: the coach writes for
     # the ear (no markdown or symbols a speech voice would read out).
     voice: bool = False
+    # "Quiz me first": warm up on saved study notes (one folder, or all of them).
+    quiz_folder_id: int | None = None
+    quiz_all: bool = False
 
 
 class DeliveryStats(BaseModel):
@@ -475,6 +480,8 @@ class CareerCoachMessageOut(BaseModel):
     delivery: DeliveryStats | None = None
     # Updated lesson checklist after this reply (learning sessions only).
     lesson: dict | None = None
+    # "2/3" once the warm-up quiz result is in.
+    quiz_result: str = ""
 
 
 class CoachNotebookItemOut(BaseModel):
@@ -506,6 +513,17 @@ class CareerCoachNoteIn(BaseModel):
 class CareerCoachNoteOut(BaseModel):
     content: str = ""
     updated_at: datetime | None = None
+
+
+class QuizFolderOut(BaseModel):
+    id: int
+    name: str
+    count: int
+
+
+class QuizOptionsOut(BaseModel):
+    all: int
+    folders: list[QuizFolderOut] = []
 
 
 class StudyFolderIn(BaseModel):

@@ -637,6 +637,7 @@ export interface CareerCoachMessage extends CoachingMessage {
   visual?: CareerCoachVisual | null;
   // Updated lesson checklist after this reply (learning sessions).
   lesson?: CoachLesson | null;
+  quiz_result?: string;
 }
 
 export interface CoachLesson { goals: string[]; covered: number[] }
@@ -659,7 +660,11 @@ export interface CareerCoachSession {
   completed_at: string | null;
   lesson?: CoachLesson | null;
   homework?: string;
+  quiz_result?: string;
+  quizzed?: boolean;
 }
+
+export interface QuizOptions { all: number; folders: { id: number; name: string; count: number }[] }
 
 export interface CompanyStats {
   company: string;

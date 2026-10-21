@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem } from "@/lib/api";
+import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem, QuizOptions } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import { focusIndex } from "@/lib/whiteboard";
@@ -69,6 +69,7 @@ const DRAW_AS: { kind: CareerCoachVisualKind | ""; label: string }[] = [
 
 // Role-plays where the coach stays in character (no teaching cards mid-scene).
 const IN_CHARACTER: string[] = ["interview", "negotiation"];
+const LESSON_TYPES: string[] = ["drill", "walkthrough", "upskill", "leadership"];
 
 const typeLabel = (t: CareerCoachSessionType) => SESSION_TYPES.find((x) => x.value === t)?.label ?? t;
 
@@ -98,6 +99,9 @@ export default function CareerCoachPage() {
   const [type, setType] = useState<CareerCoachSessionType>("drill");
   const [topic, setTopic] = useState("");
   const [learningStyle, setLearningStyle] = useState<LearningStyle>("auto");
+  // "Quiz me first" on saved study notes: "" = no, "all", or a folder id.
+  const [quizPick, setQuizPick] = useState("");
+  const [quizOptions, setQuizOptions] = useState<QuizOptions | null>(null);
   const [starting, setStarting] = useState(false);
   const winRef = useRef<HTMLDivElement>(null);
 
@@ -164,6 +168,9 @@ export default function CareerCoachPage() {
   }, [reveal?.count]);
 
   useEffect(() => { if (speakingId === null) setSpokenAt(-1); }, [speakingId]);
+  useEffect(() => {
+    api<QuizOptions>("/career-coach/study/quiz-options").then(setQuizOptions).catch(() => setQuizOptions(null));
+  }, []);
 
   useEffect(() => {
     setCanDictate(dictationSupported());
@@ -444,7 +451,9 @@ export default function CareerCoachPage() {
     try {
       const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
-        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle, voice: readAloud }) }
+        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle, voice: readAloud,
+          ...(LESSON_TYPES.includes(type) && quizPick === "all" ? { quiz_all: true } : {}),
+          ...(LESSON_TYPES.includes(type) && quizPick && quizPick !== "all" ? { quiz_folder_id: Number(quizPick) } : {}) }) }
       );
       setSessions((s) => [r.session, ...s]);
       setActive(r.session);
@@ -491,6 +500,11 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}) }),
       });
       setMessages((m) => [...m, reply]);
+      if (reply.quiz_result) {
+        const quiz_result = reply.quiz_result;
+        setActive((a) => (a && a.id === active.id ? { ...a, quiz_result } : a));
+        setSessions((rows) => rows.map((row) => (row.id === active.id ? { ...row, quiz_result } : row)));
+      }
       if (reply.lesson) {
         const lesson = reply.lesson;
         setActive((a) => (a && a.id === active.id ? { ...a, lesson } : a));
@@ -633,6 +647,18 @@ export default function CareerCoachPage() {
                 {selectedStyle && <p className="cc-seg-hint">{selectedStyle.hint}.</p>}
               </fieldset>
 
+              {LESSON_TYPES.includes(type) && quizOptions && quizOptions.all > 0 && (
+                <div className="cc-group">
+                  <label className="cc-label" htmlFor="cc-quiz">Warm up with a quiz on your saved notes <small>(optional)</small></label>
+                  <select id="cc-quiz" value={quizPick} onChange={(e) => setQuizPick(e.target.value)}>
+                    <option value="">No, go straight to the lesson</option>
+                    <option value="all">Quiz me on all my saved notes ({quizOptions.all})</option>
+                    {quizOptions.folders.map((f) => <option key={f.id} value={String(f.id)}>Folder: {f.name} ({f.count})</option>)}
+                  </select>
+                  {quizPick && <p className="cc-seg-hint">Up to 6 of the notes you pick are sent to the coach for this session so it can ask you 3 questions. Your other notes stay private.</p>}
+                </div>
+              )}
+
               <div className="cc-group">
                 <label className="cc-label" htmlFor="cc-topic">
                   {type === "resume" ? "Section to focus on" : "Topic"} <small>(optional)</small>
@@ -672,6 +698,7 @@ export default function CareerCoachPage() {
                   <h2>{active.topic}</h2>
                   <div className="cc-chat-meta">
                     {typeLabel(active.session_type)} · {active.target_role} · Started {formatWhen(active.created_at)}
+                    {active.quizzed && <> · Warm-up quiz{active.quiz_result ? `: ${active.quiz_result.replace("/", " of ")}` : ""}</>}
                   </div>
                 </div>
                 <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close session</button>

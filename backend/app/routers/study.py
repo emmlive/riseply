@@ -9,7 +9,9 @@ from app import models, schemas
 from app.security import get_current_user
 
 # Study folders and saved Career Coach notes. Everything here is the
-# person's own material: never sent to the model, never metered.
+# person's own material and never metered. It reaches the model only when the
+# person starts a session with "quiz me first" (services/study_quiz.py), and
+# then just the few notes picked for that session.
 router = APIRouter(prefix="/career-coach/study", tags=["career-coach"])
 
 MAX_FOLDERS = 50
@@ -102,6 +104,19 @@ def delete_folder(
         {models.StudyNote.folder_id: None}, synchronize_session=False)
     db.delete(f)
     db.commit()
+
+
+@router.get("/quiz-options", response_model=schemas.QuizOptionsOut)
+def quiz_options(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """How many saved notes are long enough to quiz on, overall and per folder,
+    so the session form can offer "Quiz me first". Counts only; no note text."""
+    notes = db.query(models.StudyNote.folder_id, func.length(models.StudyNote.content)).filter_by(user_id=user.id).all()
+    usable = [fid for fid, n in notes if (n or 0) >= 20]
+    folders = db.query(models.StudyFolder).filter_by(user_id=user.id).order_by(func.lower(models.StudyFolder.name)).all()
+    return schemas.QuizOptionsOut(
+        all=len(usable),
+        folders=[schemas.QuizFolderOut(id=f.id, name=f.name, count=usable.count(f.id)) for f in folders if usable.count(f.id)],
+    )
 
 
 @router.get("/notes", response_model=list[schemas.StudyNoteOut])

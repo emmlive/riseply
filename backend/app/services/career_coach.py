@@ -3,7 +3,7 @@ import re
 from app.services.job_buddy import client, MODEL
 from app.services import library as library_service
 from app.services import visuals as visuals_service
-from app.services import coach_notebook, lesson as lesson_service
+from app.services import coach_notebook, lesson as lesson_service, study_quiz
 from app.services.coaching import _split_marker_response, TOPIC_MARKER, SCORE_MARKER, SEPARATOR
 
 # The individual-product AI Career Coach: practice-based training for a
@@ -356,7 +356,7 @@ def _notebook_block(session_type: str, notebook: list | None) -> str:
 
 
 def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto",
-                  voice: bool = False, notebook: list | None = None) -> dict:
+                  voice: bool = False, notebook: list | None = None, quiz_notes: list | None = None) -> dict:
     """Returns {"topic": str, "opening_message": str}. Same TOPIC: marker
     contract as services/coaching.py so the topic is persisted without a
     second round trip."""
@@ -386,6 +386,8 @@ a few words, even if one was given to you above):
 {lesson_service.START_NOTE if session_type in lesson_service.LESSON_TYPES else ""}
 
 {_notebook_block(session_type, notebook)}
+
+{study_quiz.start_block(quiz_notes) if session_type in lesson_service.LESSON_TYPES else ""}
 
 {library_service.prompt_block(library or [])}
 
@@ -484,7 +486,8 @@ session for a score and feedback whenever they're ready."""
 
 def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None,
           learning_style: str = "auto", style: str | None = None, voice: bool = False,
-          visual_kind: str | None = None, notebook: list | None = None, plan: dict | None = None) -> str:
+          visual_kind: str | None = None, notebook: list | None = None, plan: dict | None = None,
+          quiz_notes: list | None = None, quiz_finished: bool = False) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -502,6 +505,8 @@ above.
 {lesson_service.block(plan) if session_type in lesson_service.LESSON_TYPES else ""}
 
 {_notebook_block(session_type, notebook)}
+
+{study_quiz.reply_block(quiz_notes, quiz_finished) if session_type in lesson_service.LESSON_TYPES else ""}
 
 {library_service.prompt_block(library or [])}
 
