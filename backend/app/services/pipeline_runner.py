@@ -758,6 +758,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         "keywords_required": json.loads(p.keywords_required),
         "keywords_excluded": json.loads(p.keywords_excluded),
         "active": p.active,
+        "radius_miles": p.radius_miles,
     } for p in profiles_rows]
 
     # What the person has told us by rejecting matches (and why) rides along
@@ -871,6 +872,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     queued = []
     near_miss_candidates = []  # (score, {title, company, url, score, reason, matched_profile})
     NEAR_MISS_CAP = 6
+    NEAR_MISS_GAP = 20
     limit_hit = False
 
     # Three phases instead of one job-at-a-time loop, because scoring is
@@ -985,7 +987,9 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             # score: 0 and a generic explanation, looking like a real
             # but very poor match rather than a job that was correctly
             # ruled out before scoring even started).
-            if best["profile_name"] is not None:
+            # Only a genuinely close call is worth showing: within NEAR_MISS_GAP of the
+            # profile's bar. A 25% "closest match" is just noise.
+            if best["profile_name"] is not None and best["score"] >= best.get("min_match_score", 70) - NEAR_MISS_GAP:
                 # Track the closest-scoring misses as we go, capped at
                 # NEAR_MISS_CAP, so a search that finds nothing real still
                 # has something concrete to show -- "nothing hit your bar,
@@ -1107,7 +1111,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # stated preference, so surfacing them for the person to decide on
     # is appropriate; silently treating them as a real match is not.
     FALLBACK_LOCATION_JOB_CAP = 10
-    if not queued and len(near_miss_candidates) < NEAR_MISS_CAP and not limit_hit:
+    if settings.match_location_fallback and not queued and len(near_miss_candidates) < NEAR_MISS_CAP and not limit_hit:
         already_scored_now_subq = db.query(models.ScoredJob.job_id).filter(
             models.ScoredJob.user_id == user.id
         ).subquery()

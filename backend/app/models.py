@@ -158,6 +158,8 @@ class SearchProfile(Base):
     keywords_required = Column(Text, default="[]")
     keywords_excluded = Column(Text, default="[]")
     active = Column(Boolean, default=True)
+    # How far from a listed location a job may be (miles). None = the site default.
+    radius_miles = Column(Integer, nullable=True)
 
     owner = relationship("User", back_populates="profiles")
 
