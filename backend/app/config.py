@@ -282,6 +282,7 @@ class Settings(BaseSettings):
     free_tier_max_networking_per_month: int = 5
     free_tier_max_company_brief_per_month: int = 5
     free_tier_max_career_path_per_month: int = 2
+    free_tier_max_task_guide_per_month: int = 3
     free_tier_max_coach_video_per_month: int = 15
 
     # --- Pro tier limits ---
@@ -299,6 +300,7 @@ class Settings(BaseSettings):
     pro_tier_max_networking_per_month: int = 100
     pro_tier_max_company_brief_per_month: int = 100
     pro_tier_max_career_path_per_month: int = 20
+    pro_tier_max_task_guide_per_month: int = 30
     pro_tier_max_coach_video_per_month: int = 150
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---

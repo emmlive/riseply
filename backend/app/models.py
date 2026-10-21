@@ -1794,3 +1794,20 @@ class EmailLog(Base):
     status = Column(String, default="sent", index=True)
     error = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TaskGuide(Base):
+    """A guide for one assigned task (services/task_guide.py): the task as the
+    person pasted it, the validated JSON plan, and which steps they ticked off."""
+    __tablename__ = "task_guides"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String, default="")
+    task_text = Column(Text, default="")
+    role = Column(String, default="")
+    level = Column(String, default="some_experience")
+    data = Column(Text, default="{}")
+    done = Column(Text, default="[]")  # JSON list of finished step ids
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())

@@ -1241,3 +1241,14 @@ export interface CareerPath {
   bridge_roles: { title: string; why: string }[]; stages: CareerPathStage[];
   first_week: string[]; honest_note: string; cached: boolean;
 }
+
+
+export interface TaskGuideStep { id: string; title: string; what_to_do: string; how: string; done_when: string; minutes: number; watch_out: string }
+export interface TaskGuide {
+  id: number; title: string; task_text: string; role: string; level: string; created_at: string;
+  goal: string; deliverable: string; why_it_matters: string; confirm_first: string[];
+  requirements: { item: string; why: string }[];
+  materials: { name: string; purpose: string; template: string }[];
+  steps: TaskGuideStep[]; quality_check: string[]; common_mistakes: string[]; total_time: string; done: string[];
+}
+export interface TaskGuideListItem { id: number; title: string; created_at: string; steps: number; done: number }
