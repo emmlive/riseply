@@ -65,7 +65,7 @@ def test_voice_flag_reaches_the_coach_and_cleans_the_reply():
     client = _client()
     seen = {}
 
-    def fake_start(session_type, role, topic, resume, library=None, learning_style="auto", voice=False):
+    def fake_start(session_type, role, topic, resume, library=None, learning_style="auto", voice=False, **kw):
         seen["start_voice"] = voice
         return {"topic": "Threat modeling", "opening_message": "Let's begin **now** → ready?"}
 

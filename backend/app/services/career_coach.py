@@ -3,6 +3,7 @@ import re
 from app.services.job_buddy import client, MODEL
 from app.services import library as library_service
 from app.services import visuals as visuals_service
+from app.services import coach_notebook, lesson as lesson_service
 from app.services.coaching import _split_marker_response, TOPIC_MARKER, SCORE_MARKER, SEPARATOR
 
 # The individual-product AI Career Coach: practice-based training for a
@@ -349,8 +350,13 @@ rewrite next. Do not rewrite the whole resume unprompted. Keep it tight.""",
 }
 
 
+def _notebook_block(session_type: str, notebook: list | None) -> str:
+    """Past-session notes go to learning sessions only, never role-play."""
+    return "" if session_type in IN_CHARACTER else coach_notebook.prompt_block(notebook or [])
+
+
 def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto",
-                  voice: bool = False) -> dict:
+                  voice: bool = False, notebook: list | None = None) -> dict:
     """Returns {"topic": str, "opening_message": str}. Same TOPIC: marker
     contract as services/coaching.py so the topic is persisted without a
     second round trip."""
@@ -377,6 +383,9 @@ a few words, even if one was given to you above):
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, None, session_type)}
+{lesson_service.START_NOTE if session_type in lesson_service.LESSON_TYPES else ""}
+
+{_notebook_block(session_type, notebook)}
 
 {library_service.prompt_block(library or [])}
 
@@ -387,8 +396,12 @@ a few words, even if one was given to you above):
         messages=[{"role": "user", "content": prompt}],
     )
     parsed_topic, opening = _split_marker_response(resp.content[0].text.strip(), TOPIC_MARKER)
+    goals = None
+    if session_type in lesson_service.LESSON_TYPES:
+        opening, goals = lesson_service.extract_plan(opening)
+        parsed_topic, _ = lesson_service.extract_plan(parsed_topic)
     default_topic = {"resume": "Resume review", "upskill": "Upskilling", "leadership": "How leaders think", "negotiation": "Offer negotiation"}.get(session_type, "Practice session")
-    return {"topic": parsed_topic or topic.strip() or default_topic, "opening_message": opening}
+    return {"topic": parsed_topic or topic.strip() or default_topic, "opening_message": opening, "goals": goals}
 
 
 _REPLY_FRAMING = {
@@ -471,7 +484,7 @@ session for a score and feedback whenever they're ready."""
 
 def reply(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict], new_message: str, library: list | None = None,
           learning_style: str = "auto", style: str | None = None, voice: bool = False,
-          visual_kind: str | None = None) -> str:
+          visual_kind: str | None = None, notebook: list | None = None, plan: dict | None = None) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -486,6 +499,9 @@ above.
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, style, session_type, visual_kind)}
+{lesson_service.block(plan) if session_type in lesson_service.LESSON_TYPES else ""}
+
+{_notebook_block(session_type, notebook)}
 
 {library_service.prompt_block(library or [])}
 
@@ -520,8 +536,26 @@ def delivery_line(d) -> str:
             + (f", filler phrases: {fillers}" if fillers else ", no filler phrases found") + "]")
 
 
-def finish_session(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict]) -> dict:
-    """Returns {"score": int | None, "feedback": str}. score is None when
+_NOTEBOOK_TASK = """
+COACH'S NOTEBOOK: after the feedback, update your private notes on how this
+person learns, so the next session can pick up where this one stopped. Add at
+the very end, as valid JSON on one line:
+[[notebook]]{{"homework":"one concrete task for before next time, under 140 characters","notes":[{{"kind":"strong|shaky|style|goal","text":"short note","topic":"short topic"}}]}}[[/notebook]]
+Rules: return the FULL list of notes to keep (at most 8): keep earlier notes that
+still hold, drop ones that are settled, add what this session showed. kind
+"strong" = clicked, "shaky" = still unsure, "style" = how they like things
+explained, "goal" = what they are working toward. Each note is under 140
+characters, about LEARNING only. Never write anything personal or sensitive
+(health, religion, family, money, legal or immigration matters, politics), and
+never copy their private details; if unsure, leave it out.
+Current notes:
+{old}
+"""
+
+
+def finish_session(session_type: str, target_role: str, topic: str, resume_text: str, history: list[dict],
+                   notebook: list | None = None, remember: bool = False) -> dict:
+    """Returns {"score": int | None, "feedback": str, "notebook": dict | None}. score is None when
     the model didn't follow the format -- stored as "not scored" rather
     than a guessed number."""
     transcript = "\n\n".join(
@@ -569,6 +603,7 @@ generous by default>
 <2-4 sentences of concrete feedback: what went well, the single most
 valuable thing to work on next, grounded in specific moments>
 {DELIVERY_FEEDBACK if spoken else ""}
+{_NOTEBOOK_TASK.format(old=coach_notebook.prompt_block(notebook or []) or "(no notes yet)") if remember else ""}
 {CAREER_GUARDRAILS}
 
 {_context(resume_text, target_role)}
@@ -577,12 +612,14 @@ TRANSCRIPT:
 {transcript[:8000]}
 """
     resp = client.messages.create(
-        model=MODEL, max_tokens=500,
+        model=MODEL, max_tokens=900 if remember else 500,
         messages=[{"role": "user", "content": prompt}],
     )
-    score_text, feedback = _split_marker_response(resp.content[0].text.strip(), SCORE_MARKER)
+    raw = resp.content[0].text.strip()
+    raw, update = coach_notebook.split_block(raw)
+    score_text, feedback = _split_marker_response(raw, SCORE_MARKER)
     score = None
     match = re.search(r"-?\d+", score_text)
     if match:
         score = max(0, min(100, int(match.group())))
-    return {"score": score, "feedback": feedback}
+    return {"score": score, "feedback": feedback, "notebook": update if remember else None}

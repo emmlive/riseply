@@ -466,9 +466,38 @@ class CareerCoachSession(Base):
     status = Column(String, default="in_progress", server_default="in_progress")  # in_progress | completed
     score = Column(Integer, nullable=True)
     feedback = Column(Text, default="", server_default="")
+    # JSON {"goals": [...], "covered": [1-based numbers]} for a learning session's
+    # lesson plan (services/lesson.py); empty when there is none.
+    plan = Column(Text, default="", server_default="")
+    # One concrete task the coach set at the end of the session.
+    homework = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
+
+    @property
+    def lesson(self):
+        """The lesson plan as a dict (what the API returns), or None."""
+        import json as _json
+        try:
+            data = _json.loads(self.plan or "")
+        except Exception:
+            return None
+        return data if isinstance(data, dict) and data.get("goals") else None
+
+
+class CoachNotebook(Base):
+    """What the Career Coach remembers about one person's learning
+    (services/coach_notebook.py): a handful of short notes the coach rewrites
+    after each session, readable and deletable by the person, and switchable
+    off. One row per user."""
+    __tablename__ = "coach_notebooks"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    enabled = Column(Boolean, default=True, server_default="true")
+    items = Column(Text, default="[]")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class CareerCoachMessage(Base):
