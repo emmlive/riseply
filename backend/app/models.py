@@ -471,9 +471,17 @@ class CareerCoachSession(Base):
     plan = Column(Text, default="", server_default="")
     # One concrete task the coach set at the end of the session.
     homework = Column(Text, default="", server_default="")
+    # Ids of the saved study notes picked for a "quiz me first" warm-up (JSON list)
+    # and its result ("2/3"), see services/study_quiz.py.
+    quiz_notes = Column(Text, default="", server_default="")
+    quiz_result = Column(String, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
+
+    @property
+    def quizzed(self) -> bool:
+        return bool(self.quiz_notes)
 
     @property
     def lesson(self):

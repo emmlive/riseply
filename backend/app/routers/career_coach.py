@@ -13,7 +13,7 @@ from app.services import library as library_service
 from app.services import visuals as visuals_service
 from app.services import discord_notify
 from app.services import videos as videos_service
-from app.services import coach_notebook, lesson as lesson_service
+from app.services import coach_notebook, lesson as lesson_service, study_quiz
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -102,11 +102,15 @@ def start_session(
     usage.check_and_increment(db, user, ACTION, 1)
     target_role = payload.target_role.strip()
     notes = _notebook_items(db, user, payload.session_type)
+    quiz = []
+    if payload.session_type in lesson_service.LESSON_TYPES and (payload.quiz_all or payload.quiz_folder_id is not None):
+        quiz = study_quiz.pick(db, user.id, payload.quiz_folder_id, payload.quiz_all)
     offered = library_service.retrieve(_active_library(db), f"{target_role} {payload.topic}")
     try:
         result = career_coach_service.start_session(
             payload.session_type, target_role, payload.topic, user.resume_text, library=offered,
             learning_style=payload.learning_style, voice=payload.voice, notebook=notes,
+            quiz_notes=quiz,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -121,6 +125,7 @@ def start_session(
         target_role=payload.target_role.strip(), topic=result["topic"],
         learning_style=payload.learning_style,
         plan=lesson_service.dump(result["goals"]) if result.get("goals") else "",
+        quiz_notes=study_quiz.dump_ids(quiz),
     )
     db.add(session)
     db.commit()
@@ -200,7 +205,12 @@ def send_message(
             user.resume_text, history, payload.message, library=offered,
             learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
             visual_kind=payload.visual_kind, notebook=notes, plan=session.lesson,
+            quiz_notes=study_quiz.load(db, user.id, session.quiz_notes), quiz_finished=bool(session.quiz_result),
         )
+        reply_text, quiz_result = study_quiz.extract_result(reply_text)
+        if quiz_result and not session.quiz_result:
+            session.quiz_result = quiz_result
+            db.commit()
         plan = session.lesson
         if plan and session.session_type in lesson_service.LESSON_TYPES:
             reply_text, done = lesson_service.extract_covered(reply_text, len(plan["goals"]))
@@ -234,6 +244,7 @@ def send_message(
     db.refresh(reply_msg)
     out = _messages_out(db, [reply_msg])[0]
     out.lesson = session.lesson
+    out.quiz_result = session.quiz_result or ""
     return out
 
 

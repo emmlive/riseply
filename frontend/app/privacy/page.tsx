@@ -107,6 +107,14 @@ export default function PrivacyPage() {
           to save personal details, and interview and negotiation role-plays
           never use the notes.
         </p>
+        <h2>Saved study notes</h2>
+        <p>
+          Notes you save to your study folders stay in your account and are not
+          sent to Claude on their own. Only when you start a session with
+          <strong> Warm up with a quiz on your saved notes</strong> are up to six
+          of the notes you picked sent to Claude, for that session, so it can
+          quiz you on them.
+        </p>
 
         <p style={{ marginTop: 32 }}>
           See also our <Link href="/terms">Terms of Service</Link>.
