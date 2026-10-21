@@ -375,7 +375,8 @@ def list_applications(
     )
     if status:
         q = q.filter(models.Application.status == status)
-    q = q.order_by(models.Application.match_score.desc())
+    # Newest first, so a job just found or added is at the top; ties by match score.
+    q = q.order_by(models.Application.created_at.desc(), models.Application.match_score.desc(), models.Application.id.desc())
     return [_to_out(app, job, bool(r), bool(c)) for app, job, r, c in q.all()]
 
 

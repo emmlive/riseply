@@ -91,3 +91,28 @@ def test_far_jobs_do_not_use_up_the_run(monkeypatch):
     pipeline_runner.run_matching_for_user(db, u, max_jobs=2)
     assert seen == ["Naperville, IL"]
     db.close()
+
+
+def test_applications_list_newest_first():
+    from datetime import datetime, timedelta
+    import app.main  # noqa: F401
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app import models
+    from app.database import SessionLocal
+    from app.security import create_access_token
+    db = SessionLocal()
+    u = models.User(email=f"order{datetime.utcnow().timestamp()}@x.com", hashed_password="x")
+    db.add(u); db.commit(); db.refresh(u)
+    now = datetime.utcnow()
+    ids = []
+    for i, (title, score, age) in enumerate([("Old high", 95, 5), ("New low", 40, 0), ("Mid", 70, 2)]):
+        j = models.Job(source="t", external_id=f"o{i}{now.timestamp()}", company="C", title=title, location="x", description="d", discovered_at=now)
+        db.add(j); db.commit(); db.refresh(j)
+        db.add(models.Application(user_id=u.id, job_id=j.id, match_score=score, status="pending_approval", created_at=now - timedelta(days=age)))
+    db.commit()
+    db.refresh(u)
+    tok = create_access_token(u)
+    db.close()
+    r = TestClient(app).get("/applications", headers={"Authorization": f"Bearer {tok}"})
+    assert [a["job_title"] for a in r.json()] == ["New low", "Mid", "Old high"]
