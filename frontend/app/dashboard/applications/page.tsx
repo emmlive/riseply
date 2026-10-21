@@ -1,5 +1,6 @@
 "use client";
 
+import ResumeCheck from "@/components/ResumeCheck";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
@@ -754,6 +755,10 @@ export default function ApplicationsPage() {
                 </div>
               );
             })()}
+
+            {app.has_tailored_resume_data && (
+              <ResumeCheck applicationId={app.id} busy={busyId === app.id} onRetailor={() => retailor(app.id)} />
+            )}
 
             {(() => {
               const br = briefs[app.id];

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from fastapi import HTTPException
 
 from app import models
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms, match_feedback
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms, match_feedback, resume_facts
 from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, report as source_report
 from app.services import discovery_sources
 from app.config import settings
@@ -1039,7 +1039,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
                 job["matched_profile"] = best["profile_name"]
                 job["match_score"] = best["score"]
                 resume_path, resume_bytes, rationale = resume_customizer.customize_for_job(
-                    user.id, user.resume_text, job, application.id
+                    user.id, user.resume_text, job, application.id, facts=resume_facts.for_prompt(db, user.id)
                 )
                 application.tailored_resume_path = resume_path
                 application.tailored_resume_data = resume_bytes

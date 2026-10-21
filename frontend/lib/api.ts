@@ -1219,6 +1219,14 @@ export interface FitScore {
   cached: boolean;
 }
 
+export interface ResumeFact { id: number; skill: string; detail: string }
+export interface ResumeCheck {
+  terms: { term: string; in_original: boolean; in_tailored: boolean }[];
+  total: number; found: number; found_before: number;
+  checks: { label: string; ok: boolean; detail: string }[];
+  facts: ResumeFact[];
+}
+
 export interface CareerPathStage { name: string; when: string; goal: string; skills: string[]; proof: string; milestone: string }
 export interface CareerPath {
   id: number; target_role: string; months: number; hours_per_week: number; created_at: string;

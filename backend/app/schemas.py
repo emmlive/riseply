@@ -1874,6 +1874,35 @@ class FitScoreOut(BaseModel):
     cached: bool = False
 
 
+# --- Resume check (key terms + screening requirements) ---
+
+class ResumeFactOut(BaseModel):
+    id: int
+    skill: str
+    detail: str
+
+
+class ResumeCheckTerm(BaseModel):
+    term: str
+    in_original: bool
+    in_tailored: bool
+
+
+class ResumeCheckItem(BaseModel):
+    label: str
+    ok: bool
+    detail: str
+
+
+class ResumeCheckOut(BaseModel):
+    terms: list[ResumeCheckTerm]
+    total: int
+    found: int
+    found_before: int
+    checks: list[ResumeCheckItem] = []
+    facts: list[ResumeFactOut] = []
+
+
 # --- Networking drafts ---
 
 class NetworkingRequest(BaseModel):
