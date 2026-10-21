@@ -11,7 +11,7 @@ from app.migrate import run_migration
 from app.kb_seed import seed_kb_if_empty
 from app.library_seed import seed_library_if_empty
 from app.rate_limit import limiter
-from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension, resumes, sso, bookmarklet, calendar, career_coach, library, discounts, discord, study, progress, feedback, skill_gap, fit_score, networking, company_brief, career_path, resume_facts
+from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension, resumes, sso, bookmarklet, calendar, career_coach, library, discounts, discord, study, progress, feedback, skill_gap, fit_score, networking, company_brief, career_path, resume_facts, task_guides
 
 def _fail_orphaned_match_runs() -> None:
     """Interactive searches run inside this web process, so any still
@@ -141,6 +141,7 @@ app.include_router(fit_score.router)
 app.include_router(networking.router)
 app.include_router(company_brief.router)
 app.include_router(career_path.router)
+app.include_router(task_guides.router)
 app.include_router(resume_facts.router)
 app.include_router(study.router)
 app.include_router(progress.router)

@@ -2044,3 +2044,79 @@ class CoachVideosOut(BaseModel):
     videos: list[CoachVideo] = []
     search_url: str
     note: str = ""
+
+
+# --- Task guide ---
+
+class TaskGuideRequest(BaseModel):
+    task: str = Field(..., min_length=15, max_length=4000)
+    role: str = Field("", max_length=120)
+    level: str = Field("some_experience", pattern="^(first_time|some_experience|experienced)$")
+
+
+class TaskGuideProgress(BaseModel):
+    done: list[str] = Field(default_factory=list, max_length=20)
+
+
+class TaskGuideHelpTurn(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., max_length=4000)
+
+
+class TaskGuideHelpRequest(BaseModel):
+    step_id: str = Field("", max_length=8)
+    message: str = Field(..., min_length=2, max_length=6000)
+    history: list[TaskGuideHelpTurn] = Field(default_factory=list, max_length=12)
+
+
+class TaskGuideHelpOut(BaseModel):
+    reply: str
+
+
+class TaskGuideStep(BaseModel):
+    id: str
+    title: str
+    what_to_do: str = ""
+    how: str = ""
+    done_when: str = ""
+    minutes: int = 0
+    watch_out: str = ""
+
+
+class TaskGuideRequirement(BaseModel):
+    item: str
+    why: str = ""
+
+
+class TaskGuideMaterial(BaseModel):
+    name: str
+    purpose: str = ""
+    template: str = ""
+
+
+class TaskGuideOut(BaseModel):
+    id: int
+    title: str
+    task_text: str = ""
+    role: str = ""
+    level: str = "some_experience"
+    created_at: datetime
+    goal: str = ""
+    deliverable: str = ""
+    why_it_matters: str = ""
+    confirm_first: list[str] = []
+    requirements: list[TaskGuideRequirement] = []
+    materials: list[TaskGuideMaterial] = []
+    steps: list[TaskGuideStep] = []
+    quality_check: list[str] = []
+    common_mistakes: list[str] = []
+    total_time: str = ""
+    done: list[str] = []
+
+
+class TaskGuideListItem(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    steps: int = 0
+    done: int = 0
