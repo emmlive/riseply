@@ -682,6 +682,32 @@ textarea.cc-input { resize: vertical; }
 .tg-turn.tg-me { background: var(--accent-soft); }
 .tg-turn.tg-ai { background: var(--paper); border: 1px solid var(--border); }
 
+.tg-menu { position: relative; display: inline-block; }
+.tg-menu > summary { list-style: none; cursor: pointer; }
+.tg-menu > summary::-webkit-details-marker { display: none; }
+.tg-menu[open] > summary { background: var(--accent-soft); }
+.tg-menu > summary.btn:not(.btn-primary) { background: var(--paper); border-color: var(--border-strong); color: var(--ink); }
+.tg-menu-list { position: absolute; z-index: 5; left: 0; top: calc(100% + 4px); min-width: 210px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 6px; box-shadow: 0 6px 18px rgba(22, 35, 61, 0.14); display: flex; flex-direction: column; gap: 2px; }
+.tg-menu-list button, .tg-menu-list label { text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 6px; font: inherit; color: var(--ink); cursor: pointer; }
+.tg-menu-list button:hover { background: var(--accent-soft); }
+.tg-menu-list label { display: flex; gap: 8px; align-items: center; font-size: 0.88rem; color: var(--ink-muted); border-top: 1px solid var(--border); margin-top: 4px; }
+.tg-note { margin: 10px 0 0; font-size: 0.88rem; color: var(--ink-muted); }
+.tg-doc { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 14px 18px; margin: 10px 0; max-height: 320px; overflow: auto; }
+.tg-doc.tg-open { max-height: none; }
+.md-h { font-family: var(--font-display); color: var(--ink); margin: 14px 0 6px; line-height: 1.25; }
+.md-h1 { font-size: 1.35rem; margin-top: 0; }
+.md-h2 { font-size: 1.1rem; color: var(--accent-hover); }
+.md-h3, .md-h4 { font-size: 1rem; color: var(--accent-hover); }
+.md-p { margin: 4px 0; }
+.md-rule { border: 0; border-top: 1px solid var(--border-strong); margin: 12px 0; }
+.md-list { margin: 6px 0; padding-left: 22px; }
+.md-list li { margin: 3px 0; }
+.md-list li.md-check { list-style: none; margin-left: -18px; }
+.md-table-wrap { overflow-x: auto; margin: 8px 0; }
+.md-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.md-table th { background: var(--accent); color: #fff; text-align: left; padding: 6px 10px; border: 1px solid var(--accent); }
+.md-table td { padding: 6px 10px; border: 1px solid var(--border); vertical-align: top; }
+.md-table tbody tr:nth-child(even) td { background: var(--paper); }
 .cc-chat-window {
   display: flex;
   flex-direction: column;

@@ -2090,6 +2090,7 @@ class TaskGuideRequirement(BaseModel):
 
 class TaskGuideMaterial(BaseModel):
     name: str
+    kind: str = "document"
     purpose: str = ""
     template: str = ""
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, TaskGuide, TaskGuideListItem, TaskGuideStep } from "@/lib/api";
+import { api, downloadFile, TaskGuide, TaskGuideListItem, TaskGuideStep } from "@/lib/api";
+import MiniMarkdown, { hasTable } from "@/components/MiniMarkdown";
 
 // "I was given this task and don't know where to start." Paste the task and
 // get a plan: what to confirm, what you need, templates to fill in, ordered
@@ -16,14 +17,127 @@ const LEVELS = [
   { value: "experienced", label: "I know this field well" },
 ];
 
-function download(name: string, text: string) {
-  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name.replace(/[^\w.-]+/g, "_").slice(0, 60) + ".md";
-  a.click();
-  URL.revokeObjectURL(url);
+function closeMenu(e: React.MouseEvent) {
+  (e.currentTarget as HTMLElement).closest("details")?.removeAttribute("open");
+}
+
+// One template: a formatted preview, plus Copy and a Download menu.
+function Material({ guide, index }: { guide: TaskGuide; index: number }) {
+  const m = guide.materials[index];
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+
+  async function get(format: string, e: React.MouseEvent) {
+    closeMenu(e);
+    setNote("");
+    try {
+      await downloadFile(`/task-guides/${guide.id}/materials/${index}/export?format=${format}`, `${m.name}.${format}`);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Couldn't create that file.");
+    }
+  }
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(m.template);
+      setNote("Copied.");
+    } catch {
+      setNote("Couldn't copy. Select the text and copy it yourself.");
+    }
+  }
+
+  return (
+    <div className="card tg-mat">
+      <h3 style={{ margin: 0 }}>{m.name}</h3>
+      {m.purpose && <p className="muted" style={{ margin: "4px 0 0" }}>{m.purpose}</p>}
+      <div className={`tg-doc${open ? " tg-open" : ""}`}><MiniMarkdown text={m.template} /></div>
+      <div className="tg-actions">
+        <details className="tg-menu">
+          <summary className="btn btn-primary">Download</summary>
+          <div className="tg-menu-list">
+            <button onClick={(e) => get("docx", e)}>Word document (.docx)</button>
+            <button onClick={(e) => get("pdf", e)}>PDF</button>
+            {hasTable(m.template) && <button onClick={(e) => get("xlsx", e)}>Excel spreadsheet (.xlsx)</button>}
+            <button onClick={(e) => get("md", e)}>Plain text (.md)</button>
+          </div>
+        </details>
+        <button className="btn" onClick={copy}>Copy</button>
+        <button className="btn" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show all"}</button>
+      </div>
+      {note && <p className="tg-note" role="status">{note}</p>}
+    </div>
+  );
+}
+
+// Download or share the steps: files, the phone/computer share sheet, email.
+function StepsActions({ guide }: { guide: TaskGuide }) {
+  const [withTemplates, setWithTemplates] = useState(false);
+  const [note, setNote] = useState("");
+
+  async function get(format: string, e: React.MouseEvent) {
+    closeMenu(e);
+    setNote("");
+    try {
+      await downloadFile(`/task-guides/${guide.id}/export?format=${format}&include_templates=${withTemplates}`, `${guide.title}.${format}`);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Couldn't create that file.");
+    }
+  }
+  async function text(): Promise<string> {
+    return (await api<{ text: string }>(`/task-guides/${guide.id}/share-text`)).text;
+  }
+  async function copy(e: React.MouseEvent) {
+    closeMenu(e);
+    try {
+      await navigator.clipboard.writeText(await text());
+      setNote("Steps copied. Paste them into a message, chat or notes app.");
+    } catch {
+      setNote("Couldn't copy. Try the download instead.");
+    }
+  }
+  async function email(e: React.MouseEvent) {
+    closeMenu(e);
+    try {
+      const body = (await text()).slice(0, 1800);
+      window.location.href = `mailto:?subject=${encodeURIComponent(guide.title)}&body=${encodeURIComponent(body)}`;
+    } catch {
+      setNote("Couldn't prepare the email. Try copying the steps.");
+    }
+  }
+  async function share(e: React.MouseEvent) {
+    closeMenu(e);
+    try {
+      await navigator.share({ title: guide.title, text: await text() });
+    } catch (err) {
+      if ((err as Error)?.name !== "AbortError") setNote("Couldn't open sharing. Try Copy or Email.");
+    }
+  }
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  return (
+    <>
+      <div className="tg-actions" style={{ marginTop: 12 }}>
+        <details className="tg-menu">
+          <summary className="btn btn-primary">Download steps</summary>
+          <div className="tg-menu-list">
+            <button onClick={(e) => get("docx", e)}>Word document (.docx)</button>
+            <button onClick={(e) => get("pdf", e)}>PDF</button>
+            <button onClick={(e) => get("md", e)}>Plain text (.md)</button>
+            <label><input type="checkbox" checked={withTemplates} onChange={(e) => setWithTemplates(e.target.checked)} /> Include the templates</label>
+          </div>
+        </details>
+        <details className="tg-menu">
+          <summary className="btn">Share</summary>
+          <div className="tg-menu-list">
+            {canShare && <button onClick={share}>Share with an app…</button>}
+            <button onClick={email}>Email the steps</button>
+            <button onClick={copy}>Copy steps as text</button>
+          </div>
+        </details>
+        <button className="btn" onClick={() => window.print()}>Print</button>
+      </div>
+      {note && <p className="tg-note" role="status">{note}</p>}
+    </>
+  );
 }
 
 function StepCard({ guide, step, done, onToggle }: { guide: TaskGuide; step: TaskGuideStep; done: boolean; onToggle: () => void }) {
@@ -217,6 +331,7 @@ export default function TaskGuidePage() {
               <span style={{ width: `${pct}%` }} />
             </div>
             <p className="muted" style={{ margin: 0 }}>{guide.done.length} of {guide.steps.length} steps done</p>
+            <StepsActions guide={guide} />
             <p style={{ margin: "12px 0 0" }}><button className="btn" onClick={remove}>Delete this guide</button></p>
           </div>
 
@@ -242,17 +357,7 @@ export default function TaskGuidePage() {
           {guide.materials.length > 0 && (
             <>
               <h2>Templates and documents</h2>
-              {guide.materials.map((m, i) => (
-                <div className="card tg-mat" key={i}>
-                  <h3 style={{ margin: 0 }}>{m.name}</h3>
-                  {m.purpose && <p className="muted" style={{ margin: "4px 0 0" }}>{m.purpose}</p>}
-                  <pre>{m.template}</pre>
-                  <div className="tg-actions">
-                    <button className="btn" onClick={() => navigator.clipboard?.writeText(m.template).catch(() => {})}>Copy</button>
-                    <button className="btn" onClick={() => download(m.name, m.template)}>Download</button>
-                  </div>
-                </div>
-              ))}
+              {guide.materials.map((m, i) => <Material key={`${guide.id}-m${i}`} guide={guide} index={i} />)}
             </>
           )}
 
