@@ -649,6 +649,9 @@ textarea.cc-input { resize: vertical; }
 .rc-add textarea { width: 100%; box-sizing: border-box; }
 .rc-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 
+.cc-interrupt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--accent-soft); font-size: 0.88rem; }
+.cc-interrupt-state { flex: 1; min-width: 160px; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;

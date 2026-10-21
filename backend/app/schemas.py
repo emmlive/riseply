@@ -369,6 +369,10 @@ class CareerCoachMessageRequest(BaseModel):
     # With style="visual": which kind of picture to draw (see VisualOut). None
     # lets the coach choose.
     visual_kind: str | None = Field(default=None, pattern="^(flow|cycle|compare|map|matrix|layers|chart)$")
+    # Set when the person cut the coach off mid-explanation (by voice or the
+    # "Wait" button); heard_up_to is the last bit of the explanation they heard.
+    interrupted: bool = False
+    heard_up_to: str = Field(default="", max_length=300)
 
 
 class VisualStep(BaseModel):

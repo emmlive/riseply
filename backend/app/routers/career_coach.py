@@ -206,6 +206,7 @@ def send_message(
             learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
             visual_kind=payload.visual_kind, notebook=notes, plan=session.lesson,
             quiz_notes=study_quiz.load(db, user.id, session.quiz_notes), quiz_finished=bool(session.quiz_result),
+            interrupted=payload.interrupted, heard_up_to=payload.heard_up_to,
         )
         reply_text, quiz_result = study_quiz.extract_result(reply_text)
         if quiz_result and not session.quiz_result:
