@@ -433,6 +433,11 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          <p className="hint">
+            The job doesn&apos;t have to look like your resume. If it&apos;s in a different field, Riseply builds a
+            resume around the skills and experience of yours that carry over, and tells you plainly what&apos;s missing.
+            It never adds experience you don&apos;t have.
+          </p>
           <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0 12px" }}>
             <input type="checkbox" checked={alreadyApplied} onChange={(e) => setAlreadyApplied(e.target.checked)} />
             I already applied to this job (save it as Submitted, no resume tailoring)
