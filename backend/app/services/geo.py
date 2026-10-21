@@ -7,6 +7,7 @@ NEAR a search, both are turned into a point on the map and compared. The list
 loaded once on first use and is small. Anything that can't be placed returns
 None so callers can fall back to simpler checks instead of guessing.
 """
+import functools
 import json
 import math
 import os
@@ -43,6 +44,7 @@ def _state_of(token: str) -> str | None:
     return d["states_by_name"].get(t)
 
 
+@functools.lru_cache(maxsize=20000)
 def resolve(text: str) -> dict | None:
     """{"state": "IL", "lat": .., "lon": ..} for a city, {"state": "IL"} for a
     state on its own, or None when the place can't be recognised."""

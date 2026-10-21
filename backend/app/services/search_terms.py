@@ -148,7 +148,7 @@ def implicit_profile(resume_text: str, location: str = "") -> dict | None:
     return {
         "name": "From your resume",
         "titles": titles,
-        "locations": [home] if home and geo.resolve(home) else [],
+        "locations": [home, "Remote"] if home and geo.resolve(home) else [],
         "seniority": [],
         "min_match_score": 70,
         "exclude_companies": [],
