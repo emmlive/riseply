@@ -633,6 +633,13 @@ textarea.cc-input { resize: vertical; }
 .wb-focus.wb-fade th, .wb-focus.wb-fade td { background: rgba(242, 182, 0, 0.35) !important; }
 @media (prefers-reduced-motion: reduce) { .wb-focus { transition: none; } }
 
+.rc-miss { border: 0; cursor: pointer; font-family: inherit; }
+.rc-miss:hover, .rc-miss:focus-visible { outline: 2px solid var(--danger); outline-offset: 1px; }
+.rc-add { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--paper, transparent); }
+.rc-add label { display: block; margin-bottom: 6px; font-size: 0.9rem; }
+.rc-add textarea { width: 100%; box-sizing: border-box; }
+.rc-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;

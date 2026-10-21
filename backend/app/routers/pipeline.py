@@ -12,7 +12,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import cover_letter as cover_letter_service
-from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback, interview_auto
+from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback, interview_auto, resume_facts
 from app.services.sources import greenhouse, lever, rss_boards
 from app.services import discovery_sources
 from app.config import settings
@@ -474,7 +474,7 @@ def import_job(
         usage.check_and_increment(db, user, "tailor_resume", 1)
         job_dict["matched_profile"], job_dict["match_score"] = profile_name, score
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, application.id
+            user.id, user.resume_text, job_dict, application.id, facts=resume_facts.for_prompt(db, user.id)
         )
         application.tailored_resume_path = filename
         application.tailored_resume_data = docx_bytes
@@ -852,7 +852,7 @@ def retailor_resume(
             "location": job.location, "url": job.url, "description": job.description,
         }
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, app_row.id
+            user.id, user.resume_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id)
         )
     except Exception:
         usage.decrement(db, user.id, "tailor_resume", 1)

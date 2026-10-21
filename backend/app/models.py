@@ -486,6 +486,19 @@ class CareerCoachSession(Base):
         return data if isinstance(data, dict) and data.get("goals") else None
 
 
+class ResumeFact(Base):
+    """Real experience the person told us about that their resume does not
+    show yet (services/resume_facts.py). Tailoring may use these as facts,
+    because the person stated them; nothing is added that they did not say."""
+    __tablename__ = "resume_facts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    skill = Column(String, nullable=False)
+    detail = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CoachNotebook(Base):
     """What the Career Coach remembers about one person's learning
     (services/coach_notebook.py): a handful of short notes the coach rewrites

@@ -77,7 +77,7 @@ def _score_by_company(job, resume, profiles, ignore_location=False):
     return {"profile_name": "P", "score": score, "reason": "r", "meets_threshold": score >= 60}
 
 
-def _fake_customize(user_id, resume_text, job, application_id):
+def _fake_customize(user_id, resume_text, job, application_id, **kw):
     return f"r{application_id}.docx", b"docx", "why"
 
 
@@ -86,9 +86,9 @@ def test_only_top_n_matches_are_auto_tailored(db):
     _jobs(db, 8)  # scores 90..83, all clear the bar
     tailored = []
 
-    def fake_customize(user_id, resume_text, job, application_id):
+    def fake_customize(user_id, resume_text, job, application_id, **kw):
         tailored.append(job["company"])
-        return _fake_customize(user_id, resume_text, job, application_id)
+        return _fake_customize(user_id, resume_text, job, application_id, **kw)
 
     with patch("app.services.pipeline_runner.matcher.best_profile_match", side_effect=_score_by_company), \
          patch("app.services.pipeline_runner.resume_customizer.customize_for_job", side_effect=fake_customize), \

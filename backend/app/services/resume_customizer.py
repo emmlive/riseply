@@ -30,6 +30,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from app.config import settings
+from app.services import job_terms
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
@@ -56,22 +57,64 @@ STYLE_BULLET = "List Bullet"
 # Tailoring (Claude)
 # --------------------------------------------------------------------------
 
-def _build_prompt(base_resume: str, job: dict) -> str:
-    return f"""Rewrite this resume so it is strongly tailored to the target job below.
+def _facts_block(facts: list[dict] | None) -> str:
+    if not facts:
+        return ""
+    lines = "\n".join(f"- {f['skill']}: {f['detail']}" for f in facts)
+    return f"""
+EXTRA EXPERIENCE THE CANDIDATE CONFIRMED (their own words, true and usable; the resume
+does not show it yet). Where one of these matches what the posting asks for, work it into
+the right place (a bullet under the role it belongs to if the text says which, otherwise
+the skills section or summary). Use only what is written here, and never attach it to an
+employer or date the candidate did not give:
+{lines}
+"""
+
+
+def _terms_block(job: dict) -> str:
+    terms = job_terms.key_terms(job.get("description") or "")
+    if not terms:
+        return ""
+    return f"""
+WORDS THE POSTING LEANS ON (screening software and recruiters search for these exact words):
+{", ".join(terms)}
+Use each one that the candidate's real experience supports, spelled exactly as the posting
+spells it, in the summary, the skills section and the bullets where it truly applies. Do not
+force in any that the resume or the confirmed experience does not support.
+"""
+
+
+def _build_prompt(base_resume: str, job: dict, facts: list[dict] | None = None) -> str:
+    return f"""Rewrite this resume so it is strongly tailored to the target job below, the way an
+expert recruiter-turned-resume-writer would: it must clear automated screening AND make a
+hiring manager want to interview this person.
+
+First, in your head, list the 6 to 10 things this posting screens for (skills, tools, scope,
+level, certifications, domain). Then make sure every one the candidate really has is easy to
+find and backed by evidence.
 
 Rules:
 - Do NOT invent skills, employers, titles, dates, degrees, certifications,
-  numbers or accomplishments that aren't in the original resume. Only
-  reorder, re-emphasize and rephrase what is genuinely there.
-- Mirror the job's own terminology where the candidate's real experience
-  supports it, especially in the summary, skills and the first bullets of
-  the most relevant roles.
-- Write a 2-3 line professional summary aimed at this role, using only facts
-  from the resume. Keep any numbers/metrics already in the bullets.
-- Start bullets with strong action verbs, one idea per bullet, most relevant
-  first. Keep roughly the same overall length as the original (one to two pages).
+  numbers or accomplishments that aren't in the original resume or the confirmed
+  experience below. Only reorder, re-emphasize and rephrase what is genuinely there.
+- Mirror the posting's exact wording where the candidate's real experience supports it
+  (write "Kubernetes", not "container orchestration", if the posting says Kubernetes). For
+  a skill with a well-known acronym, include both forms once, e.g. "Security Information
+  and Event Management (SIEM)". Never stuff keywords; each one appears in a real sentence
+  or in the skills list, never as hidden or repeated text.
+- Headline: when the candidate's real titles are equivalent to the posting's title, use the
+  posting's wording (e.g. "Senior IT Auditor | SOX, ITGC, CISA"); otherwise keep it honest.
+- Summary (3 lines at most): who they are for this role, how many years if the dates show it,
+  the 2 to 3 strongest matches to the posting, and one proof point with a real number if the
+  resume has one. No "results-driven", "passionate", "dynamic" or "team player".
+- Bullets: lead with a strong verb, then what was done, then the scope or result. Keep every
+  number already there; never add a number that is not in the source. Put the bullets that
+  best match the posting first in each role and cut or shorten the ones that do not.
+- Skills: list the posting's skills the candidate has first, using the posting's labels.
+- Keep roughly the same overall length as the original (one to two pages, never more).
 - Keep every employer, title and date exactly as in the original.
-
+- Plain text only: no tables, columns, icons, or special characters.
+{_terms_block(job)}{_facts_block(facts)}
 Return ONLY one JSON object, no markdown fences, in this shape:
 
 {{
@@ -122,15 +165,15 @@ def _extract_json(raw: str):
     return data if isinstance(data, dict) else None
 
 
-def tailor_resume(base_resume: str, job: dict) -> tuple[str, list[dict]]:
+def tailor_resume(base_resume: str, job: dict, facts: list[dict] | None = None) -> tuple[str, list[dict]]:
     """Returns (rationale, blocks). The rationale is a short, honest
     explanation of what changed -- generated in the same call, so the
     'nothing invented, only reordered and re-emphasized' promise is
     something the person can check, not just a claim."""
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=4000,
-        messages=[{"role": "user", "content": _build_prompt(base_resume, job)}],
+        max_tokens=4500,
+        messages=[{"role": "user", "content": _build_prompt(base_resume, job, facts)}],
     )
     raw = resp.content[0].text.strip()
 
@@ -801,11 +844,12 @@ def _upgrade_legacy(blocks: list[dict]) -> list[dict]:
     return out + blocks[i:]
 
 
-def customize_for_job(user_id: int, base_resume_text: str, job: dict, application_id: int) -> tuple[str, bytes, str]:
+def customize_for_job(user_id: int, base_resume_text: str, job: dict, application_id: int,
+                      facts: list[dict] | None = None) -> tuple[str, bytes, str]:
     """Returns (display_filename, docx_bytes, rationale). The caller is
     responsible for storing docx_bytes and rationale on the Application
     row -- this function doesn't touch the filesystem or database."""
-    rationale, blocks = tailor_resume(base_resume_text, job)
+    rationale, blocks = tailor_resume(base_resume_text, job, facts)
 
     safe_company = re.sub(r"[^A-Za-z0-9]+", "_", job.get("company") or "resume")[:40]
     filename = f"{safe_company or 'resume'}.docx"
