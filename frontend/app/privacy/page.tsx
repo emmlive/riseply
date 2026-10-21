@@ -107,6 +107,16 @@ export default function PrivacyPage() {
           to save personal details, and interview and negotiation role-plays
           never use the notes.
         </p>
+        <h2>Voice</h2>
+        <p>
+          Reading replies aloud and dictating your answers use your browser&apos;s
+          built-in speech features. Riseply receives only the text, never audio.
+          Depending on your browser, its maker may process your speech to turn it
+          into text. If you switch on <strong>Let me interrupt by voice</strong>,
+          the microphone listens only while the coach is speaking, and you can
+          switch it off at any time.
+        </p>
+
         <h2>Saved study notes</h2>
         <p>
           Notes you save to your study folders stay in your account and are not

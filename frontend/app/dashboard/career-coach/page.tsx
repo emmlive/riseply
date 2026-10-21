@@ -6,6 +6,7 @@ import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCo
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import { focusIndex } from "@/lib/whiteboard";
+import { heardTail, parseInterruption, restAfterWait, sentenceStart } from "@/lib/interrupt";
 import CoachVideos from "@/components/CoachVideos";
 import CoachNotebook from "@/components/CoachNotebook";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
@@ -129,6 +130,19 @@ export default function CareerCoachPage() {
   // from the dictated text and the time taken.
   const [voiceMode, setVoiceMode] = useState(false);
   const voiceModeRef = useRef(false);
+  // Interrupting the coach (lib/interrupt.ts): "Wait" and "Back" buttons always,
+  // and, when switched on, the mic listens for "wait" / "go back" while the coach talks.
+  const [interruptOn, setInterruptOn] = useState(false);
+  const interruptRef = useRef(false);
+  const [armed, setArmed] = useState(false);          // mic open, listening for a command
+  const [capturing, setCapturing] = useState(false);  // coach stopped; taking the person's question
+  const spokenAtRef = useRef(-1);
+  spokenAtRef.current = spokenAt;
+  const speakingMsg = useRef<CareerCoachMessage | null>(null);
+  const pendingInterrupt = useRef<{ heard: string } | null>(null);
+  const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interruptListening = useRef(false);   // the open mic is the "wait / go back" listener
+  const composerEl = useRef<HTMLTextAreaElement>(null);
   const [elapsed, setElapsed] = useState(0);
   const answerStart = useRef<number | null>(null);
   const userStopped = useRef(false);
@@ -179,7 +193,8 @@ export default function CareerCoachPage() {
       setReadAloud(localStorage.getItem("cc-read-aloud") === "1");
     } catch { /* storage unavailable -- default off */ }
     try { const v = localStorage.getItem("cc-voice-interview") === "1"; setVoiceMode(v); voiceModeRef.current = v; } catch { /* default off */ }
-    return () => { voiceModeRef.current = false; userStopped.current = true; dictation.current?.stop(); stopSpeaking(); stopReveal(); };
+    try { const v = localStorage.getItem("cc-interrupt") === "1"; setInterruptOn(v); interruptRef.current = v; } catch { /* default off */ }
+    return () => { if (captureTimer.current) clearTimeout(captureTimer.current); voiceModeRef.current = false; userStopped.current = true; dictation.current?.stop(); stopSpeaking(); stopReveal(); };
   }, []);
 
   useEffect(() => { inputRef.current = input; }, [input]);
@@ -361,20 +376,146 @@ export default function CareerCoachPage() {
     });
   }
 
-  function startSpeaking(m: CareerCoachMessage, thenListen = false) {
+  function startSpeaking(m: CareerCoachMessage, thenListen = false, fromWord = 0) {
     stopReveal();
     setSpeakingId(m.id);
-    setSpokenAt(-1);
+    setSpokenAt(fromWord > 0 ? fromWord : -1);
+    speakingMsg.current = m;
+    // Replaying from the middle: speak only the words from there, and count from there.
+    const text = fromWord > 0 ? spokenWordList(m.content).slice(fromWord).join(" ") : m.content;
     speak(
-      m.content,
+      text,
       () => {
         setSpeakingId((cur) => (cur === m.id ? null : cur));
+        disarmInterrupt();
         // Voice interview: when the question has been asked, open the mic.
         if (thenListen && voiceModeRef.current) beginDictation();
       },
       (msg) => setError(msg),
-      (i) => setSpokenAt(i),
+      (i) => setSpokenAt(fromWord + i),
     );
+    if (!thenListen) armInterrupt(m);
+  }
+
+  // ---- Interrupting the coach -------------------------------------------
+  function clearCaptureTimer() {
+    if (captureTimer.current) { clearTimeout(captureTimer.current); captureTimer.current = null; }
+  }
+
+  function disarmInterrupt() {
+    setArmed(false);
+    if (dictation.current && !userStopped.current && interruptListening.current) {
+      interruptListening.current = false;
+      userStopped.current = true;
+      dictation.current.stop();
+    }
+  }
+
+  // The person is talking over the coach: gather their words, and send them
+  // once they pause (or stop waiting if nothing comes).
+  function captureText(rest: string) {
+    setInput(rest);
+    clearCaptureTimer();
+    const words = rest.trim().split(/\s+/).filter(Boolean).length;
+    captureTimer.current = setTimeout(() => {
+      captureTimer.current = null;
+      stopDictation();
+      setCapturing(false);
+      if (words >= 1) send();
+      else pendingInterrupt.current = null;   // said only "wait" and nothing followed
+    }, words >= 2 ? 1600 : words === 1 ? 2200 : 8000);
+  }
+
+  function beginCapture(initial = "") {
+    interruptListening.current = false;
+    setCapturing(true);
+    setInput(initial);
+    captureText(initial);
+    if (!canDictate) { composerEl.current?.focus(); return; }
+    userStopped.current = false;
+    const base = initial ? initial + " " : "";
+    const d: Dictation | null = startDictation(
+      (text) => captureText(base + text),
+      (err) => {
+        setListening(false);
+        if (d && dictation.current === d) dictation.current = null;
+        if (err) setError(err);
+      },
+    );
+    if (!d) { composerEl.current?.focus(); return; }
+    dictation.current = d;
+    setListening(true);
+  }
+
+  function cancelCapture() {
+    clearCaptureTimer();
+    stopDictation();
+    setCapturing(false);
+    setInput("");
+    pendingInterrupt.current = null;
+  }
+
+  function replayFromSentence() {
+    const m = speakingMsg.current;
+    if (!m) return;
+    const words = spokenWordList(m.content);
+    startSpeaking(m, false, sentenceStart(words, Math.max(0, spokenAtRef.current)));
+  }
+
+  // The "Wait" button (always works, no microphone needed to stop the coach).
+  function waitNow() {
+    const m = speakingMsg.current;
+    if (!m) return;
+    pendingInterrupt.current = { heard: heardTail(spokenWordList(m.content), spokenAtRef.current) };
+    stopSpeaking();
+    setSpeakingId(null);
+    if (interruptListening.current && dictation.current) { userStopped.current = true; dictation.current.stop(); }
+    beginCapture();
+  }
+
+  // While the coach talks, listen for "wait" or "go back" (opt in).
+  function armInterrupt(m: CareerCoachMessage) {
+    if (!interruptRef.current || !dictationSupported() || IN_CHARACTER.includes(active?.session_type ?? "")) return;
+    const words = spokenWordList(m.content);
+    let tries = 0;
+    const run = () => {
+      if (speakingRef.current !== m.id || !interruptRef.current) { setArmed(false); return; }
+      userStopped.current = false;
+      let handled = false;
+      const d = startDictation(
+        (text) => {
+          if (handled) return;
+          const r = parseInterruption(text, words, spokenAtRef.current);
+          if (r.kind === "none") return;
+          handled = true;
+          userStopped.current = true;
+          d?.stop();
+          setArmed(false);
+          if (r.kind === "back") { replayFromSentence(); return; }
+          pendingInterrupt.current = { heard: heardTail(words, spokenAtRef.current) };
+          stopSpeaking();
+          setSpeakingId(null);
+          // Keep what they said after "wait": the recognizer restarts for the rest.
+          setTimeout(() => beginCapture(r.rest), 300);   // let the first recognizer close
+        },
+        () => {
+          if (d && dictation.current === d) { dictation.current = null; interruptListening.current = false; }
+          if (!handled && speakingRef.current === m.id && interruptRef.current && tries < 40) {
+            tries += 1;
+            setTimeout(run, 250);   // browsers close the mic after a quiet spell; reopen it
+          } else if (!handled) setArmed(false);
+        },
+      );
+      if (d) { dictation.current = d; interruptListening.current = true; setArmed(true); }
+    };
+    setTimeout(run, 400);
+  }
+
+  function toggleInterrupt(on: boolean) {
+    setInterruptOn(on);
+    interruptRef.current = on;
+    try { localStorage.setItem("cc-interrupt", on ? "1" : "0"); } catch { /* ignore */ }
+    if (!on) disarmInterrupt();
   }
 
   function playMessage(m: CareerCoachMessage) {
@@ -495,9 +636,11 @@ export default function CareerCoachPage() {
     setSending(true);
     setError("");
     setMessages((m) => [...m, { id: -Date.now(), role: "user", content: text, created_at: new Date().toISOString(), ...(delivery ? { delivery } : {}) }]);
+    const interruptedBody = pendingInterrupt.current;
+    pendingInterrupt.current = null;
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}) }),
+        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }),
       });
       setMessages((m) => [...m, reply]);
       if (reply.quiz_result) {
@@ -850,6 +993,24 @@ export default function CareerCoachPage() {
                 </div>
               ) : (
                 <div className="cc-composer">
+                  {!IN_CHARACTER.includes(active.session_type) && (speakingId !== null || capturing) && (
+                    <div className="cc-interrupt" role="group" aria-label="Interrupt the coach">
+                      <span className="cc-interrupt-state" role="status">
+                        {capturing
+                          ? <><span className="cc-rec" aria-hidden>●</span> Go ahead. I&apos;ll send it when you pause.</>
+                          : armed ? <><span className="cc-rec" aria-hidden>●</span> Listening. Say &ldquo;wait&rdquo; or &ldquo;go back&rdquo;.</>
+                          : "Coach is speaking."}
+                      </span>
+                      {capturing ? (
+                        <button className="btn btn-ghost btn-sm" onClick={cancelCapture}>Cancel</button>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={replayFromSentence}>↺ Back a sentence</button>
+                          <button className="btn btn-primary btn-sm" onClick={waitNow}>✋ Wait, I have a question</button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {voiceReady && voiceMode && (
                     <div className="cc-voicebar" role="status">
                       <span className="cc-voicebar-state">
@@ -870,6 +1031,7 @@ export default function CareerCoachPage() {
                   )}
                   <div className="cc-composer-row">
                     <textarea
+                      ref={composerEl}
                       className="cc-input"
                       value={input} onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -898,6 +1060,12 @@ export default function CareerCoachPage() {
                           <input type="checkbox" checked={readAloud} onChange={(e) => toggleReadAloud(e.target.checked)} disabled={voiceReady && voiceMode} />
                           Read the coach&apos;s replies aloud
                         </label>
+                        {canDictate && readAloud && !IN_CHARACTER.includes(active.session_type) && (
+                          <label className="cc-check" title="The microphone listens only while the coach is speaking. Headphones work best.">
+                            <input type="checkbox" checked={interruptOn} onChange={(e) => toggleInterrupt(e.target.checked)} />
+                            Let me interrupt by voice (headphones work best)
+                          </label>
+                        )}
                         {voiceReady && (
                           <label className="cc-check">
                             <input type="checkbox" checked={voiceMode} onChange={(e) => toggleVoiceMode(e.target.checked)} />

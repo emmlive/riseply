@@ -171,3 +171,26 @@ def test_finish_without_block_still_works():
     client, _ = _client()
     r, _ = _run_session(client, "SCORE: 55\n---\nFine.")
     assert r.status_code == 200 and r.json()["score"] == 55 and r.json()["homework"] == ""
+
+
+# ---- interruption --------------------------------------------------------
+def test_interrupted_reply_gets_the_interruption_note():
+    client, _ = _client()
+    with patch.object(cc.client.messages, "create", return_value=_resp("TOPIC: SQL\n---\nHello")):
+        sid = client.post("/career-coach/sessions", json={"session_type": "drill", "target_role": "Data Analyst"}).json()["session"]["id"]
+    with patch.object(cc.client.messages, "create", return_value=_resp("Sure.")) as m:
+        client.post(f"/career-coach/sessions/{sid}/messages", json={
+            "message": "what does a window frame mean", "interrupted": True, "heard_up_to": "first we partition the rows"})
+    system = m.call_args.kwargs["system"]
+    assert "INTERRUPTION" in system and "first we partition the rows" in system
+    with patch.object(cc.client.messages, "create", return_value=_resp("Sure.")) as m:
+        client.post(f"/career-coach/sessions/{sid}/messages", json={"message": "ok next"})
+    assert "INTERRUPTION" not in m.call_args.kwargs["system"]
+
+
+def test_interruption_text_is_bounded():
+    client, _ = _client()
+    with patch.object(cc.client.messages, "create", return_value=_resp("TOPIC: SQL\n---\nHello")):
+        sid = client.post("/career-coach/sessions", json={"session_type": "drill", "target_role": "Data Analyst"}).json()["session"]["id"]
+    r = client.post(f"/career-coach/sessions/{sid}/messages", json={"message": "hi", "interrupted": True, "heard_up_to": "x" * 301})
+    assert r.status_code == 422
