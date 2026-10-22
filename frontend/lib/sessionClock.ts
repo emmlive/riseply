@@ -11,9 +11,13 @@ import { api, CareerCoachSession } from "@/lib/api";
 const IDLE_MS = 5 * 60 * 1000;
 const SAVE_EVERY_S = 30;
 
+export type TimerState = "running" | "paused" | "stopped";
+
 export function useSessionClock(active: CareerCoachSession | null, busy: boolean) {
   const [seconds, setSeconds] = useState(0);
   const [limitMin, setLimitMin] = useState(0);
+  const [state, setStateRaw] = useState<TimerState>("running");
+  const stateRef = useRef<TimerState>("running");
   const secRef = useRef(0);
   const savedRef = useRef(0);
   const lastActive = useRef(Date.now());
@@ -22,7 +26,7 @@ export function useSessionClock(active: CareerCoachSession | null, busy: boolean
   const id = active?.id ?? null;
   const live = !!active && active.status === "in_progress";
 
-  const save = useCallback((sid: number | null, extra?: { time_limit_min?: number }) => {
+  const save = useCallback((sid: number | null, extra?: { time_limit_min?: number; timer_state?: TimerState }) => {
     if (sid === null) return;
     if (secRef.current === savedRef.current && !extra) return;
     const body = { active_seconds: secRef.current, ...(extra ?? {}) };
@@ -36,6 +40,8 @@ export function useSessionClock(active: CareerCoachSession | null, busy: boolean
     secRef.current = s; savedRef.current = s;
     setSeconds(s);
     setLimitMin(active?.time_limit_min ?? 0);
+    const st = (active?.timer_state || "running") as TimerState;
+    stateRef.current = st; setStateRaw(st);
     lastActive.current = Date.now();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -47,7 +53,7 @@ export function useSessionClock(active: CareerCoachSession | null, busy: boolean
     evs.forEach((e) => window.addEventListener(e, touch, { passive: true }));
     const tick = setInterval(() => {
       if (busyRef.current) lastActive.current = Date.now();
-      if (document.visibilityState !== "visible" || Date.now() - lastActive.current > IDLE_MS) return;
+      if (stateRef.current !== "running" || document.visibilityState !== "visible" || Date.now() - lastActive.current > IDLE_MS) return;
       secRef.current += 1;
       setSeconds(secRef.current);
       if (secRef.current % SAVE_EVERY_S === 0) save(id);
@@ -69,8 +75,14 @@ export function useSessionClock(active: CareerCoachSession | null, busy: boolean
     save(id, { time_limit_min: min });
   }, [id, save]);
 
-  const minutesLeft = limitMin > 0 ? Math.ceil((limitMin * 60 - seconds) / 60) : null;
-  return { seconds, limitMin, setLimit, minutesLeft, flush: () => save(id) };
+  // Pause holds the time and the limit; stop ends the timing (and the coach's pacing) until restarted.
+  const setState = useCallback((st: TimerState) => {
+    stateRef.current = st; setStateRaw(st);
+    save(id, { timer_state: st });
+  }, [id, save]);
+
+  const minutesLeft = limitMin > 0 && state !== "stopped" ? Math.ceil((limitMin * 60 - seconds) / 60) : null;
+  return { seconds, limitMin, setLimit, state, setState, minutesLeft, flush: () => save(id) };
 }
 
 export function clockText(totalSeconds: number): string {

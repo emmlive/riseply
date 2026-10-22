@@ -328,6 +328,7 @@ class CareerCoachSessionOut(BaseModel):
     recap: dict | None = None
     time_limit_min: int = 0
     active_seconds: int = 0
+    timer_state: str = ""
 
     class Config:
         from_attributes = True
@@ -561,6 +562,7 @@ class CareerCoachStartResponse(BaseModel):
 class CareerCoachClockIn(BaseModel):
     active_seconds: int = Field(ge=0, le=86400)
     time_limit_min: int | None = Field(default=None, ge=0, le=240)
+    timer_state: str | None = Field(default=None, pattern="^(running|paused|stopped)$")
 
 
 class CareerCoachNoteIn(BaseModel):

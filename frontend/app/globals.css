@@ -785,6 +785,7 @@ textarea.cc-input { resize: vertical; }
 .sc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .sc-bar.is-low { background: #FFF4DC; }
 .sc-bar.is-over { background: #FDE8E6; }
+.sc-bar.is-paused { background: var(--paper); color: var(--ink-muted); }
 .sc-note { flex-basis: 100%; margin: 0; }
 
 .cc-chat-window {
