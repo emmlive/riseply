@@ -75,12 +75,16 @@ def _course_out(db: Session, course: models.CoachCourse) -> schemas.CoachCourseO
     sessions = db.query(models.CareerCoachSession).filter_by(user_id=course.user_id, course_id=course.id).order_by(
         models.CareerCoachSession.id.asc()).all()
     latest = {s.module_id: s for s in sessions}  # later sessions overwrite earlier ones
+    spent: dict = {}
+    for s in sessions:
+        spent[s.module_id] = spent.get(s.module_id, 0) + (s.active_seconds or 0)
     mods = []
     for m in data.get("modules", []):
         s = latest.get(m["id"])
         mods.append(schemas.CoachModuleOut(
             **m, done=m["id"] in done, session_id=s.id if s else None,
             session_status=s.status if s else "", recap_ready=bool(s and s.recap),
+            spent_seconds=spent.get(m["id"], 0),
         ))
     return schemas.CoachCourseOut(
         id=course.id, target_role=course.target_role, title=data.get("title") or course.title,
