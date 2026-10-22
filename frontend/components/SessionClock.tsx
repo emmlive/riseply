@@ -8,8 +8,8 @@ const CHOICES = [0, 15, 30, 45, 60, 90];
 // how much is left. It can be paused (holds the time and the limit) or stopped
 // (ends the timing, keeps the time spent). It never cuts the person off; at
 // the limit it says so and offers more time, and the coach is told to wrap up.
-export default function SessionClock({ seconds, limitMin, onLimit, state, onState, live }: {
-  seconds: number; limitMin: number; onLimit: (m: number) => void;
+export default function SessionClock({ seconds, limitMin, onLimit, state, onState, live, moduleMin = 0 }: {
+  moduleMin?: number; seconds: number; limitMin: number; onLimit: (m: number) => void;
   state: TimerState; onState: (s: TimerState) => void; live: boolean;
 }) {
   if (!live) {
@@ -39,9 +39,10 @@ export default function SessionClock({ seconds, limitMin, onLimit, state, onStat
         <button className="btn btn-ghost btn-sm" onClick={() => onState("stopped")} title="Stop timing this session. The time spent so far is kept.">Stop</button>
         <label>
           <span className="sc-sr">Time limit</span>
-          <select className="cc-input sc-select" value={CHOICES.includes(limitMin) ? limitMin : -1} onChange={(e) => onLimit(Number(e.target.value))} aria-label="Time limit">
-            {CHOICES.map((m) => <option key={m} value={m}>{m === 0 ? "No limit" : `${m} min`}</option>)}
-            {!CHOICES.includes(limitMin) && <option value={-1} disabled>{limitMin} min</option>}
+          <select className="cc-input sc-select" value={CHOICES.includes(limitMin) || limitMin === moduleMin ? limitMin : -1} onChange={(e) => onLimit(Number(e.target.value))} aria-label="Time limit">
+            {moduleMin > 0 && !CHOICES.includes(moduleMin) && <option value={moduleMin}>{moduleMin} min (module time)</option>}
+            {CHOICES.map((m) => <option key={m} value={m}>{m === 0 ? "No limit" : m === moduleMin ? `${m} min (module time)` : `${m} min`}</option>)}
+            {!CHOICES.includes(limitMin) && limitMin !== moduleMin && <option value={-1} disabled>{limitMin} min</option>}
           </select>
         </label>
         {left !== null && left <= 300 && !paused && (

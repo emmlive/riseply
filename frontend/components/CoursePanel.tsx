@@ -1,6 +1,7 @@
 "use client";
 
 import { CoachCourse } from "@/lib/api";
+import { minutesText } from "@/lib/sessionClock";
 
 // The syllabus: what the course covers, then its modules in order. Each
 // module is one class with the coach; finished ones keep their recap.
@@ -13,13 +14,15 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
   onDelete: () => void;
 }) {
   const nextId = course.modules.find((m) => !m.done)?.id;
+  const spent = course.modules.reduce((n, m) => n + (m.spent_seconds || 0), 0);
+  const planned = course.modules.reduce((n, m) => n + m.minutes, 0);
   return (
     <div className="card cp-course">
       <div className="cp-course-head">
         <div>
           <h2 className="cc-card-title">{course.title}</h2>
           <p className="muted" style={{ margin: 0 }}>
-            {course.target_role} · {course.modules.length} modules · about {course.total_hours} hours · {course.done} of {course.modules.length} done
+            {course.target_role} · {course.modules.length} modules · about {course.total_hours} hours · {course.done} of {course.modules.length} done{spent > 0 ? ` · ${minutesText(spent)} of ${planned} min spent` : ""}
           </p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={onClose}>Back</button>
@@ -42,7 +45,7 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
               <span className="cp-module-n" aria-hidden>{m.done ? "✓" : i + 1}</span>
               <div className="cp-module-title">
                 <strong>{m.title}</strong>
-                <span className="muted"> · {m.minutes} min</span>
+                <span className="muted"> · {m.minutes} min{m.spent_seconds > 0 ? ` · ${minutesText(m.spent_seconds)} spent` : ""}</span>
               </div>
             </div>
             {m.summary && <p className="cp-module-sum">{m.summary}</p>}
@@ -60,13 +63,13 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
               {(!m.session_id || (m.session_status === "completed" && !m.done)) && (
                 <button className={m.id === nextId ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"}
                         onClick={() => onStart(m.id)} disabled={busyModule !== ""}>
-                  {busyModule === m.id ? "Starting…" : "Start module"}
+                  {busyModule === m.id ? "Starting…" : `Start module · ${m.minutes} min timer`}
                 </button>
               )}
               {m.done && m.session_id && (
                 <>
                   <button className="btn btn-ghost btn-sm" onClick={() => onOpen(m.session_id!)}>Review lesson and recap</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => onStart(m.id)} disabled={busyModule !== ""}>Retake</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onStart(m.id)} disabled={busyModule !== ""}>Retake · {m.minutes} min timer</button>
                 </>
               )}
             </div>
@@ -74,7 +77,7 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
         ))}
       </ol>
       <p className="muted" style={{ margin: "12px 0 0", fontSize: "0.82rem" }}>
-        Every module starts from the basics, whatever your resume says. <button className="sg-link" onClick={onDelete}>Delete this course</button>
+        Each module has its own timer, set to its length. You can pause, stop or change it from inside the module. Every module starts from the basics, whatever your resume says. <button className="sg-link" onClick={onDelete}>Delete this course</button>
       </p>
     </div>
   );

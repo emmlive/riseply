@@ -666,6 +666,7 @@ export interface CoachModule {
   session_id: number | null;
   session_status: "" | "in_progress" | "completed";
   recap_ready: boolean;
+  spent_seconds: number;
 }
 
 export interface CoachCourse {

@@ -226,3 +226,30 @@ def test_course_list_reports_next_module_and_progress(db):
         _msg(sid)
     row = client.get("/career-coach/courses").json()[0]
     assert row["done"] == 1 and row["next_module"] == "Module 2"
+
+
+def test_course_reports_time_spent_per_module(db=None):
+    import uuid
+    from fastapi.testclient import TestClient
+    import app.main
+    from app.main import app as fastapp
+    from app.database import SessionLocal
+    from app.security import get_current_user
+    from app import models
+    import json
+    s = SessionLocal()
+    u = models.User(email=f"ts{uuid.uuid4().hex[:8]}@x.com", hashed_password="x", full_name="T")
+    s.add(u); s.commit(); s.refresh(u)
+    data = {"title": "T", "modules": [{"id": "m1", "title": "One", "minutes": 40, "objectives": []}, {"id": "m2", "title": "Two", "minutes": 30, "objectives": []}]}
+    c = models.CoachCourse(user_id=u.id, target_role="X", title="T", data=json.dumps(data), done="[]")
+    s.add(c); s.commit(); s.refresh(c)
+    for secs in (600, 300):
+        s.add(models.CareerCoachSession(user_id=u.id, session_type="upskill", target_role="X", topic="t", course_id=c.id, module_id="m1", active_seconds=secs, time_limit_min=40))
+    s.commit()
+    fastapp.dependency_overrides[get_current_user] = lambda: u
+    try:
+        r = TestClient(fastapp).get(f"/career-coach/courses/{c.id}").json()
+    finally:
+        fastapp.dependency_overrides.clear()
+    spent = {m["id"]: m["spent_seconds"] for m in r["modules"]}
+    assert spent == {"m1": 900, "m2": 0}

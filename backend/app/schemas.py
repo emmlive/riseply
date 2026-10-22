@@ -2199,6 +2199,7 @@ class CoachModuleOut(BaseModel):
     session_id: int | None = None          # the most recent session for this module
     session_status: str = ""               # in_progress | completed | ""
     recap_ready: bool = False
+    spent_seconds: int = 0                 # active time across every session of this module
 
 
 class CoachCourseOut(BaseModel):
