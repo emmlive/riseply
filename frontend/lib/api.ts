@@ -1333,13 +1333,19 @@ export interface TaskGuideReview {
 export interface TaskGuideListItem { id: number; title: string; created_at: string; steps: number; done: number }
 
 // ---- Exam prep ----
-export interface ExamDomain { id: string; name: string; weight_pct: number; topics: string[]; questions: number; answered: number; accuracy: number | null; due: number }
-export interface ExamView { id: number; exam_name: string; name: string; body: string; confidence: string; summary: string; domains: ExamDomain[]; due: number; note: string }
+export interface ExamDomain { id: string; name: string; weight_pct: number; topics: string[]; questions: number; answered: number; accuracy: number | null; due: number; weak_topics: string[] }
+export interface ExamView { id: number; exam_name: string; name: string; body: string; confidence: string; summary: string; domains: ExamDomain[]; due: number; note: string; exam_date: string; hours_per_week: number; schedule: ExamSchedule | null }
+export interface ExamSchedule {
+  exam_date: string; days_left: number; past: boolean; hours_per_week: number; weeks_left: number;
+  this_week: { domain_id: string; name: string; hours: number; why: string }[];
+  totals: { domain_id: string; name: string; hours: number; why: string }[];
+  final_week?: string; this_week_is_final?: boolean;
+}
 export interface ExamQuestionOut { id: number; domain_id: string; topic: string; stem: string; options: string[] }
 export interface ExamRun { attempt_id: number; kind: "practice" | "mock" | "review"; time_limit_min: number; questions: ExamQuestionOut[] }
 export interface ExamResult {
   score: number; answered: number; total: number; note: string;
   domains: { id: string; name: string; correct: number; total: number; pct: number }[];
-  study_next: { id: string; name: string }[];
+  study_next: { id: string; name: string; weak_topics: string[] }[];
   review: (ExamQuestionOut & { correct: number; explanation: string; chosen?: number })[];
 }

@@ -844,6 +844,9 @@ textarea.cc-input { resize: vertical; }
   .ex-opt.is-wrong { background: #3b1511; color: #fecaca; }
 }
 
+.ex-sched { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: var(--surface); }
+.ex-sched-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;

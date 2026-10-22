@@ -2256,6 +2256,11 @@ class ExamCreate(BaseModel):
     exam_name: str = Field(..., min_length=2, max_length=120)
 
 
+class ExamScheduleRequest(BaseModel):
+    exam_date: str = Field("", max_length=10)       # YYYY-MM-DD, or "" to clear
+    hours_per_week: int = Field(5, ge=1, le=40)
+
+
 class ExamPracticeRequest(BaseModel):
     domain_id: str = Field(..., max_length=20)
     count: int = Field(5, ge=1, le=10)

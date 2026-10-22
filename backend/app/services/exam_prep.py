@@ -162,3 +162,46 @@ def weak_domains(by_domain: dict[str, dict], threshold: float = 0.7) -> list[str
     """Domain ids scored under the threshold, weakest first."""
     rows = [(d, v["correct"] / v["total"]) for d, v in by_domain.items() if v["total"]]
     return [d for d, pct in sorted(rows, key=lambda x: x[1]) if pct < threshold]
+
+
+# ---------- study schedule (no model call: plain arithmetic) ----------
+
+def build_schedule(domains: list[dict], exam_date: str, hours_per_week: int, today=None) -> dict | None:
+    """A weekly plan from the exam date, the hours the person has, the domain
+    weights and how they are doing. Weak and heavily weighted domains get more
+    time; domains not yet tried count as middling. The final week is for mock
+    exams and review. Recomputed on every read, so it follows their scores."""
+    from datetime import date
+    today = today or date.today()
+    try:
+        d = date.fromisoformat(exam_date)
+    except (TypeError, ValueError):
+        return None
+    days = (d - today).days
+    if days < 0 or not domains or hours_per_week < 1:
+        return {"exam_date": exam_date, "days_left": days, "past": days < 0, "hours_per_week": hours_per_week, "weeks_left": 0, "this_week": [], "totals": []}
+    weeks = max(1, -(-days // 7))
+    final = weeks >= 2
+    study_weeks = weeks - 1 if final else 1
+    score = {}
+    for dm in domains:
+        acc = dm.get("accuracy")
+        weakness = 0.5 if acc is None else max(0.1, 1 - acc / 100)
+        score[dm["id"]] = dm["weight_pct"] * (0.5 + weakness)
+    total_score = sum(score.values()) or 1
+    pool = hours_per_week * study_weeks
+    rows = []
+    for dm in domains:
+        share = score[dm["id"]] / total_score
+        acc = dm.get("accuracy")
+        why = "Not started yet" if acc is None else (f"{acc}% correct so far" if acc < 70 else f"{acc}% correct, keep it fresh")
+        rows.append({"domain_id": dm["id"], "name": dm["name"], "hours": round(pool * share, 1), "why": why, "_share": share})
+    rows.sort(key=lambda r: -r["_share"])
+    this_hours = hours_per_week
+    # This week's hours go to the three highest-need domains.
+    s3 = sum(r["_share"] for r in rows[:3]) or 1
+    this = [{"domain_id": r["domain_id"], "name": r["name"], "hours": round(this_hours * r["_share"] / s3, 1), "why": r["why"]} for r in rows[:3]]
+    return {"exam_date": exam_date, "days_left": days, "past": False, "hours_per_week": hours_per_week, "weeks_left": weeks,
+            "this_week": this, "totals": [{k: v for k, v in r.items() if k != "_share"} for r in rows],
+            "final_week": "The last week is for timed mock exams and reviewing what you missed." if final else "",
+            "this_week_is_final": weeks == 1}

@@ -166,3 +166,31 @@ def test_delete(db):
     u = _user(db); e = _exam(db, u)
     assert client.delete(f"/exams/{e.id}").status_code == 200
     assert client.get(f"/exams/{e.id}").status_code == 404
+
+
+def test_schedule_weights_weak_domains_and_final_week():
+    from datetime import date
+    doms = [{"id": "d1", "name": "A", "weight_pct": 50, "accuracy": 90}, {"id": "d2", "name": "B", "weight_pct": 50, "accuracy": 30},
+            {"id": "d3", "name": "C", "weight_pct": 0, "accuracy": None}]
+    s = exam_prep.build_schedule(doms, "2026-12-01", 6, today=date(2026, 10, 20))
+    assert s["weeks_left"] == 6 and s["final_week"]
+    hrs = {t["domain_id"]: t["hours"] for t in s["totals"]}
+    assert hrs["d2"] > hrs["d1"]
+    assert abs(sum(t["hours"] for t in s["this_week"]) - 6) < 0.3
+    assert exam_prep.build_schedule(doms, "2026-10-01", 6, today=date(2026, 10, 20))["past"] is True
+    assert exam_prep.build_schedule(doms, "nonsense", 6) is None
+    last = exam_prep.build_schedule(doms, "2026-10-25", 6, today=date(2026, 10, 20))
+    assert last["weeks_left"] == 1 and last["this_week_is_final"]
+
+
+def test_schedule_endpoint_and_weak_topics(db):
+    u = _user(db); e = _exam(db, u)
+    assert client.put(f"/exams/{e.id}/schedule", json={"exam_date": "bad", "hours_per_week": 5}).status_code == 400
+    future = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
+    r = client.put(f"/exams/{e.id}/schedule", json={"exam_date": future, "hours_per_week": 5}).json()
+    assert r["schedule"]["weeks_left"] >= 4 and r["hours_per_week"] == 5
+    db.add(models.ExamQuestion(exam_id=e.id, user_id=u.id, domain_id="d1", topic="Risk", stem="s" * 20, options="[]", correct=0, times_seen=2, times_wrong=2))
+    db.commit()
+    got = client.get(f"/exams/{e.id}").json()
+    assert got["domains"][0]["weak_topics"] == ["Risk"]
+    assert client.put(f"/exams/{e.id}/schedule", json={"exam_date": "", "hours_per_week": 5}).json()["schedule"] is None
