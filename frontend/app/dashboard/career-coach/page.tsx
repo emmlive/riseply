@@ -13,6 +13,7 @@ import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
 import CoursePanel from "@/components/CoursePanel";
 import ModuleRecap from "@/components/ModuleRecap";
+import DiagramPad from "@/components/DiagramPad";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
@@ -122,6 +123,7 @@ export default function CareerCoachPage() {
   const [courses, setCourses] = useState<CoachCourseListItem[]>([]);
   const [lessonCourse, setLessonCourse] = useState<CoachCourse | null>(null);
   const [busyModule, setBusyModule] = useState("");
+  const [padOpen, setPadOpen] = useState(false);
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   // Which spoken word the voice is on (-1 = not started), for the read-along highlight.
   const [spokenAt, setSpokenAt] = useState(-1);
@@ -1173,6 +1175,24 @@ export default function CareerCoachPage() {
                         Done — send my answer
                       </button>
                     </div>
+                  )}
+                  {!IN_CHARACTER.includes(active.session_type) && (
+                    <>
+                      <button className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginBottom: 8 }} aria-expanded={padOpen}
+                              onClick={() => setPadOpen((o) => !o)}>
+                        ✎ Draw a diagram
+                      </button>
+                      <div className="dp-overlay" hidden={!padOpen} role="dialog" aria-modal="true" aria-label="Diagram pad"
+                           onKeyDown={(e) => { if (e.key === "Escape") setPadOpen(false); }}
+                           onClick={(e) => { if (e.target === e.currentTarget) setPadOpen(false); }}>
+                       <div className="dp-panel">
+                        <div className="dp-panel-head"><strong>Diagram pad</strong><button className="btn btn-ghost btn-sm" onClick={() => setPadOpen(false)}>Close</button></div>
+                        <DiagramPad key={active.id} disabled={sending}
+                          onSend={(t) => { inputRef.current = t; setPadOpen(false); send(); }}
+                          onUseInReply={(t) => { setInput(t); setPadOpen(false); setTimeout(() => composerEl.current?.focus(), 0); }} />
+                       </div>
+                      </div>
+                    </>
                   )}
                   <div className="cc-composer-row">
                     <textarea
