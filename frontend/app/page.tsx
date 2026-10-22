@@ -4,7 +4,7 @@ import RedirectIfLoggedIn from "@/components/RedirectIfLoggedIn";
 
 export const metadata: Metadata = {
   title: "Riseply — AI job search, resume tailoring, and employee onboarding",
-  description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer. Also powers Riseply Enterprise — onboarding, mentorship, and internal mobility for growing teams.",
+  description: "Riseply finds jobs that fit, tailors your resume for each one, teaches you missing skills with an AI Career Coach, preps you for interviews, and helps you onboard once you land the offer. Also powers Riseply Enterprise — onboarding, mentorship, and internal mobility for growing teams.",
   alternates: { canonical: "https://riseply.com/" },
   openGraph: {
     title: "Riseply — AI job search & employee onboarding",
@@ -21,9 +21,13 @@ export const metadata: Metadata = {
 };
 
 const FEATURES = [
-  { label: "Find", desc: "Matches roles to your resume, scored by AI" },
-  { label: "Tailor", desc: "Rewrites your resume per job — nothing invented" },
-  { label: "Prep", desc: "Interview questions and an onboarding plan" },
+  { label: "Find", desc: "Matches roles to your resume and your area, scored by AI" },
+  { label: "Tailor", desc: "Rewrites your resume per job, even for a career change. Nothing invented" },
+  { label: "Plan", desc: "A career path and skill-gap plan from where you are to the role you want" },
+  { label: "Learn", desc: "A Career Coach that teaches each skill as a course, with a recap after every module" },
+  { label: "Practice", desc: "Drills, mock interviews and offer negotiation, with honest scores" },
+  { label: "Do the work", desc: "A task guide with templates and documents to finish an assignment, step by step" },
+  { label: "Study", desc: "Save coach notes and recaps into study folders and quiz yourself later" },
   { label: "Rise", desc: "Live response-rate data from everyone using it" },
 ];
 
@@ -33,7 +37,7 @@ const ORG_JSON_LD = {
   name: "Riseply",
   url: "https://riseply.com",
   logo: "https://riseply.com/brand/icon.svg",
-  description: "AI-powered job search platform: job matching, resume tailoring, interview prep, and employee onboarding, including Riseply Enterprise for companies — onboarding, mentorship, and internal mobility.",
+  description: "AI-powered job search platform: job matching, resume tailoring, career planning, a Career Coach that teaches skills as courses, interview prep, and employee onboarding, including Riseply Enterprise for companies — onboarding, mentorship, and internal mobility.",
 };
 
 export default function HomePage() {
@@ -44,20 +48,20 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }}
       />
-      <div style={{ textAlign: "center", maxWidth: 560 }}>
+      <div style={{ textAlign: "center", maxWidth: 760 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 4 }}>
           <img src="/brand/icon.svg" alt="" width={40} height={40} />
           <h1 style={{ fontStyle: "italic", margin: 0 }}>Riseply</h1>
         </div>
         <p className="muted" style={{ marginBottom: 8 }}>
           Riseply finds roles that fit, tailors your resume for each one,
-          preps you for interviews, and helps you settle into your first
-          weeks once you land it — all while you stay in control. Nothing
-          goes out without your OK.
+          teaches you the skills you are missing, preps you for interviews,
+          and helps you settle into your first weeks once you land it — all
+          while you stay in control. Nothing goes out without your OK.
         </p>
 
         <div style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 12,
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12,
           margin: "24px 0", textAlign: "left",
         }}>
           {FEATURES.map((f) => (
