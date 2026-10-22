@@ -7,10 +7,10 @@ Written against `extension/manifest.json` as it stands (permissions: `storage`; 
 
 1. Register at https://chrome.google.com/webstore/devconsole (one-time $5 fee; Google asks you to verify your email and may ask for identity verification).
 2. Merge the privacy policy update (it now has a "Riseply Autofill browser extension" section) so `https://riseply.com/privacy` is live **before** you submit. The privacy URL is required and reviewers open it.
-3. Zip the contents of the `extension/` folder (the files, not the folder itself; leave out `README.md` and this file). In PowerShell, from `C:\Users\emmli\riseply\extension`:
-   `Compress-Archive -Path manifest.json,background.js,content.js,popup.html,popup.js,icons -DestinationPath "$env:USERPROFILE\Downloads\riseply-autofill.zip" -Force`
+3. Zip the contents of the `extension/` folder (the files, not the folder itself). In PowerShell, from `C:\Users\emmli\riseply\extension`:
+   `tar -a -c -f "$env:USERPROFILE\Downloads\riseply-autofill.zip" manifest.json background.js content.js profilefill.js popup.html popup.js icons` (use `tar`, not `Compress-Archive`: older PowerShell writes backslashes into the zip, which the store can reject; leave out `README.md`, `STORE_LISTING.md` and the `tests` folder)
 4. Take 3 to 5 screenshots, 1280x800, on a real job posting: (a) the sidebar showing a match score, (b) autofill filling a real form, (c) a suggested answer or cover letter, (d) the popup after login. Use a posting you are comfortable showing; blur any personal details.
-5. Make a test account for the reviewers (see "Reviewer instructions") with a resume saved, and put its login in the dashboard's "Test instructions" box. Do not paste it anywhere else.
+5. Make a test account for the reviewers (see "Reviewer instructions") with a resume saved and the Autofill profile filled in (use "Fill from my resume"), and put its login in the dashboard's "Test instructions" box. Do not paste it anywhere else.
 
 ## Store listing
 
@@ -27,13 +27,13 @@ Riseply Autofill adds a small sidebar to job postings so you can decide faster a
 
 When you open a job posting, the sidebar shows:
 - Score my resume: how well your resume matches this job, with a one-sentence reason.
-- Autofill this page: fills your name, email, phone, location and profile links into the application form. It never submits the form; you review and click submit yourself.
+- Autofill this page: fills your name, email, phone, location and profile links, plus your work history, education and common answers from your Riseply Autofill profile. It only fills answers you chose yourself, never overwrites a field you already filled, and leaves anything you left blank for you. Filling never submits the form; you review it, and a separate Submit button in the sidebar asks you to confirm before it clicks the site's own submit button.
 - Generate cover letter: a first draft from your resume and the posting, ready to edit.
 - Suggested answers: help with custom application questions, based on your resume.
 
 Nothing is sent from a page until you click one of those buttons. You need a free Riseply account (riseply.com). Free accounts have a monthly limit on scores and drafts; Pro raises it.
 
-The extension cannot attach your resume file or press submit for you; that is deliberate.
+The extension cannot attach your resume file, and it never submits anything without your explicit confirmation; that is deliberate.
 
 Privacy: https://riseply.com/privacy
 
@@ -60,11 +60,11 @@ Job postings and application forms live on thousands of different company career
 ## Privacy practices (dashboard "Data usage" tab)
 
 Collected data types to tick:
-- **Personally identifiable information**: the user's name, email, phone and location are fetched from their own Riseply account to fill forms.
+- **Personally identifiable information**: the user's name, email, phone, location, work history, education and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms.
 - **Authentication information**: the sign-in token (stored locally) and the email/password typed into the extension popup, sent to Riseply to log in.
 - **Website content**: text of the job posting the user is viewing, sent only when they click Score my resume, Generate cover letter or a suggested answer.
 
-Do not tick: health, financial, location (geolocation), web history, user activity, personal communications.
+Do not tick: financial, location (geolocation), web history, user activity, personal communications. If Google's form asks about health or race/ethnicity data, tick it only for the optional self-identification answers the user chooses to save and has the extension fill; say so in the justification.
 
 Certify all three: not sold to third parties; not used or transferred for purposes unrelated to the single purpose; not used for creditworthiness or lending.
 
