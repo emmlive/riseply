@@ -323,9 +323,23 @@ class CareerCoachSessionOut(BaseModel):
     homework: str = ""
     quiz_result: str = ""
     quizzed: bool = False
+    course_id: int | None = None
+    module_id: str = ""
+    recap: dict | None = None
 
     class Config:
         from_attributes = True
+
+    @field_validator("recap", mode="before")
+    @classmethod
+    def _recap_json(cls, v):
+        if isinstance(v, str):
+            import json as _j
+            try:
+                v = _j.loads(v) if v.strip() else None
+            except Exception:
+                v = None
+        return v if isinstance(v, dict) else None
 
 
 LEARNING_STYLES = "auto|visual|handson|story|stepbystep"
@@ -342,6 +356,9 @@ class CareerCoachStartRequest(BaseModel):
     # "Quiz me first": warm up on saved study notes (one folder, or all of them).
     quiz_folder_id: int | None = None
     quiz_all: bool = False
+    # Teach one module of a course (the course sets the role, topic and lesson checklist).
+    course_id: int | None = None
+    module_id: str = Field(default="", max_length=8)
 
 
 class DeliveryStats(BaseModel):
@@ -487,6 +504,8 @@ class CareerCoachMessageOut(BaseModel):
     lesson: dict | None = None
     # "2/3" once the warm-up quiz result is in.
     quiz_result: str = ""
+    # The end-of-module recap, once every objective of a course module is covered.
+    recap: dict | None = None
 
 
 class CoachNotebookItemOut(BaseModel):
@@ -547,7 +566,7 @@ class StudyNoteIn(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
     folder_id: int | None = None
     session_id: int | None = None
-    source: str = Field(default="manual", pattern="^(notepad|coach_reply|feedback|manual)$")
+    source: str = Field(default="manual", pattern="^(notepad|coach_reply|feedback|manual|recap)$")
     source_label: str = Field(default="", max_length=160)
 
 
@@ -2120,4 +2139,49 @@ class TaskGuideListItem(BaseModel):
     title: str
     created_at: datetime
     steps: int = 0
+    done: int = 0
+
+
+# --- Coach courses ---
+
+class CoachCourseRequest(BaseModel):
+    target_role: str = Field(..., min_length=2, max_length=120)
+    topic: str = Field("", max_length=200)
+    skills: list[str] = Field(default_factory=list, max_length=8)
+
+
+class CoachModuleOut(BaseModel):
+    id: str
+    title: str
+    summary: str = ""
+    objectives: list[str] = []
+    lessons: list[str] = []
+    hands_on: str = ""
+    checkpoint: str = ""
+    minutes: int = 45
+    done: bool = False
+    session_id: int | None = None          # the most recent session for this module
+    session_status: str = ""               # in_progress | completed | ""
+    recap_ready: bool = False
+
+
+class CoachCourseOut(BaseModel):
+    id: int
+    target_role: str
+    title: str
+    overview: str = ""
+    outcomes: list[str] = []
+    prerequisites: list[str] = []
+    total_hours: float = 0
+    created_at: datetime
+    modules: list[CoachModuleOut] = []
+    done: int = 0
+
+
+class CoachCourseListItem(BaseModel):
+    id: int
+    title: str
+    target_role: str
+    created_at: datetime
+    modules: int = 0
     done: int = 0

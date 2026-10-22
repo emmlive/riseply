@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, formatWhen, CareerPath } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { api, formatWhen, CareerPath, CoachCourse } from "@/lib/api";
 
 // "How do I get from here to that role?" A staged plan built from the
 // person's resume. Each skill opens a hands-on Career Coach session. Quota
@@ -34,6 +35,25 @@ export default function CareerPathPage() {
   const [plan, setPlan] = useState<CareerPath | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
+  const [courseBusy, setCourseBusy] = useState("");
+
+  // Build a syllabus for a stage and open it in the Career Coach.
+  async function teachAsCourse(s: { name: string; skills: string[] }) {
+    if (!plan || courseBusy) return;
+    setCourseBusy(s.name);
+    setError("");
+    try {
+      const c = await api<CoachCourse>("/career-coach/courses", {
+        method: "POST",
+        body: JSON.stringify({ target_role: plan.target_role, topic: s.name.slice(0, 200), skills: s.skills.slice(0, 8) }),
+      });
+      router.push(`/dashboard/career-coach?course=${c.id}`);
+    } catch (e: any) {
+      setError(e.message || "Couldn't build the course. Try again.");
+      setCourseBusy("");
+    }
+  }
 
   useEffect(() => {
     api<string[]>("/skill-gap/suggestions").then(setSuggestions).catch(() => {});
@@ -110,9 +130,9 @@ export default function CareerPathPage() {
             {plan.honest_note && <p className="muted sg-basis">{plan.honest_note}</p>}
             {plan.stages[0] && (
               <p style={{ margin: "14px 0 0" }}>
-                <Link className="btn btn-primary" href={stageLink(plan.target_role, plan.stages[0])}>
-                  Start training: {plan.stages[0].name}
-                </Link>
+                <button className="btn btn-primary" onClick={() => teachAsCourse(plan.stages[0])} disabled={!!courseBusy}>
+                  {courseBusy === plan.stages[0].name ? "Building your syllabus…" : `Start the course: ${plan.stages[0].name}`}
+                </button>
               </p>
             )}
           </div>
@@ -146,9 +166,12 @@ export default function CareerPathPage() {
               )}
               {s.proof && <p className="sg-ex"><strong>Build this:</strong> {s.proof}</p>}
               {s.milestone && <p className="muted" style={{ margin: 0 }}>Done when: {s.milestone}</p>}
-              <p style={{ margin: "12px 0 0" }}>
-                <Link className={i === 0 ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"} href={stageLink(plan.target_role, s)}>
-                  Train this stage with the Career Coach
+              <p style={{ margin: "12px 0 0", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className={i === 0 ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"} onClick={() => teachAsCourse(s)} disabled={!!courseBusy}>
+                  {courseBusy === s.name ? "Building your syllabus…" : "Teach me this as a course"}
+                </button>
+                <Link className="btn btn-ghost btn-sm" href={stageLink(plan.target_role, s)}>
+                  Quick practice session
                 </Link>
               </p>
             </div>

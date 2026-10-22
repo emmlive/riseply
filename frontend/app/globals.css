@@ -708,6 +708,42 @@ textarea.cc-input { resize: vertical; }
 .md-table th { background: var(--accent); color: #fff; text-align: left; padding: 6px 10px; border: 1px solid var(--accent); }
 .md-table td { padding: 6px 10px; border: 1px solid var(--border); vertical-align: top; }
 .md-table tbody tr:nth-child(even) td { background: var(--paper); }
+/* Career Coach courses */
+.cp-course { padding: 24px 28px !important; }
+.cp-course-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 8px; }
+.cp-course h4 { margin: 14px 0 4px; font-size: 0.9rem; }
+.cp-course ul { margin: 0; padding-left: 18px; }
+.cp-course-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 28px; }
+.cp-syllabus-title { margin: 22px 0 8px; }
+.cp-modules { list-style: none; margin: 0; padding: 0; }
+.cp-module { padding: 14px 0 14px 4px; border-top: 1px solid var(--border); }
+.cp-module-top { display: flex; align-items: center; gap: 10px; }
+.cp-module-n { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 600; }
+.cp-module.is-next .cp-module-n { border-color: var(--accent); color: var(--accent-hover); }
+.cp-module.is-done .cp-module-n { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cp-module-sum { margin: 6px 0 4px 36px; }
+.cp-objectives { margin: 4px 0 0 36px !important; font-size: 0.88rem; color: var(--ink-muted); }
+.cp-module-extra { margin: 6px 0 0 36px; font-size: 0.84rem; }
+.cp-module-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0 36px; }
+.cp-mycourses { margin: 0; padding: 0; list-style: none; }
+.cp-mycourses li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.cp-mycourses li:first-child { border-top: 0; }
+
+.mr-card { margin: 14px 24px 18px; padding: 16px 18px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.mr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.mr-head h3 { margin: 0; }
+.mr-card h4 { margin: 14px 0 4px; font-size: 0.9rem; }
+.mr-summary { margin: 6px 0 0; }
+.mr-points { margin: 0; padding-left: 20px; }
+.mr-terms { margin: 0; display: grid; gap: 6px; }
+.mr-terms dt { font-weight: 600; display: inline; }
+.mr-terms dd { display: inline; margin: 0 0 0 6px; }
+.mr-practice { margin: 14px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 4px; }
+.mr-next { margin: 8px 0 0; }
+.mr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.mr-link { font-size: 0.86rem; }
+.cc-module-bar { padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 0.86rem; background: var(--accent-soft); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;

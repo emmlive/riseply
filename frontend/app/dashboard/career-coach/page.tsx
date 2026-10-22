@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { api, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem, QuizOptions } from "@/lib/api";
+import { api, CoachCourse, CoachCourseListItem, CoachReplyRating, CareerCoachMessage, CareerCoachSession, CareerCoachSessionType, CareerCoachVisualKind, formatWhen, LearningStyle, LibraryItem, QuizOptions } from "@/lib/api";
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import { focusIndex } from "@/lib/whiteboard";
@@ -11,6 +11,8 @@ import CoachVideos from "@/components/CoachVideos";
 import CoachNotebook from "@/components/CoachNotebook";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
+import CoursePanel from "@/components/CoursePanel";
+import ModuleRecap from "@/components/ModuleRecap";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
@@ -115,6 +117,11 @@ export default function CareerCoachPage() {
   const [listening, setListening] = useState(false);
   const [readAloud, setReadAloud] = useState(false);
   const [saveDraft, setSaveDraft] = useState<StudyDraft | null>(null);
+  // Courses: the syllabus being viewed, the person's course list, and the course behind the open lesson.
+  const [course, setCourse] = useState<CoachCourse | null>(null);
+  const [courses, setCourses] = useState<CoachCourseListItem[]>([]);
+  const [lessonCourse, setLessonCourse] = useState<CoachCourse | null>(null);
+  const [busyModule, setBusyModule] = useState("");
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   // Which spoken word the voice is on (-1 = not started), for the read-along highlight.
   const [spokenAt, setSpokenAt] = useState(-1);
@@ -182,6 +189,13 @@ export default function CareerCoachPage() {
   }, [reveal?.count]);
 
   useEffect(() => { if (speakingId === null) setSpokenAt(-1); }, [speakingId]);
+  useEffect(() => {
+    refreshCourses();
+    if (typeof window === "undefined") return;
+    const id = Number(new URLSearchParams(window.location.search).get("course"));
+    if (id > 0) loadCourse(id).then((c) => { if (c) setCourse(c); });
+  }, []);
+
   useEffect(() => {
     api<QuizOptions>("/career-coach/study/quiz-options").then(setQuizOptions).catch(() => setQuizOptions(null));
   }, []);
@@ -362,9 +376,28 @@ export default function CareerCoachPage() {
     onNotesChange(next);
   }
 
+  function noteText(text: string) {
+    return cuesToNoteText(text).replace(/\*\*/g, "").replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  // Course lessons are filed under their module, so notes sort themselves.
+  function noteLabel(a: CareerCoachSession) {
+    const mods = lessonCourse?.modules ?? [];
+    const idx = a.course_id ? mods.findIndex((m) => m.id === a.module_id) : -1;
+    return idx >= 0 && lessonCourse ? `Course · ${lessonCourse.title} · Module ${idx + 1}` : sessionLabel(a);
+  }
+
   function saveReply(m: CareerCoachMessage) {
     if (!active) return;
-    setSaveDraft({ title: active.topic, content: cuesToNoteText(m.content).replace(/\*\*/g, "").replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim(), source: "coach_reply", sourceLabel: sessionLabel(active), sessionId: active.id });
+    setSaveDraft({ title: active.topic, content: noteText(m.content), source: "coach_reply", sourceLabel: noteLabel(active), sessionId: active.id });
+  }
+
+  // Every explanation the coach gave in this lesson, as one note to study from.
+  function saveLesson() {
+    if (!active) return;
+    const parts = messages.filter((m) => m.role === "assistant" && m.id > 0).map((m) => noteText(m.content)).filter(Boolean);
+    if (!parts.length) return;
+    setSaveDraft({ title: `${active.topic}: lesson notes`, content: parts.join("\n\n---\n\n").slice(0, 20000), source: "coach_reply", sourceLabel: noteLabel(active), sessionId: active.id });
   }
 
   function saveFeedback() {
@@ -585,6 +618,54 @@ export default function CareerCoachPage() {
     setActive(null);
   }
 
+  async function loadCourse(id: number): Promise<CoachCourse | null> {
+    try { return await api<CoachCourse>(`/career-coach/courses/${id}`); } catch { return null; }
+  }
+
+  function refreshCourses() {
+    api<CoachCourseListItem[]>("/career-coach/courses").then(setCourses).catch(() => {});
+  }
+
+  async function openCourse(id: number) {
+    setError("");
+    const c = await loadCourse(id);
+    if (!c) { setError("Couldn't open that course."); return; }
+    setCourse(c);
+    closeSession();
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function startModule(moduleId: string) {
+    if (!course || busyModule) return;
+    setBusyModule(moduleId);
+    setError("");
+    try {
+      const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
+        "/career-coach/sessions",
+        { method: "POST", body: JSON.stringify({ session_type: "upskill", target_role: course.target_role, course_id: course.id, module_id: moduleId, learning_style: learningStyle, voice: readAloud }) }
+      );
+      setSessions((s) => [r.session, ...s]);
+      setLessonCourse(course);
+      setActive(r.session);
+      setMessages([r.opening_message]);
+      if (readAloud) startSpeaking(r.opening_message, false);
+      else startReveal(r.opening_message);
+    } catch (err: any) {
+      setError(err.message || "Couldn't start that module. Try again.");
+    } finally {
+      setBusyModule("");
+    }
+  }
+
+  async function nextModule() {
+    if (!active?.course_id) return;
+    const c = await loadCourse(active.course_id);
+    closeSession();
+    if (c) setCourse(c);
+    refreshCourses();
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function start() {
     if (starting || role.trim().length < 2) return;
     setStarting(true);
@@ -614,6 +695,8 @@ export default function CareerCoachPage() {
     setError("");
     setActive(s);
     setMessages([]);
+    setLessonCourse(null);
+    if (s.course_id) loadCourse(s.course_id).then((c) => setLessonCourse(c));
     // On a phone the session list sits below the chat; bring the chat into view.
     if (typeof window !== "undefined" && window.innerWidth <= 1040) window.scrollTo({ top: 0, behavior: "smooth" });
     try {
@@ -653,6 +736,12 @@ export default function CareerCoachPage() {
         setActive((a) => (a && a.id === active.id ? { ...a, lesson } : a));
         setSessions((rows) => rows.map((row) => (row.id === active.id ? { ...row, lesson } : row)));
       }
+      if (reply.recap) {
+        const recap = reply.recap;
+        setActive((a) => (a && a.id === active.id ? { ...a, recap } : a));
+        setSessions((rows) => rows.map((row) => (row.id === active.id ? { ...row, recap } : row)));
+        refreshCourses();
+      }
       if (readAloud) startSpeaking(reply, voiceModeRef.current && IN_CHARACTER.includes(active.session_type));
       else startReveal(reply);
     } catch (err: any) {
@@ -675,6 +764,7 @@ export default function CareerCoachPage() {
       const updated = await api<CareerCoachSession>(`/career-coach/sessions/${active.id}/complete`, { method: "POST" });
       setActive(updated);
       setSessions((s) => s.map((row) => (row.id === updated.id ? updated : row)));
+      if (updated.course_id) refreshCourses();
     } catch (err: any) {
       setError(err.message || "Couldn't score this session — try again.");
     } finally {
@@ -742,7 +832,35 @@ export default function CareerCoachPage() {
       <div className="cc-grid">
         {/* ---------- Main column ---------- */}
         <div className="cc-col">
-          {!active && (
+          {!active && course && (
+            <CoursePanel
+              course={course} busyModule={busyModule}
+              onStart={startModule}
+              onOpen={(sid) => { const row = sessions.find((x) => x.id === sid); if (row) open(row); }}
+              onClose={() => { setCourse(null); refreshCourses(); }}
+              onDelete={async () => {
+                if (!window.confirm("Delete this course? Lessons you already had stay in your past sessions.")) return;
+                try { await api(`/career-coach/courses/${course.id}`, { method: "DELETE" }); setCourse(null); refreshCourses(); }
+                catch (e: any) { setError(e.message || "Couldn't delete the course."); }
+              }}
+            />
+          )}
+
+          {!active && !course && courses.length > 0 && (
+            <div className="card" style={{ padding: "18px 28px" }}>
+              <h2 className="cc-card-title">Your courses</h2>
+              <ul className="cp-mycourses">
+                {courses.map((c) => (
+                  <li key={c.id}>
+                    <span><strong>{c.title}</strong><br /><span className="muted">{c.target_role} · {c.done} of {c.modules} modules done</span></span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openCourse(c.id)}>{c.done ? "Continue" : "Open"}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!active && !course && (
             <div className="card" style={{ padding: "26px 28px" }}>
               <h2 className="cc-card-title">Start a session</h2>
               <p className="cc-card-sub">Choose a role and a way to practice. You can end a session any time to get your score.</p>
@@ -844,14 +962,28 @@ export default function CareerCoachPage() {
                     {active.quizzed && <> · Warm-up quiz{active.quiz_result ? `: ${active.quiz_result.replace("/", " of ")}` : ""}</>}
                   </div>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close session</button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {!IN_CHARACTER.includes(active.session_type) && messages.some((m) => m.role === "assistant" && m.id > 0) && (
+                    <button className="btn btn-ghost btn-sm" onClick={saveLesson}>Save lesson notes</button>
+                  )}
+                  <button className="btn btn-ghost btn-sm" onClick={closeSession}>Close session</button>
+                </div>
               </div>
 
               <CueKey used={usedCues} />
               {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
+              {active.course_id && lessonCourse && (() => {
+                const idx = lessonCourse.modules.findIndex((m) => m.id === active.module_id);
+                return idx >= 0 ? (
+                  <div className="cc-module-bar">
+                    <span><strong>Module {idx + 1} of {lessonCourse.modules.length}</strong> · {lessonCourse.title}</span>
+                    <button className="sg-link" onClick={nextModule}>View syllabus</button>
+                  </div>
+                ) : null;
+              })()}
               {active.lesson && active.lesson.goals.length > 0 && (
-                <div className="cc-lesson" aria-label="Today's lesson">
-                  <strong>Today&apos;s lesson</strong>
+                <div className="cc-lesson" aria-label={active.course_id ? "This module's objectives" : "Today's lesson"}>
+                  <strong>{active.course_id ? "This module" : "Today\u2019s lesson"}</strong>
                   <ul>
                     {active.lesson.goals.map((g, i) => {
                       const done = active.lesson!.covered.includes(i + 1);
@@ -961,6 +1093,19 @@ export default function CareerCoachPage() {
                     <div className="cc-bubble cc-thinking">Thinking…</div>
                   </div>
                 )}
+              {active.course_id && active.recap && (() => {
+                  const mods = lessonCourse?.modules ?? [];
+                  const idx = mods.findIndex((m) => m.id === active.module_id);
+                  const hasNext = idx >= 0 && idx + 1 < mods.length;
+                  return (
+                    <ModuleRecap
+                      recap={active.recap} sessionId={active.id}
+                      moduleLabel={idx >= 0 ? `Module ${idx + 1}: ${mods[idx].title}` : active.topic}
+                      onNext={nextModule} nextLabel={hasNext ? "Back to syllabus for the next module" : "Back to syllabus"}
+                    />
+                  );
+                })()}
+
               </div>
 
               {active.status === "completed" ? (

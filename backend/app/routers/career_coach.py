@@ -13,7 +13,8 @@ from app.services import library as library_service
 from app.services import visuals as visuals_service
 from app.services import discord_notify
 from app.services import videos as videos_service
-from app.services import coach_notebook, lesson as lesson_service, study_quiz
+from app.services import coach_notebook, lesson as lesson_service, study_quiz, syllabus
+from app.routers import coach_courses
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
 # Buddy coaching endpoints (routers/job_buddy.py) in shape and in its
@@ -99,6 +100,19 @@ def start_session(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before starting a coaching session.")
 
+    course = module = None
+    module_brief = ""
+    if payload.course_id is not None:
+        course = coach_courses.get_owned(db, payload.course_id, user.id)
+        found = syllabus.module_of(coach_courses.course_data(course), payload.module_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Module not found in this course")
+        module = found[1]
+        module_brief = syllabus.brief(coach_courses.course_data(course), payload.module_id)
+        payload.session_type = "upskill"
+        payload.target_role = course.target_role
+        payload.topic = module["title"]
+
     usage.check_and_increment(db, user, ACTION, 1)
     target_role = payload.target_role.strip()
     notes = _notebook_items(db, user, payload.session_type)
@@ -110,7 +124,7 @@ def start_session(
         result = career_coach_service.start_session(
             payload.session_type, target_role, payload.topic, user.resume_text, library=offered,
             learning_style=payload.learning_style, voice=payload.voice, notebook=notes,
-            quiz_notes=quiz,
+            quiz_notes=quiz, module=module_brief,
         )
     except Exception as e:
         usage.decrement(db, user.id, ACTION, 1)
@@ -124,9 +138,12 @@ def start_session(
         user_id=user.id, session_type=payload.session_type,
         target_role=payload.target_role.strip(), topic=result["topic"],
         learning_style=payload.learning_style,
-        plan=lesson_service.dump(result["goals"]) if result.get("goals") else "",
+        plan=lesson_service.dump(module["objectives"]) if module else (lesson_service.dump(result["goals"]) if result.get("goals") else ""),
         quiz_notes=study_quiz.dump_ids(quiz),
+        course_id=course.id if course else None, module_id=module["id"] if module else "",
     )
+    if module:
+        session.topic = module["title"]
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -191,6 +208,12 @@ def send_message(
         _active_library(db), f"{session.target_role} {session.topic} {payload.message}",
     )
 
+    module_brief = ""
+    if session.course_id and session.module_id:
+        course = db.query(models.CoachCourse).filter_by(id=session.course_id, user_id=user.id).first()
+        if course:
+            module_brief = syllabus.brief(coach_courses.course_data(course), session.module_id)
+
     user_flag = safety_flags.scan(payload.message)
     db.add(models.CareerCoachMessage(
         session_id=session_id, user_id=user.id, role="user", content=payload.message,
@@ -206,7 +229,7 @@ def send_message(
             learning_style=session.learning_style or "auto", style=payload.style, voice=payload.voice,
             visual_kind=payload.visual_kind, notebook=notes, plan=session.lesson,
             quiz_notes=study_quiz.load(db, user.id, session.quiz_notes), quiz_finished=bool(session.quiz_result),
-            interrupted=payload.interrupted, heard_up_to=payload.heard_up_to,
+            interrupted=payload.interrupted, heard_up_to=payload.heard_up_to, module=module_brief,
         )
         reply_text, quiz_result = study_quiz.extract_result(reply_text)
         if quiz_result and not session.quiz_result:
@@ -246,6 +269,11 @@ def send_message(
     out = _messages_out(db, [reply_msg])[0]
     out.lesson = session.lesson
     out.quiz_result = session.quiz_result or ""
+    plan = session.lesson
+    if session.course_id and plan and len(set(plan.get("covered") or [])) >= len(plan["goals"]):
+        # Every objective is covered: the module is done, so hand over its recap.
+        full = history + [{"role": "user", "content": payload.message}, {"role": "assistant", "content": reply_text}]
+        out.recap = coach_courses.ensure_recap(db, session, user, full)
     return out
 
 
@@ -284,6 +312,8 @@ def complete_session(
             detail="Couldn't score this session right now — this attempt wasn't counted against your limit. Try ending it again shortly.",
         )
 
+    if session.course_id and not session.recap:
+        coach_courses.ensure_recap(db, session, user, [{"role": h["role"], "content": h["content"]} for h in history])
     session.status = "completed"
     session.score = result["score"]
     session.feedback = result["feedback"]

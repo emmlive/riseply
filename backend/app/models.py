@@ -477,6 +477,10 @@ class CareerCoachSession(Base):
     # and its result ("2/3"), see services/study_quiz.py.
     quiz_notes = Column(Text, default="", server_default="")
     quiz_result = Column(String, default="", server_default="")
+    # A module of a course (CoachCourse): which one, and the end-of-module recap (JSON).
+    course_id = Column(Integer, nullable=True, index=True)
+    module_id = Column(String, default="", server_default="")
+    recap = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
@@ -1811,3 +1815,20 @@ class TaskGuide(Base):
     done = Column(Text, default="[]")  # JSON list of finished step ids
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class CoachCourse(Base):
+    """A short training course the Career Coach teaches (services/syllabus.py):
+    the syllabus (JSON) and which modules the person has finished. Each module
+    is taught in its own coach session (CareerCoachSession.course_id/module_id)."""
+    __tablename__ = "coach_courses"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    target_role = Column(String, nullable=False)
+    topic = Column(String, default="")
+    title = Column(String, default="")
+    data = Column(Text, default="{}")
+    done = Column(Text, default="[]")  # JSON list of finished module ids
+    folder_id = Column(Integer, nullable=True)  # study folder the recaps are filed in
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
