@@ -355,8 +355,14 @@ def _notebook_block(session_type: str, notebook: list | None) -> str:
     return "" if session_type in IN_CHARACTER else coach_notebook.prompt_block(notebook or [])
 
 
+MODULE_START_NOTE = """
+
+The lesson checklist is already fixed by the syllabus above: do NOT write a [[plan]] block.
+Still begin the line with the TOPIC marker as instructed."""
+
+
 def start_session(session_type: str, target_role: str, topic: str, resume_text: str, library: list | None = None, learning_style: str = "auto",
-                  voice: bool = False, notebook: list | None = None, quiz_notes: list | None = None) -> dict:
+                  voice: bool = False, notebook: list | None = None, quiz_notes: list | None = None, module: str = "") -> dict:
     """Returns {"topic": str, "opening_message": str}. Same TOPIC: marker
     contract as services/coaching.py so the topic is persisted without a
     second round trip."""
@@ -383,7 +389,7 @@ a few words, even if one was given to you above):
 {VOICE_NOTE if voice else ""}
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, None, session_type)}
-{lesson_service.START_NOTE if session_type in lesson_service.LESSON_TYPES else ""}
+{(module + MODULE_START_NOTE) if module else (lesson_service.START_NOTE if session_type in lesson_service.LESSON_TYPES else "")}
 
 {_notebook_block(session_type, notebook)}
 
@@ -497,7 +503,7 @@ def reply(session_type: str, target_role: str, topic: str, resume_text: str, his
           learning_style: str = "auto", style: str | None = None, voice: bool = False,
           visual_kind: str | None = None, notebook: list | None = None, plan: dict | None = None,
           quiz_notes: list | None = None, quiz_finished: bool = False,
-          interrupted: bool = False, heard_up_to: str = "") -> str:
+          interrupted: bool = False, heard_up_to: str = "", module: str = "") -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -515,6 +521,7 @@ above.
 {_cue_note(session_type)}
 {visuals_service.teaching_block(learning_style, style, session_type, visual_kind)}
 {lesson_service.block(plan) if session_type in lesson_service.LESSON_TYPES else ""}
+{module}
 
 {_notebook_block(session_type, notebook)}
 

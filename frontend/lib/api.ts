@@ -639,7 +639,49 @@ export interface CareerCoachMessage extends CoachingMessage {
   // Updated lesson checklist after this reply (learning sessions).
   lesson?: CoachLesson | null;
   quiz_result?: string;
+  // End-of-module recap, when this reply finished the last objective of a course module.
+  recap?: CoachRecap | null;
 }
+
+export interface CoachRecap {
+  summary: string;
+  key_points: string[];
+  terms: { term: string; meaning: string }[];
+  example: string;
+  practice: string;
+  shaky: string[];
+  next_up: string;
+}
+
+export interface CoachModule {
+  id: string;
+  title: string;
+  summary: string;
+  objectives: string[];
+  lessons: string[];
+  hands_on: string;
+  checkpoint: string;
+  minutes: number;
+  done: boolean;
+  session_id: number | null;
+  session_status: "" | "in_progress" | "completed";
+  recap_ready: boolean;
+}
+
+export interface CoachCourse {
+  id: number;
+  target_role: string;
+  title: string;
+  overview: string;
+  outcomes: string[];
+  prerequisites: string[];
+  total_hours: number;
+  created_at: string;
+  modules: CoachModule[];
+  done: number;
+}
+
+export interface CoachCourseListItem { id: number; title: string; target_role: string; created_at: string; modules: number; done: number }
 
 export interface CoachLesson { goals: string[]; covered: number[] }
 
@@ -663,6 +705,9 @@ export interface CareerCoachSession {
   homework?: string;
   quiz_result?: string;
   quizzed?: boolean;
+  course_id?: number | null;
+  module_id?: string;
+  recap?: CoachRecap | null;
 }
 
 export interface QuizOptions { all: number; folders: { id: number; name: string; count: number }[] }
@@ -930,7 +975,7 @@ export interface StudyFolder {
   created_at: string | null;
 }
 
-export type StudyNoteSource = "notepad" | "coach_reply" | "feedback" | "manual";
+export type StudyNoteSource = "notepad" | "coach_reply" | "feedback" | "manual" | "recap";
 
 export interface StudyNote {
   id: number;
