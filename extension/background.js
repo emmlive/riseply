@@ -91,12 +91,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             const me = await apiFetch("/me");
             sendResponse({ loggedIn: true, user: me });
           } catch (e) {
-            // Token expired/invalid -- clear it so the popup shows the
-            // login form again instead of a silently-failing "logged in"
-            // state that can never actually complete a request.
             log("GET_AUTH_STATE's /me call failed:", e.message || e);
-            await chrome.storage.local.remove("riseply_token");
-            sendResponse({ loggedIn: false });
+            // Only a rejected login (401/403) means the token is dead. A
+            // timeout, a server waking from idle or a dropped connection
+            // says nothing about the login, so keep the token and say the
+            // server could not be reached instead of logging the person out.
+            if (e.status === 401 || e.status === 403) {
+              await chrome.storage.local.remove("riseply_token");
+              sendResponse({ loggedIn: false });
+            } else {
+              sendResponse({ loggedIn: false, unreachable: true, error: "Couldn't reach Riseply just now. The server may be waking up. Try again in a moment." });
+            }
           }
           break;
         }
