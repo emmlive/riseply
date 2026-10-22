@@ -64,3 +64,14 @@ def test_minutes_left_is_passed_to_reply(db):
     with patch(f"{SVC}.reply", return_value="ok") as r:
         res = client.post(f"/career-coach/sessions/{s['id']}/messages", json={"message": "hi", "minutes_left": 2})
     assert res.status_code == 200 and r.call_args.kwargs["minutes_left"] == 2
+
+
+def test_timer_can_be_paused_stopped_and_restarted(db):
+    _user(db)
+    s = _start(30)
+    url = f"/career-coach/sessions/{s['id']}/clock"
+    assert s["timer_state"] == ""
+    for state in ("paused", "running", "stopped"):
+        assert client.put(url, json={"active_seconds": 10, "timer_state": state}).json()["timer_state"] == state
+    assert client.put(url, json={"active_seconds": 10, "timer_state": "bogus"}).status_code == 422
+    assert client.put(url, json={"active_seconds": 20}).json()["timer_state"] == "stopped"   # left alone when not sent

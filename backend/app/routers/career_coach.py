@@ -385,6 +385,8 @@ def save_clock(
         s.active_seconds = max(s.active_seconds or 0, min(payload.active_seconds, (s.active_seconds or 0) + 600))
     if payload.time_limit_min is not None:
         s.time_limit_min = payload.time_limit_min
+    if payload.timer_state is not None and s.status == "in_progress":
+        s.timer_state = payload.timer_state
     db.commit()
     db.refresh(s)
     return s

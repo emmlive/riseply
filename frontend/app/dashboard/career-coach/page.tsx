@@ -988,7 +988,7 @@ export default function CareerCoachPage() {
                 </div>
               </div>
 
-              <SessionClock seconds={sessionClock.seconds} limitMin={sessionClock.limitMin} onLimit={sessionClock.setLimit} live={active.status === "in_progress"} />
+              <SessionClock seconds={sessionClock.seconds} limitMin={sessionClock.limitMin} onLimit={sessionClock.setLimit} state={sessionClock.state} onState={sessionClock.setState} live={active.status === "in_progress"} />
               <CueKey used={usedCues} />
               {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
               {active.course_id && lessonCourse && (() => {

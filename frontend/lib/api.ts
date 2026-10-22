@@ -710,6 +710,7 @@ export interface CareerCoachSession {
   recap?: CoachRecap | null;
   time_limit_min?: number;
   active_seconds?: number;
+  timer_state?: string;
 }
 
 export interface QuizOptions { all: number; folders: { id: number; name: string; count: number }[] }

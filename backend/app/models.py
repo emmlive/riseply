@@ -485,6 +485,7 @@ class CareerCoachSession(Base):
     # time actually spent working in the session (seconds, counted by the page).
     time_limit_min = Column(Integer, default=0, server_default="0")
     active_seconds = Column(Integer, default=0, server_default="0")
+    timer_state = Column(String, default="", server_default="")   # "" or running | paused | stopped
     # The diagram drawn in the session's diagram pad (JSON: items, links, note).
     diagram = Column(Text, default="", server_default="")
 
