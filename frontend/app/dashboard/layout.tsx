@@ -1,5 +1,6 @@
 "use client";
 
+import ThemeToggle from "@/components/ThemeToggle";
 import FeedbackButton from "@/components/FeedbackButton";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -212,6 +213,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
         <div style={{ flex: 1 }} />
         <FeedbackButton />
+        <ThemeToggle />
         {user && (
           <div style={{ padding: "0 8px", fontSize: "0.82rem" }} className="muted">
             {user.email}
