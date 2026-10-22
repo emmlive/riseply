@@ -215,8 +215,9 @@ def send_message(
             module_brief = syllabus.brief(coach_courses.course_data(course), session.module_id)
 
     user_flag = safety_flags.scan(payload.message)
+    shown = payload.message + (f"\n\n[Attached {len(payload.images)} picture{'s' if len(payload.images) > 1 else ''}]" if payload.images else "")
     db.add(models.CareerCoachMessage(
-        session_id=session_id, user_id=user.id, role="user", content=payload.message,
+        session_id=session_id, user_id=user.id, role="user", content=shown,
         flagged=bool(user_flag), flag_reason=user_flag,
         delivery=payload.delivery.model_dump_json() if payload.delivery else "",
     ))
@@ -230,6 +231,7 @@ def send_message(
             visual_kind=payload.visual_kind, notebook=notes, plan=session.lesson,
             quiz_notes=study_quiz.load(db, user.id, session.quiz_notes), quiz_finished=bool(session.quiz_result),
             interrupted=payload.interrupted, heard_up_to=payload.heard_up_to, module=module_brief,
+            images=[i.model_dump() for i in payload.images] or None,
         )
         reply_text, quiz_result = study_quiz.extract_result(reply_text)
         if quiz_result and not session.quiz_result:

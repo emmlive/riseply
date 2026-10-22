@@ -376,8 +376,28 @@ class DeliveryStats(BaseModel):
         return {str(k)[:24]: max(0, min(int(n), 200)) for k, n in v.items() if str(k).strip()}
 
 
+class ImageIn(BaseModel):
+    """A picture the person attaches to a coach message (their work, a photo of a drawing).
+    The app shrinks it before sending; base64 without the data: prefix."""
+    media_type: str = Field(pattern="^image/(png|jpeg|webp|gif)$")
+    data: str = Field(min_length=20, max_length=3_000_000)
+
+    @field_validator("data")
+    @classmethod
+    def _b64(cls, v):
+        import base64, binascii
+        try:
+            base64.b64decode(v, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("image is not valid base64")
+        return v
+
+
 class CareerCoachMessageRequest(BaseModel):
     message: str = Field(min_length=1)
+    # Up to two pictures with this message. They go to the coach for this reply
+    # only; the saved message just notes that they were attached.
+    images: list[ImageIn] = Field(default_factory=list, max_length=2)
     voice: bool = False
     # Set when the answer was spoken (dictated) in a voice interview.
     delivery: DeliveryStats | None = None

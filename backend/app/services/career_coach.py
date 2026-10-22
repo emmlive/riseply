@@ -503,7 +503,7 @@ def reply(session_type: str, target_role: str, topic: str, resume_text: str, his
           learning_style: str = "auto", style: str | None = None, voice: bool = False,
           visual_kind: str | None = None, notebook: list | None = None, plan: dict | None = None,
           quiz_notes: list | None = None, quiz_finished: bool = False,
-          interrupted: bool = False, heard_up_to: str = "", module: str = "") -> str:
+          interrupted: bool = False, heard_up_to: str = "", module: str = "", images: list | None = None) -> str:
     system_prompt = f"""You are a practical career coach running a live
 {session_type} session on "{topic}" for someone preparing for the role
 above.
@@ -532,7 +532,12 @@ above.
 {_context(resume_text, target_role)}
 """
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": new_message})
+    if images:
+        blocks = [{"type": "image", "source": {"type": "base64", "media_type": i["media_type"], "data": i["data"]}} for i in images]
+        blocks.append({"type": "text", "text": new_message + "\n\n(The person attached " + ("a picture" if len(images) == 1 else f"{len(images)} pictures") + " of their work above. Look at it closely, say what you actually see, and give feedback on it. If it is unreadable, say so and ask for a clearer one.)"})
+        messages.append({"role": "user", "content": blocks})
+    else:
+        messages.append({"role": "user", "content": new_message})
     resp = client.messages.create(
         model=MODEL, max_tokens=1800, system=system_prompt, messages=messages,
     )
