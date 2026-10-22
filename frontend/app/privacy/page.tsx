@@ -91,10 +91,20 @@ export default function PrivacyPage() {
             file you chose to keep with your resume in Riseply, or a plain
             PDF made from your resume text if you did not keep one.
           </li>
+          <li>
+            <strong>Site logins you save:</strong> if you choose to save a
+            username and password for a job site, the extension keeps them in
+            your browser only. They are never sent to Riseply, and they are
+            filled only on that site&apos;s own sign-in form when you press a
+            button. A Log in or Next page button in the sidebar clicks the
+            site&apos;s own button only after you confirm. Removing the
+            extension, or choosing Forget, deletes them.
+          </li>
         </ul>
         <p>
-          The extension stores one thing in your browser: a sign-in token, so
-          you stay logged in. Logging out removes it. We do not sell this data,
+          The extension stores two things in your browser: a sign-in token, so
+          you stay logged in (logging out removes it), and any site logins you
+          chose to save, as described above. We do not sell this data,
           use it for advertising, or use it for anything other than the feature
           you clicked. We do not read or keep your browsing history.
         </p>

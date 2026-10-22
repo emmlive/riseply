@@ -391,6 +391,64 @@
     }
   };
 
+
+  // ---------- site login and moving on ----------
+
+  function loginFields() {
+    const pws = controls('input[type="password"]').filter((e) => !e.disabled);
+    // Two password boxes means "create an account", which is never filled.
+    if (pws.length !== 1) return null;
+    const pw = pws[0];
+    let scope = pw.form || pw.parentElement;
+    for (let i = 0; i < 4 && scope && scope !== document.body; i++) {
+      if (scope.querySelectorAll("input").length > 1) break;
+      scope = scope.parentElement;
+    }
+    scope = scope || document;
+    const before = Array.from(scope.querySelectorAll('input:not([type]), input[type="text"], input[type="email"]'))
+      .filter((e) => visible(e) && !e.disabled && !e.readOnly)
+      .filter((e) => e.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return { pw, user: before.length ? before[before.length - 1] : null, scope };
+  }
+
+  RF.hasLogin = function () {
+    return !!loginFields();
+  };
+
+  RF.fillLogin = function (cred) {
+    const f = loginFields();
+    const out = [];
+    if (!f || !cred) return out;
+    if (f.user && cred.username && fillText(f.user, cred.username)) out.push("username");
+    if (cred.password && fillText(f.pw, cred.password)) out.push("password");
+    return out;
+  };
+
+  const LOGIN_BTN = /^(log ?in|sign ?in)$/;
+  const NEXT_BTN = /^(next|next step|next page|continue|continue application|save (and|&) continue|proceed)$/;
+
+  function buttonText(el) {
+    return norm(el.value || el.getAttribute("aria-label") || el.textContent).replace(/[→›»>]+$/, "").trim();
+  }
+
+  function clickables() {
+    return Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]'))
+      .filter((e) => visible(e) && !e.disabled && e.getAttribute("aria-disabled") !== "true");
+  }
+
+  // The control that moves a form on a step: "Log in" on a sign-in page,
+  // otherwise "Next" or "Continue". Never a final Submit.
+  RF.findAdvance = function () {
+    const f = loginFields();
+    const all = clickables();
+    if (f) {
+      const l = all.find((e) => LOGIN_BTN.test(buttonText(e)));
+      if (l) return { el: l, label: buttonText(l) };
+    }
+    const n = all.find((e) => NEXT_BTN.test(buttonText(e)));
+    return n ? { el: n, label: buttonText(n) } : null;
+  };
+
   // ---------- entry point ----------
 
   RF.run = function (profile) {
