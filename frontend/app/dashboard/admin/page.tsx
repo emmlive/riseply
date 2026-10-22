@@ -6,7 +6,7 @@ import Link from "next/link";
 import DiscountCodesTab from "@/components/DiscountCodesTab";
 import FeedbackTab from "@/components/FeedbackTab";
 import {
-  api, User, AdminUser, AdminRevenue, AdminUsage, AdminErrors, AdminSupportMessage,
+  api, User, AdminUser, AdminRevenue, AdminUsage, AdminCostPerUser, AdminErrors, AdminSupportMessage,
   AdminOrganization, AdminSystemHealth, AdminEmailHealth, AdminEmailTest, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
@@ -96,11 +96,13 @@ export default function AdminPage() {
 function OverviewTab() {
   const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
   const [usage, setUsage] = useState<AdminUsage | null>(null);
+  const [cost, setCost] = useState<AdminCostPerUser | null>(null);
   const [errors, setErrors] = useState<AdminErrors | null>(null);
 
   useEffect(() => {
     api<AdminRevenue>("/admin/revenue").then(setRevenue);
     api<AdminUsage>("/admin/usage").then(setUsage);
+    api<AdminCostPerUser>("/admin/cost-per-user").then(setCost).catch(() => {});
     api<AdminErrors>("/admin/errors").then(setErrors);
   }, []);
 
@@ -157,6 +159,48 @@ function OverviewTab() {
                 </span>
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {cost && (
+        <div className="card">
+          <div className="card-row">
+            <h3 style={{ margin: 0 }}>Cost per user ({cost.period})</h3>
+            <span className={`pill ${cost.pro.users === 0 ? "pill-approved" : cost.pro.avg_margin_pct >= 50 ? "pill-approved" : cost.pro.avg_margin_pct >= 20 ? "pill-pending" : "pill-rejected"}`}>
+              {cost.pro.users === 0 ? "No Pro users yet" : `Pro margin ${cost.pro.avg_margin_pct}%`}
+            </span>
+          </div>
+          <p className="hint" style={{ marginTop: 4 }}>
+            Estimated AI cost from the per-action estimates above, not exact billing. Admin accounts are left out.
+            A Pro payment leaves about ${cost.pro.net_revenue_per_user_usd} after card fees.
+          </p>
+          {cost.pro.users > 0 && (
+            <>
+              <h4 style={{ margin: "12px 0 4px" }}>Paying Pro users ({cost.pro.users})</h4>
+              <div className="points-event-row"><span>Average / median / top 10%</span><span className="mono">${cost.pro.avg_cost_usd} / ${cost.pro.median_cost_usd} / ${cost.pro.p90_cost_usd}</span></div>
+              <div className="points-event-row"><span>Most one user cost</span><span className="mono">${cost.pro.max_cost_usd}</span></div>
+              <div className="points-event-row"><span>Users who cost more than they pay</span><span className="mono">{cost.pro.over_revenue_users} of {cost.pro.users}</span></div>
+              {cost.pro.top_actions.length > 0 && (
+                <p className="hint" style={{ margin: "6px 0 0" }}>
+                  Biggest cost drivers: {cost.pro.top_actions.map((a) => `${a.action.replace(/_/g, " ")} $${a.cost_usd}`).join(", ")}
+                </p>
+              )}
+            </>
+          )}
+          <h4 style={{ margin: "12px 0 4px" }}>Free and complimentary ({cost.free.users})</h4>
+          <div className="points-event-row"><span>Active this month</span><span className="mono">{cost.free.active_users}</span></div>
+          <div className="points-event-row"><span>Total cost / average per active user</span><span className="mono">${cost.free.total_cost_usd} / ${cost.free.avg_cost_usd}</span></div>
+          {cost.heaviest.length > 0 && (
+            <>
+              <h4 style={{ margin: "12px 0 4px" }}>Heaviest users</h4>
+              {cost.heaviest.map((h) => (
+                <div key={h.user_id} className="points-event-row">
+                  <span>{h.email} <span className="muted">({h.plan}, mostly {h.top_action.replace(/_/g, " ")})</span></span>
+                  <span className="mono">${h.cost_usd}</span>
+                </div>
+              ))}
+            </>
           )}
         </div>
       )}

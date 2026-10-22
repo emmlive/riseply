@@ -799,6 +799,27 @@ export interface AdminUsage {
   total_estimated_cost_usd: number;
 }
 
+export interface AdminCostGroup {
+  users: number;
+  total_cost_usd: number;
+  avg_cost_usd: number;
+  median_cost_usd: number;
+  p90_cost_usd: number;
+  max_cost_usd: number;
+}
+
+export interface AdminCostPerUser {
+  period: string;
+  pro: AdminCostGroup & {
+    net_revenue_per_user_usd: number;
+    over_revenue_users: number;
+    avg_margin_pct: number;
+    top_actions: { action: string; cost_usd: number }[];
+  };
+  free: AdminCostGroup & { active_users: number };
+  heaviest: { user_id: number; email: string; plan: "pro" | "free"; cost_usd: number; top_action: string }[];
+}
+
 export interface AdminFailureActionStat {
   action: string;
   count: number;
