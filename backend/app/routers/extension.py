@@ -248,13 +248,27 @@ MAX_ATTACH_BYTES = 5 * 1024 * 1024
 
 
 @router.get("/resume-file")
-def resume_file_for_attach(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """The resume the extension attaches to an application form: the original
+def resume_file_for_attach(application_id: int | None = None, db: Session = Depends(get_db),
+                           user: models.User = Depends(get_current_user)):
+    """The resume the extension attaches to an application form: the resume
+    tailored for this job when application_id names one, otherwise the original
     file kept with the default resume, or a plain PDF made from its text.
     Not metered (no AI involved)."""
     import base64
     from app.routers import resumes as resumes_router
-    from app.services import resume_pdf
+    from app.services import resume_pdf, resume_customizer
+
+    if application_id:
+        a = db.query(models.Application).filter_by(id=application_id, user_id=user.id).first()
+        if a and a.tailored_resume_data:
+            try:
+                pdf = resume_customizer.build_pdf_from_blocks(resume_customizer.docx_to_blocks(a.tailored_resume_data))
+                stem = (a.tailored_resume_path or "tailored_resume.docx").rsplit(".", 1)[0]
+                return {"filename": f"{stem}.pdf", "content_type": "application/pdf", "source": "tailored",
+                        "data": base64.b64encode(pdf).decode()}
+            except Exception as e:
+                print(f"[extension] tailored PDF failed for application {application_id}: {e}")
+                # fall through to the base resume
 
     r = db.query(models.Resume).filter_by(user_id=user.id, is_default=True).first()
     if r and r.file_data and len(r.file_data) <= MAX_ATTACH_BYTES:
@@ -268,3 +282,126 @@ def resume_file_for_attach(db: Session = Depends(get_db), user: models.User = De
     pdf = resume_pdf.build(text)
     return {"filename": resume_pdf.safe_filename(user.full_name), "content_type": "application/pdf",
             "source": "generated", "data": base64.b64encode(pdf).decode()}
+
+
+# ---------- tailored (ATS) resume and applied status ----------
+
+from urllib.parse import urlsplit  # noqa: E402
+
+
+def _job_keys(url: str) -> tuple[str, str]:
+    """Two spellings of a job link: with its query string, and without it. The
+    apply page of a posting ("/apply" on the end) counts as the posting."""
+    try:
+        u = urlsplit((url or "").strip())
+    except ValueError:
+        return "", ""
+    if u.scheme not in ("http", "https") or not u.netloc:
+        return "", ""
+    host = u.netloc.lower().removeprefix("www.")
+    path = u.path.rstrip("/")
+    for tail in ("/apply", "/application"):
+        if path.lower().endswith(tail):
+            path = path[: -len(tail)]
+    loose = f"{host}{path}"
+    # a path with a single segment ("/viewjob") is the same for every job there
+    has_id_path = len([x for x in path.split("/") if x]) >= 2
+    return (f"{loose}?{u.query}" if u.query else loose), (loose if has_id_path else "")
+
+
+def _find_application(db: Session, user: models.User, url: str):
+    exact, loose = _job_keys(url)
+    if not exact:
+        return None
+    rows = db.query(models.Application, models.Job).join(
+        models.Job, models.Application.job_id == models.Job.id
+    ).filter(models.Application.user_id == user.id, models.Application.deleted_at.is_(None),
+             models.Job.url != "").order_by(models.Application.id.desc()).all()
+    loose_hit = None
+    for a, j in rows:
+        e, l = _job_keys(j.url)
+        if e == exact:
+            return a, j
+        if loose and l == loose and loose_hit is None:
+            loose_hit = (a, j)
+    return loose_hit
+
+
+def _status_payload(a: models.Application, j: models.Job) -> dict:
+    return {
+        "in_list": True, "application_id": a.id, "status": a.status, "title": j.title, "company": j.company,
+        "match_score": a.match_score, "has_tailored": bool(a.tailored_resume_data),
+        "applied": a.status in ("submitted", "interviewing", "accepted"),
+    }
+
+
+@router.post("/job-status")
+def job_status(payload: dict, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Is the job on this page already in the person's Riseply list, and does
+    it have a tailored resume? Free: no AI."""
+    hit = _find_application(db, user, str(payload.get("url", "")))
+    return _status_payload(*hit) if hit else {"in_list": False}
+
+
+@router.post("/tailor")
+def tailor_for_page(payload: schemas.ImportJobIn, db: Session = Depends(get_db),
+                    user: models.User = Depends(get_current_user)):
+    """Generate the ATS-friendly tailored resume for the job on this page. The
+    job joins the person's Riseply list like any imported job (scored once,
+    tailored once, same limits as everywhere else). A job already in the list
+    with a tailored resume is returned as is, at no cost."""
+    from app.routers import pipeline
+    from app.services import resume_customizer
+
+    hit = _find_application(db, user, payload.url)
+    created = False
+    if hit and hit[0].tailored_resume_data:
+        a, j = hit
+    elif hit:
+        out = pipeline.retailor_resume(hit[0].id, db, user)
+        a = db.query(models.Application).filter_by(id=out.id, user_id=user.id).first()
+        j = hit[1]
+    else:
+        payload.url = (payload.url or "").split("#")[0]
+        payload.already_applied = False
+        out = pipeline.import_job(payload, db, user)
+        a = db.query(models.Application).filter_by(id=out.id, user_id=user.id).first()
+        j = db.query(models.Job).filter_by(id=a.job_id).first()
+        created = True
+
+    body = _status_payload(a, j)
+    body["created"] = created
+    body["match_reason"] = a.match_reason or ""
+    body["rationale"] = a.tailoring_rationale or ""
+    body["notes"] = a.notes or ""
+    body["ats"] = []
+    if a.tailored_resume_data:
+        try:
+            report = resume_customizer.ats_checks(resume_customizer.docx_to_blocks(a.tailored_resume_data))
+            body["pages"] = report["pages"]
+            body["ats"] = report["checks"]
+        except Exception as e:
+            print(f"[extension] ATS checks failed for application {a.id}: {e}")
+    return body
+
+
+@router.post("/applied")
+def mark_applied(payload: dict, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """After the person applies on the employer's site: record it as Submitted
+    when the job is in their Riseply list. Does nothing (and says so) when it
+    is not, and never counts the same application twice."""
+    from app.routers import pipeline
+
+    a = None
+    aid = payload.get("application_id")
+    if isinstance(aid, int):
+        a = db.query(models.Application).filter_by(id=aid, user_id=user.id).first()
+    if a is None:
+        hit = _find_application(db, user, str(payload.get("url", "")))
+        a = hit[0] if hit else None
+    if a is None:
+        return {"found": False}
+    if a.status in ("submitted", "interviewing", "accepted"):
+        return {"found": True, "already": True, "status": a.status}
+    pipeline.mark_submitted(a.id, db, user)
+    return {"found": True, "already": False, "status": "submitted"}

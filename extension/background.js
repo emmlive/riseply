@@ -209,8 +209,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "JOB_STATUS": {
+          const r = await apiFetch("/extension/job-status", { method: "POST", body: JSON.stringify({ url: message.url || "" }) });
+          sendResponse({ success: true, ...r });
+          break;
+        }
+
+        case "TAILOR_RESUME": {
+          const r = await apiFetch("/extension/tailor", {
+            method: "POST",
+            body: JSON.stringify({
+              title: message.title, company: message.company, location: message.location || "",
+              description: message.description, url: message.url || "",
+            }),
+          });
+          sendResponse({ success: true, ...r });
+          break;
+        }
+
+        case "MARK_APPLIED": {
+          const r = await apiFetch("/extension/applied", {
+            method: "POST",
+            body: JSON.stringify({ application_id: message.applicationId || null, url: message.url || "" }),
+          });
+          sendResponse({ success: true, ...r });
+          break;
+        }
+
         case "GET_RESUME_FILE": {
-          const f = await apiFetch("/extension/resume-file");
+          const f = await apiFetch("/extension/resume-file" + (message.applicationId ? `?application_id=${encodeURIComponent(message.applicationId)}` : ""));
           sendResponse({ success: true, ...f });
           break;
         }
