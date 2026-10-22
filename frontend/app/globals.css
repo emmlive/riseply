@@ -744,6 +744,32 @@ textarea.cc-input { resize: vertical; }
 .mr-link { font-size: 0.86rem; }
 .cc-module-bar { padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 0.86rem; background: var(--accent-soft); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
+/* Diagram pad */
+.dp-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(22, 35, 61, 0.45); display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; overflow-y: auto; }
+.dp-overlay[hidden] { display: none; }
+.dp-panel { background: var(--surface); border-radius: 12px; width: min(820px, 100%); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); }
+.dp-panel-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px 0; }
+.dp { padding: 12px 24px 4px; }
+.dp-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.dp-canvas { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; touch-action: none; color: var(--ink); display: block; }
+.dp-empty { fill: var(--ink-muted); font-size: 15px; }
+.dp-zone rect:first-child { fill: var(--accent-soft); fill-opacity: 0.45; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 4; cursor: grab; }
+.dp-zone.is-sel rect:first-child { stroke-width: 3; }
+.dp-zone-label { font-size: 14px; font-weight: 600; fill: var(--accent-hover); pointer-events: none; }
+.dp-grip { fill: var(--accent); cursor: nwse-resize; }
+.dp-box rect { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; cursor: grab; }
+.dp-box.is-sel rect, .dp-box.is-source rect { stroke: var(--accent); stroke-width: 3; }
+.dp-box text { font-size: 13px; fill: var(--ink); }
+.dp-link line { stroke: currentColor; stroke-width: 1.8; }
+.dp-link .dp-hit { stroke: transparent; stroke-width: 14; cursor: pointer; }
+.dp-link.is-sel line:first-child { stroke: var(--accent); stroke-width: 3; }
+.dp-link text { font-size: 12px; fill: var(--ink-muted); }
+.dp svg *:focus-visible { outline: none; stroke: var(--accent); stroke-width: 3.5; }
+.dp-edit { margin: 8px 0; min-height: 24px; }
+.dp-hint { margin: 0; font-size: 0.84rem; }
+.dp-field { display: grid; gap: 4px; font-size: 0.84rem; margin-bottom: 8px; }
+.dp-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 10px; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;
