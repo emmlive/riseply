@@ -14,6 +14,7 @@ import VoicePicker from "@/components/VoicePicker";
 import CoursePanel from "@/components/CoursePanel";
 import ModuleRecap from "@/components/ModuleRecap";
 import DiagramPad from "@/components/DiagramPad";
+import WorkArea from "@/components/WorkArea";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
@@ -124,6 +125,7 @@ export default function CareerCoachPage() {
   const [lessonCourse, setLessonCourse] = useState<CoachCourse | null>(null);
   const [busyModule, setBusyModule] = useState("");
   const [padOpen, setPadOpen] = useState(false);
+  const [workOpen, setWorkOpen] = useState(false);
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   // Which spoken word the voice is on (-1 = not started), for the read-along highlight.
   const [spokenAt, setSpokenAt] = useState(-1);
@@ -709,7 +711,7 @@ export default function CareerCoachPage() {
     }
   }
 
-  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson"; visualKind?: CareerCoachVisualKind }, delivery?: Delivery) {
+  async function send(override?: { text: string; style: "visual" | "stepbystep" | "story" | "handson"; visualKind?: CareerCoachVisualKind }, delivery?: Delivery, images?: { media_type: string; data: string }[]) {
     const text = override ? override.text : inputRef.current;
     if (!text.trim() || sending || !active) return;
     stopDictation();
@@ -725,7 +727,7 @@ export default function CareerCoachPage() {
     pendingInterrupt.current = null;
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }),
+        method: "POST", body: JSON.stringify({ ...(images?.length ? { images } : {}), ...(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }) }),
       });
       setMessages((m) => [...m, reply]);
       if (reply.quiz_result) {
@@ -1182,6 +1184,19 @@ export default function CareerCoachPage() {
                               onClick={() => setPadOpen((o) => !o)}>
                         ✎ Draw a diagram
                       </button>
+                      <button className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginBottom: 8, marginLeft: 8 }} aria-expanded={workOpen}
+                              onClick={() => setWorkOpen((o) => !o)}>
+                        📎 Submit your work
+                      </button>
+                      <div className="dp-overlay" hidden={!workOpen} role="dialog" aria-modal="true" aria-label="Submit your work"
+                           onKeyDown={(e) => { if (e.key === "Escape") setWorkOpen(false); }}
+                           onClick={(e) => { if (e.target === e.currentTarget) setWorkOpen(false); }}>
+                        <div className="dp-panel">
+                          <div className="dp-panel-head"><strong>Submit your work</strong><button className="btn btn-ghost btn-sm" onClick={() => setWorkOpen(false)}>Close</button></div>
+                          <WorkArea key={active.id} disabled={sending}
+                            onSend={(t, imgs) => { inputRef.current = t; setWorkOpen(false); send(undefined, undefined, imgs); }} />
+                        </div>
+                      </div>
                       <div className="dp-overlay" hidden={!padOpen} role="dialog" aria-modal="true" aria-label="Diagram pad"
                            onKeyDown={(e) => { if (e.key === "Escape") setPadOpen(false); }}
                            onClick={(e) => { if (e.target === e.currentTarget) setPadOpen(false); }}>

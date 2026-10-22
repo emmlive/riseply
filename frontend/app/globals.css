@@ -770,6 +770,11 @@ textarea.cc-input { resize: vertical; }
 .dp-field { display: grid; gap: 4px; font-size: 0.84rem; margin-bottom: 8px; }
 .dp-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 10px; }
 
+.wa-pics { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 6px; }
+.wa-pic { margin: 0; display: grid; gap: 6px; justify-items: start; }
+.wa-pic img { max-width: 220px; max-height: 160px; border: 1px solid var(--border-strong); border-radius: 6px; }
+.wa-attach { cursor: pointer; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;
