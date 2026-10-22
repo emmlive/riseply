@@ -128,6 +128,7 @@ export default function CareerPathPage() {
             <p className="cp-fit"><span className={`sg-badge cp-fit-${plan.fit}`}>{FIT_LABEL[plan.fit] || plan.fit}</span></p>
             {plan.realistic_timeline && <p className="sg-next"><strong>Realistic timeline:</strong> {plan.realistic_timeline}</p>}
             {plan.honest_note && <p className="muted sg-basis">{plan.honest_note}</p>}
+            <p className="muted" style={{ margin: "10px 0 0", fontSize: 13 }}>Need a certification or board exam for this role? <Link href={`/dashboard/exam-prep?exam=${encodeURIComponent(plan.target_role)}`}>Start exam prep</Link></p>
             {plan.stages[0] && (
               <p style={{ margin: "14px 0 0" }}>
                 <button className="btn btn-primary" onClick={() => teachAsCourse(plan.stages[0])} disabled={!!courseBusy}>

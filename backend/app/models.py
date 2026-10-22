@@ -1840,3 +1840,55 @@ class CoachCourse(Base):
     done = Column(Text, default="[]")  # JSON list of finished module ids
     folder_id = Column(Integer, nullable=True)  # study folder the recaps are filed in
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class ExamPrep(Base):
+    """A certification or board exam the person is studying for (services/exam_prep.py):
+    the domain outline (JSON), as written by the model from general knowledge."""
+    __tablename__ = "exam_preps"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    exam_name = Column(String, nullable=False)
+    outline = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class ExamQuestion(Base):
+    """One practice question, kept so missed ones can come back (spaced review)
+    and so a mock exam can reuse questions instead of paying for new ones."""
+    __tablename__ = "exam_questions"
+
+    id = Column(Integer, primary_key=True)
+    exam_id = Column(Integer, ForeignKey("exam_preps.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    domain_id = Column(String, nullable=False)
+    topic = Column(String, default="")
+    stem = Column(Text, nullable=False)
+    options = Column(Text, nullable=False)          # JSON list of 4
+    correct = Column(Integer, nullable=False)
+    explanation = Column(Text, default="")
+    times_seen = Column(Integer, default=0)
+    times_wrong = Column(Integer, default=0)
+    box = Column(Integer, default=0)                # spaced-review box
+    due_at = Column(DateTime, nullable=True)        # None = never answered yet
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class ExamAttempt(Base):
+    """A practice set, a mock exam or a review round, and how it went."""
+    __tablename__ = "exam_attempts"
+
+    id = Column(Integer, primary_key=True)
+    exam_id = Column(Integer, ForeignKey("exam_preps.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String, default="practice")       # practice | mock | review
+    domain_id = Column(String, default="")
+    question_ids = Column(Text, default="[]")       # JSON list, in the order asked
+    answers = Column(Text, default="{}")            # JSON {question id: chosen index}
+    time_limit_min = Column(Integer, default=0)
+    status = Column(String, default="in_progress")  # in_progress | finished
+    score = Column(Integer, nullable=True)          # percent
+    by_domain = Column(Text, default="{}")          # JSON {domain id: {correct, total}}
+    started_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    finished_at = Column(DateTime, nullable=True)

@@ -1331,3 +1331,15 @@ export interface TaskGuideReview {
   source?: string;
 }
 export interface TaskGuideListItem { id: number; title: string; created_at: string; steps: number; done: number }
+
+// ---- Exam prep ----
+export interface ExamDomain { id: string; name: string; weight_pct: number; topics: string[]; questions: number; answered: number; accuracy: number | null; due: number }
+export interface ExamView { id: number; exam_name: string; name: string; body: string; confidence: string; summary: string; domains: ExamDomain[]; due: number; note: string }
+export interface ExamQuestionOut { id: number; domain_id: string; topic: string; stem: string; options: string[] }
+export interface ExamRun { attempt_id: number; kind: "practice" | "mock" | "review"; time_limit_min: number; questions: ExamQuestionOut[] }
+export interface ExamResult {
+  score: number; answered: number; total: number; note: string;
+  domains: { id: string; name: string; correct: number; total: number; pct: number }[];
+  study_next: { id: string; name: string }[];
+  review: (ExamQuestionOut & { correct: number; explanation: string; chosen?: number })[];
+}

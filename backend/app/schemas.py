@@ -2249,3 +2249,31 @@ class DiagramIn(BaseModel):
     items: list[DiagramItemIn] = Field(default_factory=list, max_length=40)
     links: list[DiagramLinkIn] = Field(default_factory=list, max_length=60)
     note: str = Field(default="", max_length=2000)
+
+
+# ---- Exam prep ----
+class ExamCreate(BaseModel):
+    exam_name: str = Field(..., min_length=2, max_length=120)
+
+
+class ExamPracticeRequest(BaseModel):
+    domain_id: str = Field(..., max_length=20)
+    count: int = Field(5, ge=1, le=10)
+
+
+class ExamMockRequest(BaseModel):
+    count: int = Field(20, ge=10, le=50)
+    minutes: int = Field(0, ge=0, le=300)
+
+
+class ExamReviewRequest(BaseModel):
+    count: int = Field(10, ge=1, le=30)
+
+
+class ExamAnswerIn(BaseModel):
+    question_id: int
+    choice: int = Field(..., ge=0, le=3)
+
+
+class ExamFinishRequest(BaseModel):
+    answers: list[ExamAnswerIn] = Field(default_factory=list, max_length=60)
