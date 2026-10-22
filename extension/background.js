@@ -11,6 +11,16 @@
 
 const API_BASE = "https://riseply.onrender.com";
 
+// Site a saved login belongs to: the registrable domain, so a login saved on
+// jobs.example.com also works on apply.example.com but not on example.com.evil.net.
+function siteKey(host) {
+  const parts = String(host || "").toLowerCase().split(".").filter(Boolean);
+  if (parts.length <= 2) return parts.join(".");
+  const secondLevel = ["co", "com", "org", "net", "gov", "ac", "edu"];
+  const n = parts[parts.length - 1].length === 2 && secondLevel.includes(parts[parts.length - 2]) ? 3 : 2;
+  return parts.slice(-n).join(".");
+}
+
 function log(...args) {
   console.log("[Riseply:bg]", ...args);
 }
@@ -161,6 +171,41 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           // treats any error as "no profile".
           const r = await apiFetch("/autofill-profile");
           sendResponse({ success: true, profile: r.profile });
+          break;
+        }
+
+        // Site logins live only in this browser (chrome.storage.local) and are
+        // never sent to Riseply. Keyed by site so a look-alike domain can't
+        // receive them.
+        case "GET_SITE_LOGIN": {
+          const key = siteKey(message.host);
+          const { riseply_logins } = await chrome.storage.local.get("riseply_logins");
+          const c = (riseply_logins || {})[key];
+          sendResponse({ success: true, site: key, login: c ? { username: c.username, password: c.password } : null });
+          break;
+        }
+
+        case "SAVE_SITE_LOGIN": {
+          const key = siteKey(message.host);
+          const username = String(message.username || "").slice(0, 200);
+          const password = String(message.password || "").slice(0, 200);
+          if (!username || !password) {
+            sendResponse({ success: false, error: "Enter both a username and a password." });
+            break;
+          }
+          const { riseply_logins } = await chrome.storage.local.get("riseply_logins");
+          await chrome.storage.local.set({ riseply_logins: { ...(riseply_logins || {}), [key]: { username, password } } });
+          sendResponse({ success: true, site: key });
+          break;
+        }
+
+        case "FORGET_SITE_LOGIN": {
+          const key = siteKey(message.host);
+          const { riseply_logins } = await chrome.storage.local.get("riseply_logins");
+          const next = { ...(riseply_logins || {}) };
+          delete next[key];
+          await chrome.storage.local.set({ riseply_logins: next });
+          sendResponse({ success: true });
           break;
         }
 

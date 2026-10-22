@@ -472,6 +472,11 @@
       border: 1px solid #E2E5EA; border-radius: 8px; padding: 8px; margin-top: 6px;
       resize: vertical; background: #FFFFFF;
     }
+    .field {
+      all: initial; box-sizing: border-box; display: block; width: 100%;
+      font-family: -apple-system, 'Inter', sans-serif; font-size: 12px; color: #16233D;
+      border: 1px solid #E2E5EA; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #FFFFFF;
+    }
     .draft-actions { display: flex; gap: 6px; margin-top: 6px; }
     .draft-actions button {
       all: initial; box-sizing: border-box; flex: 1; text-align: center; padding: 6px 8px;
@@ -570,13 +575,26 @@
       <button class="action primary" id="riseply-score-btn">Score my resume</button>
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
       <p class="hint">Autofill attaches your resume when the form has an upload field, and fills the rest. Check everything before you continue. Riseply never submits on its own -- you always get a final button to click yourself.</p>
+      <div id="riseply-login-slot"></div>
       <div id="riseply-filled-slot"></div>
+      <div id="riseply-next-slot"></div>
       <div id="riseply-questions-slot"></div>
       <button class="action secondary" id="riseply-coverletter-btn" style="margin-top:12px;">Generate cover letter</button>
       <div id="riseply-coverletter-slot"></div>
     `;
 
     renderUsage(root);
+    renderLogin(root);
+    renderNext(root);
+    // Pages change without reloading (sign-in, then the form, then the next
+    // step), so keep these two sections in step with what is on the page now.
+    let lastSeen = "";
+    setInterval(() => {
+      const f = window.RisePlyFill;
+      const adv = f && f.findAdvance();
+      const sig = (f && f.hasLogin() ? "L" : "-") + (adv ? adv.label : "");
+      if (sig !== lastSeen) { lastSeen = sig; renderLogin(root); renderNext(root); }
+    }, 1500);
 
     root.getElementById("riseply-score-btn").addEventListener("click", async () => {
       const btn = root.getElementById("riseply-score-btn");
@@ -639,6 +657,10 @@
         return;
       }
       const filled = runAutofill(result.candidate);
+      if (window.RisePlyFill && window.RisePlyFill.hasLogin()) {
+        const sl = await sendMessage({ type: "GET_SITE_LOGIN", host: location.hostname });
+        if (sl.success && sl.login && window.RisePlyFill.fillLogin(sl.login).length) filled.push("site login");
+      }
       // Work history, education, standard answers and saved answers come from
       // the person's Autofill profile. If it can't be loaded, basic autofill
       // above still stands.
@@ -715,6 +737,8 @@
         }
       }
 
+      renderLogin(root);
+      renderNext(root);
       renderUnansweredQuestions(root, scrapeJobInfo()); // fresh scrape -- see the Score button's handler for why
     });
 
@@ -877,6 +901,94 @@
         // separate interview_prep quota instead. Calling it here would
         // misleadingly imply match quota was spent when it wasn't.
       });
+    });
+  }
+
+
+  // Sign-in: the person saves a username and password for a site once; they
+  // stay in this browser only (never sent to Riseply) and are filled on that
+  // site's own sign-in form when the person asks.
+  async function renderLogin(root) {
+    const slot = root.getElementById("riseply-login-slot");
+    if (!slot) return;
+    if (!window.RisePlyFill || !window.RisePlyFill.hasLogin()) { slot.innerHTML = ""; return; }
+    const r = await sendMessage({ type: "GET_SITE_LOGIN", host: location.hostname });
+    const site = (r && r.site) || location.hostname;
+    if (r && r.success && r.login) {
+      slot.innerHTML = `
+        <p class="filled-list" style="margin-top:12px;">Saved login for ${escapeHtml(site)}: ${escapeHtml(r.login.username)}</p>
+        <button class="action secondary" id="riseply-login-fill" style="margin-top:6px;">Fill my login</button>
+        <p class="hint"><a href="#" id="riseply-login-change" style="color:inherit;font-weight:600;">Change</a> &nbsp; <a href="#" id="riseply-login-forget" style="color:inherit;font-weight:600;">Forget</a></p>
+        <div id="riseply-login-msg"></div>
+      `;
+      root.getElementById("riseply-login-fill").addEventListener("click", () => {
+        const done = window.RisePlyFill.fillLogin(r.login);
+        root.getElementById("riseply-login-msg").innerHTML = done.length
+          ? `<p class="filled-list">Filled: ${done.join(", ")}. Check it, then use the button below.</p>`
+          : `<p class="hint">Those boxes already have something in them, so nothing changed.</p>`;
+        renderNext(root);
+      });
+      root.getElementById("riseply-login-forget").addEventListener("click", async (e) => {
+        e.preventDefault();
+        await sendMessage({ type: "FORGET_SITE_LOGIN", host: location.hostname });
+        renderLogin(root);
+      });
+      root.getElementById("riseply-login-change").addEventListener("click", (e) => {
+        e.preventDefault();
+        showLoginForm(root, slot, site);
+      });
+    } else {
+      showLoginForm(root, slot, site);
+    }
+  }
+
+  function showLoginForm(root, slot, site) {
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:12px;"><strong>Save your login for ${escapeHtml(site)}</strong> so Riseply can fill it next time. It stays in this browser only and is never sent to Riseply.</p>
+      <input class="field" id="riseply-login-user" type="text" placeholder="Username or email" autocomplete="off">
+      <input class="field" id="riseply-login-pass" type="password" placeholder="Password" autocomplete="off">
+      <button class="action secondary" id="riseply-login-save" style="margin-top:6px;">Save on this device</button>
+      <div id="riseply-login-msg"></div>
+    `;
+    root.getElementById("riseply-login-save").addEventListener("click", async () => {
+      const username = root.getElementById("riseply-login-user").value.trim();
+      const password = root.getElementById("riseply-login-pass").value;
+      const res = await sendMessage({ type: "SAVE_SITE_LOGIN", host: location.hostname, username, password });
+      if (!res.success) {
+        root.getElementById("riseply-login-msg").innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(res.error || "Couldn't save.")}</p>`;
+        return;
+      }
+      renderLogin(root);
+    });
+  }
+
+  // "Next page" / "Log in": clicks the site's own button, but only after the
+  // person confirms. Never a final Submit (that has its own button).
+  function renderNext(root) {
+    const slot = root.getElementById("riseply-next-slot");
+    if (!slot) return;
+    const adv = window.RisePlyFill && window.RisePlyFill.findAdvance();
+    if (!adv) { slot.innerHTML = ""; return; }
+    const isLogin = /log ?in|sign ?in/i.test(adv.label);
+    slot.innerHTML = `
+      <button class="action primary" id="riseply-next-btn" style="margin-top:10px;">${isLogin ? "Log in" : "Next page"} →</button>
+      <div id="riseply-next-confirm"></div>
+    `;
+    root.getElementById("riseply-next-btn").addEventListener("click", () => {
+      const c = root.getElementById("riseply-next-confirm");
+      c.innerHTML = `
+        <p class="hint" style="color:#C97A2B;">This clicks ${escapeHtml(location.hostname)}'s own "${escapeHtml(adv.label)}" button. Check what's filled in first.</p>
+        <div class="draft-actions">
+          <button class="confirm" id="riseply-next-yes">Yes, go on</button>
+          <button class="discard" id="riseply-next-no">Cancel</button>
+        </div>
+      `;
+      root.getElementById("riseply-next-yes").addEventListener("click", () => {
+        const now = window.RisePlyFill.findAdvance(); // fresh: the page may have changed
+        if (now) now.el.click();
+        c.innerHTML = `<p class="filled-list">Clicked "${escapeHtml(adv.label)}". When the next page loads, press Autofill again.</p>`;
+      });
+      root.getElementById("riseply-next-no").addEventListener("click", () => { c.innerHTML = ""; });
     });
   }
 

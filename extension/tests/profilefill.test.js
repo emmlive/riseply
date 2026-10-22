@@ -102,3 +102,69 @@ const profile = {
   console.log("ok: attach resume");
   await b.close();
 })().catch((e) => { console.error("FAIL attach", e.message); process.exit(1); });
+
+// ---- site login and next (fourth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  const load = async (file) => {
+    await p.goto("file://" + path.join(__dirname, file));
+    await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  };
+  await load("fixture_login.html");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.hasLogin()), true);
+  await p.fill("#u", "typed-by-hand");
+  const r1 = await p.evaluate(() => window.RisePlyFill.fillLogin({ username: "me@x.com", password: "pw123" }));
+  assert.deepEqual(r1, ["password"], "a username already typed is left alone");
+  assert.equal(await p.$eval("#p", (e) => e.value), "pw123");
+  assert.equal(await p.$eval("#u", (e) => e.value), "typed-by-hand");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.findAdvance().el.id), "go", "login button found");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.findAdvance().label), "log in");
+  await load("fixture_login.html");
+  assert.deepEqual(await p.evaluate(() => window.RisePlyFill.fillLogin({ username: "me@x.com", password: "pw123" })), ["username", "password"]);
+  assert.equal(await p.$eval("#u", (e) => e.value), "me@x.com");
+  await load("fixture_signup.html");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.hasLogin()), false, "sign-up forms are not login forms");
+  assert.deepEqual(await p.evaluate(() => window.RisePlyFill.fillLogin({ username: "a", password: "b" })), []);
+  assert.equal(await p.$eval("#p1", (e) => e.value), "");
+  await load("fixture_next.html");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.findAdvance().el.id), "nx", "Next, never Submit or Back");
+  console.log("ok: site login and next");
+  await b.close();
+})().catch((e) => { console.error("FAIL login", e.message); process.exit(1); });
+
+// ---- sidebar: saving a site login and the Log in / Next confirm (fifth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  await p.addInitScript(() => {
+    const store = {};
+    const siteKey = (h) => h.split(".").slice(-2).join(".");
+    window.chrome = { runtime: { id: "x", lastError: null, sendMessage(m, cb) {
+      const ok = (o) => setTimeout(() => cb({ success: true, ...o }), 0);
+      if (m.type === "GET_AUTH_STATE") return ok({ loggedIn: true, user: { email: "a@b.c" } });
+      if (m.type === "GET_USAGE") return ok({ tier: "pro", matchesUsed: 0, matchesLimit: 300 });
+      if (m.type === "GET_SITE_LOGIN") return ok({ site: siteKey(m.host), login: store[siteKey(m.host)] || null });
+      if (m.type === "SAVE_SITE_LOGIN") { store[siteKey(m.host)] = { username: m.username, password: m.password }; window.__saved = m; return ok({ site: siteKey(m.host) }); }
+      if (m.type === "FORGET_SITE_LOGIN") { delete store[siteKey(m.host)]; return ok({}); }
+      return ok({});
+    } } };
+  });
+  await p.goto("file://" + path.join(__dirname, "fixture_sidebar_login.html"));
+  for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
+  const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
+  await q("#riseply-login-user").waitFor();
+  await q("#riseply-login-user").fill("me@x.com");
+  await q("#riseply-login-pass").fill("s3cret");
+  await q("#riseply-login-save").click();
+  await q("#riseply-login-fill").waitFor();
+  await q("#riseply-login-fill").click();
+  await p.waitForFunction(() => document.getElementById("p").value === "s3cret");
+  assert.equal(await p.$eval("#u", (e) => e.value), "me@x.com");
+  await q("#riseply-next-btn").click();
+  assert.equal(await p.evaluate(() => window.__clicked || 0), 0, "nothing is clicked before the confirm");
+  await q("#riseply-next-yes").click();
+  assert.equal(await p.evaluate(() => window.__clicked), 1, "confirm clicks the site's own Log in button once");
+  console.log("ok: sidebar login and next");
+  await b.close();
+})().catch((e) => { console.error("FAIL sidebar", e.message); process.exit(1); });
