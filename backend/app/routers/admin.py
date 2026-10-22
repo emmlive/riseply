@@ -247,6 +247,20 @@ def usage_stats(
     )
 
 
+@router.get("/cost-per-user")
+def cost_per_user(
+    period: str | None = None,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_view("billing")),
+):
+    """Estimated AI cost per user, for deciding limits and price from real use."""
+    import re
+    if period is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        raise HTTPException(status_code=422, detail="period must look like 2026-10")
+    period = period or datetime.utcnow().strftime("%Y-%m")
+    return admin_stats.cost_per_user(db, period, settings.pro_price_usd_display)
+
+
 @router.get("/errors", response_model=schemas.AdminErrorsOut)
 def error_stats(
     db: Session = Depends(get_db),
