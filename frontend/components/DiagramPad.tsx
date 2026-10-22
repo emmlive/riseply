@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { BOX_H, BOX_W, CANVAS_H, CANVAS_W, DItem, DLink, MAX_ITEMS, describeDiagram, edgePoint } from "@/lib/diagram";
 
 // A drawing area inside a coach session. Add zones and boxes, drag them,
@@ -11,9 +12,11 @@ let uid = 0;
 const nid = (p: string) => `${p}${++uid}`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-export default function DiagramPad({ onSend, onUseInReply, disabled }: {
+export default function DiagramPad({ sessionId, onSend, onUseInReply, onSaveStudy, disabled }: {
+  sessionId: number;
   onSend: (text: string) => void;
   onUseInReply: (text: string) => void;
+  onSaveStudy: (text: string) => void;
   disabled?: boolean;
 }) {
   const [items, setItems] = useState<DItem[]>([]);
@@ -24,6 +27,36 @@ export default function DiagramPad({ onSend, onUseInReply, disabled }: {
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<{ id: string; mode: "move" | "size"; dx: number; dy: number } | null>(null);
   const labelEl = useRef<HTMLInputElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
+  const dirty = useRef(false);
+
+  // The diagram belongs to the session: load it when the pad mounts, save it as it changes.
+  useEffect(() => {
+    let cancelled = false;
+    api<{ items: DItem[]; links: DLink[]; note: string }>(`/career-coach/sessions/${sessionId}/diagram`)
+      .then((d) => {
+        if (cancelled) return;
+        const nums = [...d.items, ...d.links].map((x) => Number(x.id.slice(1))).filter((n) => Number.isFinite(n));
+        uid = Math.max(uid, ...nums, 0);
+        setItems(d.items); setLinks(d.links); setNote(d.note || "");
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (!dirty.current) { dirty.current = true; return; }   // the first run is the load itself
+    setSaveState("saving");
+    const t = setTimeout(() => {
+      api(`/career-coach/sessions/${sessionId}/diagram`, { method: "PUT", body: JSON.stringify({ items, links, note }) })
+        .then(() => setSaveState("saved")).catch(() => setSaveState("error"));
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, links, note]);
 
   const selItem = sel?.type === "item" ? items.find((i) => i.id === sel.id) : undefined;
   const selLink = sel?.type === "link" ? links.find((l) => l.id === sel.id) : undefined;
@@ -180,6 +213,8 @@ export default function DiagramPad({ onSend, onUseInReply, disabled }: {
       <div className="dp-actions">
         <button className="btn btn-primary btn-sm" disabled={!items.length || disabled} onClick={() => onSend(text)}>Send diagram to the coach</button>
         <button className="btn btn-ghost btn-sm" disabled={!items.length} onClick={() => onUseInReply(text)}>Put it in my reply box</button>
+        <button className="btn btn-ghost btn-sm" disabled={!items.length} onClick={() => onSaveStudy(text)}>Save to study folder</button>
+        <span className="muted dp-hint" role="status">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved with this session" : saveState === "error" ? "Couldn't save. Your drawing is still here." : ""}</span>
       </div>
     </div>
   );
