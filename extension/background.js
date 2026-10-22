@@ -150,6 +150,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "GET_AUTOFILL_PROFILE": {
+          // Work history, education and the person's own saved answers.
+          // A failure here must not break basic autofill, so the caller
+          // treats any error as "no profile".
+          const r = await apiFetch("/autofill-profile");
+          sendResponse({ success: true, profile: r.profile });
+          break;
+        }
+
         case "GET_USAGE": {
           const usage = await apiFetch("/usage");
           sendResponse({

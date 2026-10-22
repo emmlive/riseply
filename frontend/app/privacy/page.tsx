@@ -77,8 +77,15 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Autofill this page</strong> fetches your saved name, email,
-            phone, location and profile links from your account and types them
-            into the form on the page. It does not submit the form.
+            phone, location and profile links, and the details in your
+            Autofill profile (work history, education, the answers you chose
+            for questions such as work authorization, salary and optional
+            self-identification, and your saved answers) from your account
+            and types them into the form on the page. It only fills answers
+            you chose yourself, never overwrites a field you already filled,
+            and the autofill step does not submit the form. The sidebar has a
+            separate Submit button that clicks the site&apos;s own submit button
+            only after you confirm.
           </li>
         </ul>
         <p>

@@ -640,10 +640,24 @@
         return;
       }
       const filled = runAutofill(result.candidate);
+      // Work history, education, standard answers and saved answers come from
+      // the person's Autofill profile. If it can't be loaded, basic autofill
+      // above still stands.
+      let profileHint = "";
+      const prof = await sendMessage({ type: "GET_AUTOFILL_PROFILE" });
+      if (prof.success && window.RisePlyFill) {
+        if (window.RisePlyFill.isEmptyProfile(prof.profile)) {
+          profileHint = `<p class="hint" style="margin-top:8px;">Add your work history and common answers once, and Autofill will use them: <a href="https://riseply.com/dashboard/autofill-profile" target="_blank" style="color:inherit;font-weight:600;">Set up your Autofill profile</a>.</p>`;
+        } else {
+          filled.push(...window.RisePlyFill.run(prof.profile).filled);
+        }
+      }
       if (filled.length) {
         const submitBtn = findSubmitButton();
         slot.innerHTML = `
           <p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>
+          <p class="hint" style="margin-top:4px;">Fields you had already filled were left alone. Questions you haven't answered in your Autofill profile are left for you. Need another job or school? Add the section on the form and press Autofill again.</p>
+          ${profileHint}
           ${submitBtn ? `
             <p class="hint" style="margin-top:8px;">Once your resume is attached and everything looks right:</p>
             <button class="action primary" id="riseply-submit-btn" style="margin-top:4px;">Submit application →</button>
