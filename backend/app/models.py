@@ -481,6 +481,10 @@ class CareerCoachSession(Base):
     course_id = Column(Integer, nullable=True, index=True)
     module_id = Column(String, default="", server_default="")
     recap = Column(Text, default="", server_default="")
+    # Session clock: the time the person chose (minutes, 0 = no limit) and the
+    # time actually spent working in the session (seconds, counted by the page).
+    time_limit_min = Column(Integer, default=0, server_default="0")
+    active_seconds = Column(Integer, default=0, server_default="0")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)

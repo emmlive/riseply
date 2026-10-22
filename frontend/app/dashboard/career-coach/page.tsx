@@ -15,6 +15,8 @@ import CoursePanel from "@/components/CoursePanel";
 import ModuleRecap from "@/components/ModuleRecap";
 import DiagramPad from "@/components/DiagramPad";
 import WorkArea from "@/components/WorkArea";
+import SessionClock from "@/components/SessionClock";
+import { minutesText, useSessionClock } from "@/lib/sessionClock";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
@@ -104,6 +106,7 @@ export default function CareerCoachPage() {
   const [type, setType] = useState<CareerCoachSessionType>("drill");
   const [topic, setTopic] = useState("");
   const [learningStyle, setLearningStyle] = useState<LearningStyle>("auto");
+  const [timeLimit, setTimeLimit] = useState(0);   // minutes chosen on the start form, 0 = no limit
   // "Quiz me first" on saved study notes: "" = no, "all", or a folder id.
   const [quizPick, setQuizPick] = useState("");
   const [quizOptions, setQuizOptions] = useState<QuizOptions | null>(null);
@@ -211,6 +214,7 @@ export default function CareerCoachPage() {
       setReadAloud(localStorage.getItem("cc-read-aloud") === "1");
     } catch { /* storage unavailable -- default off */ }
     try { const v = localStorage.getItem("cc-voice-interview") === "1"; setVoiceMode(v); voiceModeRef.current = v; } catch { /* default off */ }
+    try { const t = Number(localStorage.getItem("cc-time-limit")); if ([0, 15, 30, 45, 60, 90].includes(t)) setTimeLimit(t); } catch { /* default none */ }
     try { const v = localStorage.getItem("cc-interrupt") === "1"; setInterruptOn(v); interruptRef.current = v; } catch { /* default off */ }
     return () => { if (captureTimer.current) clearTimeout(captureTimer.current); voiceModeRef.current = false; userStopped.current = true; dictation.current?.stop(); stopSpeaking(); stopReveal(); };
   }, []);
@@ -677,7 +681,7 @@ export default function CareerCoachPage() {
     try {
       const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
-        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle, voice: readAloud,
+        { method: "POST", body: JSON.stringify({ session_type: type, target_role: role.trim(), topic: topic.trim(), learning_style: learningStyle, voice: readAloud, time_limit_min: timeLimit,
           ...(LESSON_TYPES.includes(type) && quizPick === "all" ? { quiz_all: true } : {}),
           ...(LESSON_TYPES.includes(type) && quizPick && quizPick !== "all" ? { quiz_folder_id: Number(quizPick) } : {}) }) }
       );
@@ -727,7 +731,7 @@ export default function CareerCoachPage() {
     pendingInterrupt.current = null;
     try {
       const reply = await api<CareerCoachMessage>(`/career-coach/sessions/${active.id}/messages`, {
-        method: "POST", body: JSON.stringify({ ...(images?.length ? { images } : {}), ...(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }) }),
+        method: "POST", body: JSON.stringify({ ...(images?.length ? { images } : {}), ...(sessionClock.minutesLeft !== null ? { minutes_left: sessionClock.minutesLeft } : {}), ...(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }) }),
       });
       setMessages((m) => [...m, reply]);
       if (reply.quiz_result) {
@@ -776,6 +780,7 @@ export default function CareerCoachPage() {
     }
   }
 
+  const sessionClock = useSessionClock(active, sending || completing);
   const usedCues = cuesUsed(messages.filter((m) => m.role === "assistant").map((m) => m.content));
   const lastCoachId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
   const voiceReady = canDictate && canSpeak && !!active && IN_CHARACTER.includes(active.session_type) && active.status === "in_progress";
@@ -804,7 +809,7 @@ export default function CareerCoachPage() {
             <span>
               <span className="cc-session-topic">{s.topic}</span>
               <span className="cc-session-meta">{typeLabel(s.session_type)} · {s.target_role}</span>
-              <span className="cc-session-meta">{formatWhen(s.created_at)}</span>
+              <span className="cc-session-meta">{formatWhen(s.created_at)}{s.active_seconds ? ` · ${minutesText(s.active_seconds)}` : ""}</span>
             </span>
             {s.status === "completed" ? <ScoreBadge score={s.score} /> : <span className="hint">In progress</span>}
           </button>
@@ -912,6 +917,15 @@ export default function CareerCoachPage() {
                 {selectedStyle && <p className="cc-seg-hint">{selectedStyle.hint}.</p>}
               </fieldset>
 
+              <div className="cc-group">
+                <label className="cc-label" htmlFor="cc-time">How much time do you have? <small>(optional)</small></label>
+                <select id="cc-time" value={timeLimit} onChange={(e) => { const v = Number(e.target.value); setTimeLimit(v); try { localStorage.setItem("cc-time-limit", String(v)); } catch { /* ignore */ } }}>
+                  <option value={0}>No time limit</option>
+                  {[15, 30, 45, 60, 90].map((m) => <option key={m} value={m}>{m} minutes</option>)}
+                </select>
+                <p className="cc-seg-hint">A timer keeps you on track. When time is short the coach wraps the lesson up. It never cuts you off.</p>
+              </div>
+
               {LESSON_TYPES.includes(type) && quizOptions && quizOptions.all > 0 && (
                 <div className="cc-group">
                   <label className="cc-label" htmlFor="cc-quiz">Warm up with a quiz on your saved notes <small>(optional)</small></label>
@@ -974,6 +988,7 @@ export default function CareerCoachPage() {
                 </div>
               </div>
 
+              <SessionClock seconds={sessionClock.seconds} limitMin={sessionClock.limitMin} onLimit={sessionClock.setLimit} live={active.status === "in_progress"} />
               <CueKey used={usedCues} />
               {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
               {active.course_id && lessonCourse && (() => {
