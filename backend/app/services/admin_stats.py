@@ -24,6 +24,8 @@ ESTIMATED_COST_PER_ACTION = {
     "career_path": 0.025,
     "course": 0.05,  # one syllabus, about 2.5k output tokens
     "task_review": 0.04,  # a draft of up to 24k characters in, a short JSON review out
+    "exam_plan": 0.03,  # one outline, about 1k output tokens
+    "exam_questions": 0.06,  # one batch of up to 10 questions with explanations, about 3.5k output tokens
     "task_guide": 0.12,  # one long answer (plan plus templates), about 7k output tokens
     "coach_video": 0.0001,  # a YouTube search is quota, not dollars; kept above zero so it shows up
 }
