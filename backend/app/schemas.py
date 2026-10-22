@@ -2219,3 +2219,30 @@ class CoachCourseListItem(BaseModel):
     modules: int = 0
     done: int = 0
     next_module: str = ""        # title of the first module not finished yet
+
+
+# --- Diagram pad ---
+
+class DiagramItemIn(BaseModel):
+    id: str = Field(min_length=1, max_length=16)
+    kind: str = Field(pattern="^(zone|box)$")
+    x: float = Field(ge=0, le=2000)
+    y: float = Field(ge=0, le=2000)
+    w: float = Field(ge=10, le=2000)
+    h: float = Field(ge=10, le=2000)
+    label: str = Field(default="", max_length=60)
+
+
+class DiagramLinkIn(BaseModel):
+    id: str = Field(min_length=1, max_length=16)
+    from_: str = Field(alias="from", min_length=1, max_length=16)
+    to: str = Field(min_length=1, max_length=16)
+    label: str = Field(default="", max_length=60)
+
+    model_config = {"populate_by_name": True}
+
+
+class DiagramIn(BaseModel):
+    items: list[DiagramItemIn] = Field(default_factory=list, max_length=40)
+    links: list[DiagramLinkIn] = Field(default_factory=list, max_length=60)
+    note: str = Field(default="", max_length=2000)

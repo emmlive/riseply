@@ -1217,7 +1217,8 @@ export default function CareerCoachPage() {
                            onClick={(e) => { if (e.target === e.currentTarget) setPadOpen(false); }}>
                        <div className="dp-panel">
                         <div className="dp-panel-head"><strong>Diagram pad</strong><button className="btn btn-ghost btn-sm" onClick={() => setPadOpen(false)}>Close</button></div>
-                        <DiagramPad key={active.id} disabled={sending}
+                        <DiagramPad key={active.id} sessionId={active.id} disabled={sending}
+                          onSaveStudy={(t) => { setPadOpen(false); setSaveDraft({ title: `${active.topic}: my diagram`, content: t, source: "manual", sourceLabel: noteLabel(active), sessionId: active.id }); }}
                           onSend={(t) => { inputRef.current = t; setPadOpen(false); send(); }}
                           onUseInReply={(t) => { setInput(t); setPadOpen(false); setTimeout(() => composerEl.current?.focus(), 0); }} />
                        </div>

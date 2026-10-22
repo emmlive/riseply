@@ -390,6 +390,34 @@ def save_clock(
     return s
 
 
+@router.get("/sessions/{session_id}/diagram")
+def get_diagram(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    s = _get_owned_session(db, session_id, user.id)
+    try:
+        data = json.loads(s.diagram or "")
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else {"items": [], "links": [], "note": ""}
+
+
+@router.put("/sessions/{session_id}/diagram")
+def save_diagram(session_id: int, payload: schemas.DiagramIn, db: Session = Depends(get_db),
+                 user: models.User = Depends(get_current_user)):
+    """Keep the person's diagram with the session so it survives a reload and
+    shows up when they reopen the lesson. Not metered; never sent to the model
+    except when they choose to send it as a message."""
+    s = _get_owned_session(db, session_id, user.id)
+    ids = {i.id for i in payload.items}
+    links = [l for l in payload.links if l.from_ in ids and l.to in ids]   # drop arrows to deleted shapes
+    s.diagram = json.dumps({
+        "items": [i.model_dump() for i in payload.items],
+        "links": [{"id": l.id, "from": l.from_, "to": l.to, "label": l.label} for l in links],
+        "note": payload.note,
+    })
+    db.commit()
+    return json.loads(s.diagram)
+
+
 @router.get("/videos", response_model=schemas.CoachVideosOut)
 def coach_videos(
     q: str = Query(..., min_length=2, max_length=100),
