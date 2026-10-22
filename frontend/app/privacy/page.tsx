@@ -92,6 +92,14 @@ export default function PrivacyPage() {
             PDF made from your resume text if you did not keep one.
           </li>
           <li>
+            <strong>ATS resume and applied status:</strong> when you press
+            Generate ATS resume, the job text on the page is sent to Riseply,
+            which saves the job in your Riseply list with a resume tailored
+            for it. The extension checks whether the page&apos;s link is
+            already in your list, and marks it as applied only when you click
+            to say you applied.
+          </li>
+          <li>
             <strong>Site logins you save:</strong> if you choose to save a
             username and password for a job site, the extension keeps them in
             your browser only. They are never sent to Riseply, and they are

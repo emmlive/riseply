@@ -28,6 +28,7 @@ Riseply Autofill adds a small sidebar to job postings so you can decide faster a
 When you open a job posting, the sidebar shows:
 - Score my resume: how well your resume matches this job, with a one-sentence reason.
 - Autofill this page: fills your name, email, phone, location and profile links, plus your work history, education and common answers from your Riseply Autofill profile. It only fills answers you chose yourself, never overwrites a field you already filled, and leaves anything you left blank for you. Filling never submits the form; you review it, and a separate Submit button in the sidebar asks you to confirm before it clicks the site's own submit button.
+- Generate ATS resume: tailors your resume to the job on the page (plain one-column layout, only what is already in your resume), saves the job in your Riseply list, and attaches the tailored resume to the form's upload field. When you tell it you applied, it marks the job as applied in Riseply.
 - Next page and Log in: the sidebar can click a site's own Next, Continue or Log in button, only after you confirm. If you choose, it saves your username and password for a job site in your browser only (never sent to Riseply) and fills them on that site's sign-in form when you ask.
 - Generate cover letter: a first draft from your resume and the posting, ready to edit.
 - Suggested answers: help with custom application questions, based on your resume.
@@ -63,7 +64,7 @@ Job postings and application forms live on thousands of different company career
 Collected data types to tick:
 - **Personally identifiable information**: the user's name, email, phone, location, work history, education, their resume file, and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms and attach their resume.
 - **Authentication information**: the sign-in token (stored locally) and the email/password typed into the extension popup, sent to Riseply to log in. Job-site logins the user chooses to save are stored only in their browser and never transmitted to us; say so in the justification.
-- **Website content**: text of the job posting the user is viewing, sent only when they click Score my resume, Generate cover letter or a suggested answer.
+- **Website content**: text of the job posting the user is viewing, sent only when they click Score my resume, Generate ATS resume, Generate cover letter or a suggested answer.
 
 Do not tick: financial, location (geolocation), web history, user activity, personal communications. If Google's form asks about health or race/ethnicity data, tick it only for the optional self-identification answers the user chooses to save and has the extension fill; say so in the justification.
 

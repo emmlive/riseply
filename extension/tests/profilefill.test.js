@@ -168,3 +168,66 @@ const profile = {
   console.log("ok: sidebar login and next");
   await b.close();
 })().catch((e) => { console.error("FAIL sidebar", e.message); process.exit(1); });
+
+// ---- sidebar: ATS resume, attach it, mark applied (sixth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  const pdf = (t) => Buffer.from("%PDF-1.4 " + t).toString("base64");
+  await p.addInitScript((pdfs) => {
+    window.__calls = [];
+    window.chrome = { runtime: { id: "x", lastError: null, sendMessage(m, cb) {
+      window.__calls.push(m);
+      const ok = (o) => setTimeout(() => cb({ success: true, ...o }), 0);
+      if (m.type === "GET_AUTH_STATE") return ok({ loggedIn: true, user: { email: "a@b.c" } });
+      if (m.type === "JOB_STATUS") return ok({ in_list: false });
+      if (m.type === "TAILOR_RESUME") return ok({ in_list: true, application_id: 7, has_tailored: true, applied: false, created: true,
+        rationale: "Led with SOX work.", ats: [{ label: "Length", ok: false, detail: "Too long." }, { label: "Plain layout", ok: true, detail: "" }] });
+      if (m.type === "GET_RESUME_FILE") return ok(m.applicationId
+        ? { filename: "tailored.pdf", content_type: "application/pdf", data: pdfs.t }
+        : { filename: "base.pdf", content_type: "application/pdf", data: pdfs.b });
+      if (m.type === "MARK_APPLIED") return ok({ found: true, already: false, status: "submitted" });
+      if (m.type === "GET_CANDIDATE") return ok({ candidate: { full_name: "Jane Doe", email: "j@x.com" } });
+      if (m.type === "GET_AUTOFILL_PROFILE") return ok({ profile: { work: [], education: [], answers: {}, eeo: {}, saved_answers: [] } });
+      return ok({});
+    } } };
+  }, { t: pdf("tailored"), b: pdf("base") });
+  await p.goto("file://" + path.join(__dirname, "fixture_sidebar_apply.html"));
+  for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
+  const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
+  const fileName = () => p.$eval("#r", (e) => Array.from(e.files).map((f) => f.name).join(","));
+
+  await q("#riseply-tailor-btn").waitFor();
+  assert.equal(await q("#riseply-applied-btn").count(), 0, "nothing to mark for a job that is not in the list");
+  await q("#riseply-tailor-btn").click();
+  await q("#riseply-attach-btn").waitFor();
+  assert.match(await q("#riseply-tailor-slot").innerText(), /ATS checks: 1 of 2 passed\. Too long\./);
+  const sent = await p.evaluate(() => window.__calls.find((c) => c.type === "TAILOR_RESUME"));
+  assert.ok(sent.title && sent.description.length > 80 && sent.url.startsWith("file://"));
+
+  // base resume goes in first (as Autofill did earlier), then the ATS one replaces it
+  await p.evaluate(() => {
+    const f = new File(["x"], "base.pdf", { type: "application/pdf" }); const dt = new DataTransfer(); dt.items.add(f);
+    const i = document.getElementById("r"); i.files = dt.files; i.dataset.riseplyAttached = "1";
+  });
+  await q("#riseply-attach-btn").click();
+  await p.waitForFunction(() => document.getElementById("r").files[0].name === "tailored.pdf");
+
+  // a file the person chose themselves is never replaced
+  await p.evaluate(() => {
+    const f = new File(["x"], "mine.pdf", { type: "application/pdf" }); const dt = new DataTransfer(); dt.items.add(f);
+    const i = document.getElementById("r"); i.files = dt.files; delete i.dataset.riseplyAttached;
+  });
+  await q("#riseply-attach-btn").click();
+  await q("#riseply-attach-msg .hint").waitFor();
+  assert.equal(await fileName(), "mine.pdf");
+
+  // marking applied is the person's own click
+  assert.equal(await p.evaluate(() => window.__calls.filter((c) => c.type === "MARK_APPLIED").length), 0);
+  await q("#riseply-applied-btn").click();
+  await q("#riseply-applied-slot .filled-list").waitFor();
+  const mark = await p.evaluate(() => window.__calls.find((c) => c.type === "MARK_APPLIED"));
+  assert.equal(mark.applicationId, 7);
+  console.log("ok: sidebar ATS resume and applied");
+  await b.close();
+})().catch((e) => { console.error("FAIL ats", e.message); process.exit(1); });

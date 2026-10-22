@@ -359,8 +359,11 @@
 
   // The input meant for a resume, or null. A single unlabeled upload field is
   // taken to be the resume only when nothing nearby says it is something else.
-  function resumeInput(file) {
-    const inputs = fileInputs().filter((el) => !(el.files && el.files.length) && acceptsFile(el, file));
+  function resumeInput(file, replace) {
+    // A box that already holds a file is left alone, except one this extension
+    // filled itself when the person asks for the tailored resume instead.
+    const free = (el) => !(el.files && el.files.length) || (replace && el.dataset.riseplyAttached === "1");
+    const inputs = fileInputs().filter((el) => free(el) && acceptsFile(el, file));
     const labeled = inputs.find((el) => { const c = contextOf(el); return RESUME_CTX.test(c) && !/cover\s*letter/.test(labelText(el)); });
     if (labeled) return labeled;
     const all = fileInputs();
@@ -372,17 +375,18 @@
 
   // `data` is base64 from the Riseply server. Chrome lets a page script give a
   // file input a file built in memory (the same thing a drag-and-drop does).
-  RF.attachResume = function (payload) {
+  RF.attachResume = function (payload, opts) {
     try {
       const bin = atob(payload.data);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const file = new File([bytes], payload.filename, { type: payload.content_type });
-      const input = resumeInput(file);
+      const input = resumeInput(file, !!(opts && opts.replace));
       if (!input) return false;
       const dt = new DataTransfer();
       dt.items.add(file);
       input.files = dt.files;
+      input.dataset.riseplyAttached = "1";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
       return true;

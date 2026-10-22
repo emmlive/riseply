@@ -573,11 +573,13 @@
       <div id="riseply-usage-slot"></div>
       <div id="riseply-score-slot"></div>
       <button class="action primary" id="riseply-score-btn">Score my resume</button>
+      <div id="riseply-tailor-slot"></div>
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
       <p class="hint">Autofill attaches your resume when the form has an upload field, and fills the rest. Check everything before you continue. Riseply never submits on its own -- you always get a final button to click yourself.</p>
       <div id="riseply-login-slot"></div>
       <div id="riseply-filled-slot"></div>
       <div id="riseply-next-slot"></div>
+      <div id="riseply-applied-slot"></div>
       <div id="riseply-questions-slot"></div>
       <button class="action secondary" id="riseply-coverletter-btn" style="margin-top:12px;">Generate cover letter</button>
       <div id="riseply-coverletter-slot"></div>
@@ -586,6 +588,7 @@
     renderUsage(root);
     renderLogin(root);
     renderNext(root);
+    refreshJobStatus(root);
     // Pages change without reloading (sign-in, then the form, then the next
     // step), so keep these two sections in step with what is on the page now.
     let lastSeen = "";
@@ -675,8 +678,9 @@
         // Attach the resume if the form has an upload field. Skipped quietly
         // when it fails: the person can still drag the file in themselves.
         if (window.RisePlyFill.hasResumeInput()) {
-          const rf = await sendMessage({ type: "GET_RESUME_FILE" });
-          if (rf.success && window.RisePlyFill.attachResume(rf)) filled.push(`resume (${rf.filename})`);
+          const tailored = pageApp && pageApp.has_tailored ? pageApp.application_id : null;
+          const rf = await sendMessage({ type: "GET_RESUME_FILE", applicationId: tailored });
+          if (rf.success && window.RisePlyFill.attachResume(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
         }
       }
       if (filled.length) {
@@ -710,7 +714,8 @@
             `;
             root.getElementById("riseply-submit-confirm").addEventListener("click", () => {
               submitBtn.click();
-              confirmSlot.innerHTML = `<p class="filled-list">✓ Submitted.</p>`;
+              confirmSlot.innerHTML = `<p class="filled-list">Clicked the site's submit button.</p>`;
+              renderApplied(root, true);
             });
             root.getElementById("riseply-submit-cancel").addEventListener("click", () => {
               confirmSlot.innerHTML = "";
@@ -989,6 +994,117 @@
         c.innerHTML = `<p class="filled-list">Clicked "${escapeHtml(adv.label)}". When the next page loads, press Autofill again.</p>`;
       });
       root.getElementById("riseply-next-no").addEventListener("click", () => { c.innerHTML = ""; });
+    });
+  }
+
+
+  // What Riseply already knows about the job on this page: in the person's
+  // list or not, tailored resume or not, applied or not.
+  let pageApp = null;
+
+  function pageUrl() { return location.href.split("#")[0]; }
+
+  async function refreshJobStatus(root) {
+    const r = await sendMessage({ type: "JOB_STATUS", url: pageUrl() });
+    pageApp = r && r.success && r.in_list ? r : null;
+    renderTailor(root);
+    renderApplied(root, false);
+  }
+
+  function atsSummary(t) {
+    const checks = t.ats || [];
+    if (!checks.length) return "";
+    const bad = checks.filter((c) => !c.ok);
+    return `<p class="hint">ATS checks: ${checks.length - bad.length} of ${checks.length} passed.${bad.map((c) => ` ${escapeHtml(c.detail)}`).join("")}</p>`;
+  }
+
+  function renderTailor(root, fresh) {
+    const slot = root.getElementById("riseply-tailor-slot");
+    if (!slot) return;
+    const link = `<a href="https://riseply.com/dashboard/applications" target="_blank" style="color:inherit;font-weight:600;">Review or edit it in Riseply</a>`;
+    if (pageApp && pageApp.has_tailored) {
+      slot.innerHTML = `
+        <p class="filled-list" style="margin-top:10px;">ATS resume ready for this job.</p>
+        ${fresh && fresh.rationale ? `<p class="hint">${escapeHtml(fresh.rationale)}</p>` : ""}
+        ${fresh ? atsSummary(fresh) : ""}
+        <button class="action secondary" id="riseply-attach-btn" style="margin-top:6px;">Attach it to this form</button>
+        <p class="hint">Autofill attaches it too. ${link}.</p>
+        <div id="riseply-attach-msg"></div>
+      `;
+      root.getElementById("riseply-attach-btn").addEventListener("click", async () => {
+        const msg = root.getElementById("riseply-attach-msg");
+        const rf = await sendMessage({ type: "GET_RESUME_FILE", applicationId: pageApp.application_id });
+        if (rf.success && window.RisePlyFill && window.RisePlyFill.attachResume(rf, { replace: true })) {
+          msg.innerHTML = `<p class="filled-list">Attached ${escapeHtml(rf.filename)}.</p>`;
+        } else {
+          msg.innerHTML = `<p class="hint">I couldn't find a resume upload box on this page yet. Open the application form and press this again.</p>`;
+        }
+      });
+      return;
+    }
+    slot.innerHTML = `
+      <button class="action secondary" id="riseply-tailor-btn" style="margin-top:6px;">Generate ATS resume</button>
+      <p class="hint">Rewrites your resume around this job's wording in a plain, one-column layout. It uses only what is already in your resume. Counts as one tailored resume this month.</p>
+      <div id="riseply-tailor-msg"></div>
+    `;
+    root.getElementById("riseply-tailor-btn").addEventListener("click", async () => {
+      const btn = root.getElementById("riseply-tailor-btn");
+      const msg = root.getElementById("riseply-tailor-msg");
+      const job = scrapeJobInfo();
+      if (!job.title.trim() || job.description.trim().length < 80) {
+        msg.innerHTML = `<p class="hint" style="color:#B23B3B;">I can't read this job's details on this page. Open the job posting, then press this again.</p>`;
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Generating… about 30 seconds";
+      const t = await sendMessage({ type: "TAILOR_RESUME", ...job, url: pageUrl() }, 150000);
+      btn.disabled = false;
+      btn.textContent = "Generate ATS resume";
+      if (!t.success) {
+        msg.innerHTML = t.status === 429
+          ? `<p class="hint" style="color:#C97A2B;">You've used this month's limit. <a href="https://riseply.com/dashboard/billing" target="_blank" style="color:#C97A2B;font-weight:600;">Upgrade to Pro</a> for more.</p>`
+          : `<p class="hint" style="color:#B23B3B;">${escapeHtml(t.error || "Couldn't generate it right now. Try again shortly.")}</p>`;
+        return;
+      }
+      pageApp = t;
+      if (!t.has_tailored) {
+        msg.innerHTML = `<p class="hint" style="color:#C97A2B;">${escapeHtml(t.notes || "The resume wasn't generated this time. Try again from Applications in Riseply.")}</p>`;
+        return;
+      }
+      renderTailor(root, t);
+      renderApplied(root, false);
+      renderUsage(root);
+    });
+  }
+
+  // After the person has applied: record it on Riseply, but only for a job in
+  // their Riseply list. Always their click; never automatic.
+  function renderApplied(root, justSubmitted) {
+    const slot = root.getElementById("riseply-applied-slot");
+    if (!slot) return;
+    if (!pageApp) {
+      slot.innerHTML = justSubmitted
+        ? `<p class="hint">This job isn't in your Riseply list, so there is nothing to mark. Generate an ATS resume for it first if you want it tracked.</p>`
+        : "";
+      return;
+    }
+    if (pageApp.applied) {
+      slot.innerHTML = `<p class="filled-list" style="margin-top:10px;">Marked as applied on Riseply.</p>`;
+      return;
+    }
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:10px;">${justSubmitted ? "Did the application go through?" : "Done on the employer's site?"}</p>
+      <button class="action secondary" id="riseply-applied-btn" style="margin-top:4px;">I've applied: mark it on Riseply</button>
+      <div id="riseply-applied-msg"></div>
+    `;
+    root.getElementById("riseply-applied-btn").addEventListener("click", async () => {
+      const r = await sendMessage({ type: "MARK_APPLIED", applicationId: pageApp.application_id, url: pageUrl() });
+      if (r.success && r.found) {
+        pageApp.applied = true;
+        renderApplied(root, false);
+      } else {
+        root.getElementById("riseply-applied-msg").innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(r.error || "Couldn't update Riseply. Try again.")}</p>`;
+      }
     });
   }
 
