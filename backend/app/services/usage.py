@@ -20,6 +20,7 @@ FREE_LIMITS = {
     "company_brief": settings.free_tier_max_company_brief_per_month,
     "career_path": settings.free_tier_max_career_path_per_month,
     "task_guide": settings.free_tier_max_task_guide_per_month,
+    "task_review": settings.free_tier_max_task_review_per_month,
     "course": settings.free_tier_max_course_per_month,
     "coach_video": settings.free_tier_max_coach_video_per_month,
 }
@@ -39,6 +40,7 @@ PRO_LIMITS = {
     "company_brief": settings.pro_tier_max_company_brief_per_month,
     "career_path": settings.pro_tier_max_career_path_per_month,
     "task_guide": settings.pro_tier_max_task_guide_per_month,
+    "task_review": settings.pro_tier_max_task_review_per_month,
     "course": settings.pro_tier_max_course_per_month,
     "coach_video": settings.pro_tier_max_coach_video_per_month,
 }

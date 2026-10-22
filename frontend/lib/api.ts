@@ -1319,5 +1319,15 @@ export interface TaskGuide {
   requirements: { item: string; why: string }[];
   materials: { name: string; kind?: string; purpose: string; template: string }[];
   steps: TaskGuideStep[]; quality_check: string[]; common_mistakes: string[]; total_time: string; done: string[];
+  review?: TaskGuideReview | null;
+}
+export interface TaskGuideReview {
+  verdict: "ready" | "almost" | "not_yet" | string;
+  summary: string;
+  meets: { item: string; note: string }[];
+  gaps: { item: string; fix: string; priority: "high" | "medium" | "low" | string }[];
+  next_step: string;
+  reviewed_at?: string;
+  source?: string;
 }
 export interface TaskGuideListItem { id: number; title: string; created_at: string; steps: number; done: number }

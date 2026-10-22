@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DraftReview from "@/components/DraftReview";
 import { api, downloadFile, TaskGuide, TaskGuideListItem, TaskGuideStep } from "@/lib/api";
 import MiniMarkdown, { hasTable } from "@/components/MiniMarkdown";
 
@@ -368,6 +369,8 @@ export default function TaskGuidePage() {
           ))}
 
           <div style={{ margin: "4px 0 0" }}><StepsActions guide={guide} /></div>
+
+          <DraftReview guide={guide} onUpdated={setGuide} />
 
           <div className="tg-two" style={{ margin: "16px 0" }}>
             {guide.quality_check.length > 0 && (
