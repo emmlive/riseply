@@ -775,6 +775,9 @@ textarea.cc-input { resize: vertical; }
 .wa-pic img { max-width: 220px; max-height: 160px; border: 1px solid var(--border-strong); border-radius: 6px; }
 .wa-attach { cursor: pointer; }
 
+.cpg-bar { height: 6px; border-radius: 3px; background: var(--border); margin-top: 12px; overflow: hidden; }
+.cpg-bar > div { height: 100%; background: var(--accent); }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;
