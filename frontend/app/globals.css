@@ -778,6 +778,15 @@ textarea.cc-input { resize: vertical; }
 .cpg-bar { height: 6px; border-radius: 3px; background: var(--border); margin-top: 12px; overflow: hidden; }
 .cpg-bar > div { height: 100%; background: var(--accent); }
 
+.sc-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 0.86rem; }
+.sc-time strong { font-variant-numeric: tabular-nums; }
+.sc-ctl { display: flex; align-items: center; gap: 8px; }
+.sc-select { width: auto; padding: 4px 8px; font-size: 0.84rem; }
+.sc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sc-bar.is-low { background: #FFF4DC; }
+.sc-bar.is-over { background: #FDE8E6; }
+.sc-note { flex-basis: 100%; margin: 0; }
+
 .cc-chat-window {
   display: flex;
   flex-direction: column;

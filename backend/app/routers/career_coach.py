@@ -141,6 +141,7 @@ def start_session(
         plan=lesson_service.dump(module["objectives"]) if module else (lesson_service.dump(result["goals"]) if result.get("goals") else ""),
         quiz_notes=study_quiz.dump_ids(quiz),
         course_id=course.id if course else None, module_id=module["id"] if module else "",
+        time_limit_min=payload.time_limit_min if payload.time_limit_min is not None else (module["minutes"] if module else 0),
     )
     if module:
         session.topic = module["title"]
@@ -232,6 +233,7 @@ def send_message(
             quiz_notes=study_quiz.load(db, user.id, session.quiz_notes), quiz_finished=bool(session.quiz_result),
             interrupted=payload.interrupted, heard_up_to=payload.heard_up_to, module=module_brief,
             images=[i.model_dump() for i in payload.images] or None,
+            minutes_left=payload.minutes_left,
         )
         reply_text, quiz_result = study_quiz.extract_result(reply_text)
         if quiz_result and not session.quiz_result:
@@ -366,6 +368,26 @@ def save_notes(
     db.commit()
     db.refresh(note)
     return note
+
+
+@router.put("/sessions/{session_id}/clock", response_model=schemas.CareerCoachSessionOut)
+def save_clock(
+    session_id: int,
+    payload: schemas.CareerCoachClockIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The page reports time spent working in the session every half minute.
+    Not metered. Time only goes up, and by at most 10 minutes per report, so a
+    stale tab or a bad value cannot rewrite the total."""
+    s = _get_owned_session(db, session_id, user.id)
+    if s.status == "in_progress":
+        s.active_seconds = max(s.active_seconds or 0, min(payload.active_seconds, (s.active_seconds or 0) + 600))
+    if payload.time_limit_min is not None:
+        s.time_limit_min = payload.time_limit_min
+    db.commit()
+    db.refresh(s)
+    return s
 
 
 @router.get("/videos", response_model=schemas.CoachVideosOut)

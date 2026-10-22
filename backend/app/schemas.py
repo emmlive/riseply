@@ -326,6 +326,8 @@ class CareerCoachSessionOut(BaseModel):
     course_id: int | None = None
     module_id: str = ""
     recap: dict | None = None
+    time_limit_min: int = 0
+    active_seconds: int = 0
 
     class Config:
         from_attributes = True
@@ -359,6 +361,9 @@ class CareerCoachStartRequest(BaseModel):
     # Teach one module of a course (the course sets the role, topic and lesson checklist).
     course_id: int | None = None
     module_id: str = Field(default="", max_length=8)
+    # Minutes the person wants to spend (0 = no limit). Left out: a course
+    # module uses its own length, anything else has no limit.
+    time_limit_min: int | None = Field(default=None, ge=0, le=240)
 
 
 class DeliveryStats(BaseModel):
@@ -395,6 +400,9 @@ class ImageIn(BaseModel):
 
 class CareerCoachMessageRequest(BaseModel):
     message: str = Field(min_length=1)
+    # Minutes left on the session clock when this was sent (negative = over time).
+    # Lets the coach pace the lesson; it changes nothing else.
+    minutes_left: int | None = Field(default=None, ge=-600, le=600)
     # Up to two pictures with this message. They go to the coach for this reply
     # only; the saved message just notes that they were attached.
     images: list[ImageIn] = Field(default_factory=list, max_length=2)
@@ -548,6 +556,11 @@ class CoachNotebookSettings(BaseModel):
 class CareerCoachStartResponse(BaseModel):
     session: CareerCoachSessionOut
     opening_message: CareerCoachMessageOut
+
+
+class CareerCoachClockIn(BaseModel):
+    active_seconds: int = Field(ge=0, le=86400)
+    time_limit_min: int | None = Field(default=None, ge=0, le=240)
 
 
 class CareerCoachNoteIn(BaseModel):
