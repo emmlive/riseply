@@ -2167,6 +2167,7 @@ class TaskGuideOut(BaseModel):
     common_mistakes: list[str] = []
     total_time: str = ""
     done: list[str] = []
+    review: dict | None = None
 
 
 class TaskGuideListItem(BaseModel):

@@ -1820,6 +1820,7 @@ class TaskGuide(Base):
     level = Column(String, default="some_experience")
     data = Column(Text, default="{}")
     done = Column(Text, default="[]")  # JSON list of finished step ids
+    review = Column(Text, default="", server_default="")  # the latest draft review (JSON), if any
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 

@@ -1,13 +1,13 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import doc_export
+from app.services import doc_export, draft_text
 from app.services import task_guide as task_guide_service
 from app.services import usage
 
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/task-guides", tags=["task-guides"])
 
 BUILD_ACTION = "task_guide"
 HELP_ACTION = "coaching_message"
+REVIEW_ACTION = "task_review"
 
 
 def _get(db: Session, user_id: int, guide_id: int) -> models.TaskGuide:
@@ -38,9 +39,13 @@ def _done(row: models.TaskGuide) -> list[str]:
 def _out(row: models.TaskGuide) -> schemas.TaskGuideOut:
     data = json.loads(row.data or "{}")
     data.pop("title", None)
+    try:
+        review = json.loads(row.review) if row.review else None
+    except Exception:
+        review = None
     return schemas.TaskGuideOut(
         id=row.id, title=row.title, task_text=row.task_text, role=row.role, level=row.level,
-        created_at=row.created_at, done=_done(row), **data,
+        created_at=row.created_at, done=_done(row), review=review if isinstance(review, dict) else None, **data,
     )
 
 
@@ -113,6 +118,42 @@ def help_with_step(guide_id: int, payload: schemas.TaskGuideHelpRequest, db: Ses
         print(f"[task_guide] help failed for guide {guide_id}: {e}")
         raise HTTPException(status_code=502, detail="Couldn't get an answer right now, and this wasn't counted against your limit. Try again shortly.")
     return schemas.TaskGuideHelpOut(reply=reply)
+
+
+@router.post("/{guide_id}/review", response_model=schemas.TaskGuideOut)
+async def review_draft(
+    guide_id: int,
+    file: UploadFile | None = File(default=None),
+    text: str = Form(default=""),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Check a finished draft (an attached file or pasted text) against the guide's
+    requirements. The latest review is kept with the guide."""
+    row = _get(db, user.id, guide_id)
+    draft = ""
+    if file is not None and file.filename:
+        try:
+            draft = draft_text.extract(file.filename, await file.read())
+        except draft_text.DraftError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    if not draft:
+        draft = (text or "").strip()[:draft_text.MAX_CHARS]
+    if len(draft) < 40:
+        raise HTTPException(status_code=400, detail="Attach your draft or paste at least a few sentences of it to review.")
+
+    usage.check_and_increment(db, user, REVIEW_ACTION, 1)
+    try:
+        review = task_guide_service.review(row.task_text, json.loads(row.data or "{}"), draft, row.level)
+    except Exception as e:
+        usage.decrement(db, user.id, REVIEW_ACTION, 1)
+        print(f"[task_guide] review failed for guide {guide_id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't review your draft right now, and this wasn't counted against your limit. Try again shortly.")
+    row.review = json.dumps({**review, "reviewed_at": datetime.utcnow().isoformat(), "source": (file.filename if file and file.filename else "pasted text")})
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return _out(row)
 
 
 @router.delete("/{guide_id}")
