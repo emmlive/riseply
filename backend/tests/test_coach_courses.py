@@ -214,3 +214,15 @@ def test_delete_course_keeps_sessions(db):
     assert client.delete(f"/career-coach/courses/{cid}").status_code == 204
     s = client.get("/career-coach/sessions").json()
     assert len(s) == 1 and s[0]["course_id"] is None
+
+
+def test_course_list_reports_next_module_and_progress(db):
+    _user(db)
+    cid = _course().json()["id"]
+    row = client.get("/career-coach/courses").json()[0]
+    assert row["done"] == 0 and row["modules"] == 4 and row["next_module"] == "Module 1"
+    sid = _start_module(cid)[0].json()["session"]["id"]
+    with patch(f"{CC}.reply", return_value="[[covered:1]][[covered:2]][[covered:3]]"), patch(RECAP, return_value=RECAP_OK):
+        _msg(sid)
+    row = client.get("/career-coach/courses").json()[0]
+    assert row["done"] == 1 and row["next_module"] == "Module 2"

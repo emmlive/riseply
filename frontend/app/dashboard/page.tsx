@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProgressGlance from "@/components/ProgressGlance";
 import NextActions from "@/components/NextActions";
+import CourseProgress from "@/components/CourseProgress";
 import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, formatWhen, DirectReport, InternalJobApplication } from "@/lib/api";
 import { isPreviewingAsIndividual } from "@/lib/previewMode";
 
@@ -420,6 +421,7 @@ export default function OverviewPage() {
         </div>
       )}
 
+      <CourseProgress />
       <NextActions />
       <ProgressGlance />
 

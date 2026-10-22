@@ -123,10 +123,16 @@ def create_course(payload: schemas.CoachCourseRequest, db: Session = Depends(get
 @router.get("", response_model=list[schemas.CoachCourseListItem])
 def list_courses(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     rows = db.query(models.CoachCourse).filter_by(user_id=user.id).order_by(models.CoachCourse.id.desc()).all()
-    return [schemas.CoachCourseListItem(
-        id=c.id, title=c.title, target_role=c.target_role, created_at=c.created_at,
-        modules=len(course_data(c).get("modules", [])), done=len(done_ids(c)),
-    ) for c in rows]
+    out = []
+    for c in rows:
+        mods = course_data(c).get("modules", [])
+        done = set(done_ids(c))
+        nxt = next((m["title"] for m in mods if m["id"] not in done), "")
+        out.append(schemas.CoachCourseListItem(
+            id=c.id, title=c.title, target_role=c.target_role, created_at=c.created_at,
+            modules=len(mods), done=len(done & {m["id"] for m in mods}), next_module=nxt,
+        ))
+    return out
 
 
 @router.get("/{course_id}", response_model=schemas.CoachCourseOut)
