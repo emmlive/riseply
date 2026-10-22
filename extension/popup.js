@@ -47,6 +47,7 @@ async function renderLoggedIn() {
   app.innerHTML = `<p class="hint">Loading…</p>`;
 
   const auth = await sendMessage({ type: "GET_AUTH_STATE" });
+  if (auth.unreachable) { renderUnreachable(auth.error); return; }
   if (!auth.loggedIn) {
     renderLoggedOut();
     return;
@@ -76,9 +77,21 @@ async function renderLoggedIn() {
   });
 }
 
+function renderUnreachable(message) {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <p class="error">${escapeHtml(message || "Couldn't reach Riseply just now.")}</p>
+    <p class="hint">You are still logged in. Riseply's server can take up to a minute to wake up after being idle.</p>
+    <button class="primary" id="retry-btn">Try again</button>
+  `;
+  document.getElementById("retry-btn").addEventListener("click", () => renderLoggedIn());
+}
+
 (async function init() {
   const auth = await sendMessage({ type: "GET_AUTH_STATE" });
-  if (auth.loggedIn) {
+  if (auth.unreachable) {
+    renderUnreachable(auth.error);
+  } else if (auth.loggedIn) {
     renderLoggedIn();
   } else {
     renderLoggedOut();

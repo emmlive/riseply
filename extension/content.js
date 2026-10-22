@@ -119,12 +119,11 @@
   }
 
   function scrapeJobInfo() {
-    const h1 = document.querySelector("h1");
-    const title = (h1?.textContent || document.title || "").trim().slice(0, 300);
-
-    const ogSite = document.querySelector('meta[property="og:site_name"]')?.content;
-    const company = (ogSite || location.hostname.replace(/^(www|jobs|careers|boards)\./, "").split(".")[0] || "")
-      .trim().slice(0, 200);
+    // Title, company and location come from jobinfo.js (structured data
+    // first, then the best heading), because the first <h1> on many career
+    // sites is just the company logo.
+    const read = window.RisePlyJob ? window.RisePlyJob.read() : { title: (document.title || "").trim().slice(0, 300), company: "", location: "" };
+    const { title, company } = read;
 
     // Blunt but robust across arbitrary site structures: the LLM doing
     // the actual scoring on the backend handles a somewhat noisy blob
@@ -133,7 +132,7 @@
     // constantly across the huge variety of ATS/career-page layouts.
     const description = (document.body?.innerText || "").trim().slice(0, 18000);
 
-    return { title, company, location: "", description };
+    return { title, company, location: read.location || "", description };
   }
 
   function sendMessage(message, timeoutMs = 15000) {
@@ -550,7 +549,7 @@
     log("GET_AUTH_STATE resolved:", auth);
 
     if (!auth.loggedIn) {
-      const timedOut = auth.success === false;
+      const timedOut = auth.success === false || auth.unreachable === true;
       log(timedOut ? "auth check timed out" : "not logged in", "-- showing prompt");
       bodyEl.innerHTML = `
         <p class="job-title">${escapeHtml(job.title)}</p>

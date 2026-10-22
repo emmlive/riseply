@@ -60,3 +60,23 @@ const profile = {
   console.log("ok:", res.filled.join(", "));
   await b.close();
 })().catch((e) => { console.error("FAIL", e.message); process.exit(1); });
+
+// ---- job info reading (second suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  const read = async (file) => {
+    await p.goto("file://" + path.join(__dirname, file));
+    await p.addScriptTag({ path: path.join(__dirname, "..", "jobinfo.js") });
+    return p.evaluate(() => window.RisePlyJob.read());
+  };
+  const a = await read("jobinfo.html");
+  assert.equal(a.title, "Associate Partner - AI Integration", "skips the logo and banner headings");
+  assert.equal(a.company, "IBM");
+  const c = await read("jobinfo_ld.html");
+  assert.equal(c.title, "Senior IT Auditor");
+  assert.equal(c.company, "Globex");
+  assert.equal(c.location, "Chicago, IL, US");
+  console.log("ok: job info");
+  await b.close();
+})().catch((e) => { console.error("FAIL jobinfo", e.message); process.exit(1); });
