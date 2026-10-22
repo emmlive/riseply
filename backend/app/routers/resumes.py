@@ -12,7 +12,8 @@ default, delete-the-default). Every other consumer across the app
 keeps working exactly as it did before this feature existed, with zero
 changes needed anywhere else.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -134,3 +135,64 @@ def delete_resume(
         _sync_default_to_user(db, user)
 
     return {"deleted": True}
+
+
+MAX_FILE_BYTES = 5 * 1024 * 1024
+_TYPES = {".pdf": (b"%PDF-", "application/pdf"),
+          ".docx": (b"PK", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+
+
+def file_type_for(name: str, data: bytes) -> str | None:
+    """The media type if this really is a PDF or Word file, else None. The name
+    alone is not trusted: the first bytes have to match too."""
+    ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    magic = _TYPES.get(ext)
+    return magic[1] if magic and data.startswith(magic[0]) else None
+
+
+def _own(db: Session, resume_id: int, user_id: int) -> models.Resume:
+    r = db.query(models.Resume).filter_by(id=resume_id, user_id=user_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+    return r
+
+
+@router.post("/{resume_id}/file", response_model=schemas.SavedResumeOut)
+async def attach_original_file(
+    resume_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Keeps the original PDF or Word file with this resume so the browser
+    extension can attach it to applications."""
+    r = _own(db, resume_id, user.id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=400, detail="That file is over 5 MB. Use a smaller PDF or Word file.")
+    name = (file.filename or "resume").replace("\\", "/").rsplit("/", 1)[-1][:120]
+    if not file_type_for(name, data):
+        raise HTTPException(status_code=400, detail="Only PDF and Word (.docx) files can be kept.")
+    r.file_name, r.file_data = name, data
+    db.commit()
+    db.refresh(r)
+    return r
+
+
+@router.delete("/{resume_id}/file", response_model=schemas.SavedResumeOut)
+def remove_original_file(resume_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    r = _own(db, resume_id, user.id)
+    r.file_name, r.file_data = "", None
+    db.commit()
+    db.refresh(r)
+    return r
+
+
+@router.get("/{resume_id}/file")
+def download_original_file(resume_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    r = _own(db, resume_id, user.id)
+    if not r.file_data:
+        raise HTTPException(status_code=404, detail="No original file is kept for this resume.")
+    mime = file_type_for(r.file_name, r.file_data) or "application/octet-stream"
+    return Response(content=r.file_data, media_type=mime,
+                    headers={"Content-Disposition": f'attachment; filename="{r.file_name}"'})

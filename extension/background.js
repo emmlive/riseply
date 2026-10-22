@@ -164,6 +164,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "GET_RESUME_FILE": {
+          const f = await apiFetch("/extension/resume-file");
+          sendResponse({ success: true, ...f });
+          break;
+        }
+
         case "GET_USAGE": {
           const usage = await apiFetch("/usage");
           sendResponse({

@@ -569,7 +569,7 @@
       <div id="riseply-score-slot"></div>
       <button class="action primary" id="riseply-score-btn">Score my resume</button>
       <button class="action secondary" id="riseply-fill-btn">Autofill this page</button>
-      <p class="hint">Autofill can't attach your resume -- browsers block scripts from setting a file upload, on purpose. Drag it in yourself once fields are filled. Riseply also won't submit on your own -- you'll always get a final button to click yourself.</p>
+      <p class="hint">Autofill attaches your resume when the form has an upload field, and fills the rest. Check everything before you continue. Riseply never submits on its own -- you always get a final button to click yourself.</p>
       <div id="riseply-filled-slot"></div>
       <div id="riseply-questions-slot"></div>
       <button class="action secondary" id="riseply-coverletter-btn" style="margin-top:12px;">Generate cover letter</button>
@@ -649,6 +649,12 @@
           profileHint = `<p class="hint" style="margin-top:8px;">Add your work history and common answers once, and Autofill will use them: <a href="https://riseply.com/dashboard/autofill-profile" target="_blank" style="color:inherit;font-weight:600;">Set up your Autofill profile</a>.</p>`;
         } else {
           filled.push(...window.RisePlyFill.run(prof.profile).filled);
+        }
+        // Attach the resume if the form has an upload field. Skipped quietly
+        // when it fails: the person can still drag the file in themselves.
+        if (window.RisePlyFill.hasResumeInput()) {
+          const rf = await sendMessage({ type: "GET_RESUME_FILE" });
+          if (rf.success && window.RisePlyFill.attachResume(rf)) filled.push(`resume (${rf.filename})`);
         }
       }
       if (filled.length) {

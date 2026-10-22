@@ -112,6 +112,7 @@ export interface SavedResume {
   resume_text: string;
   is_default: boolean;
   created_at: string;
+  file_name?: string;
 }
 
 export interface SearchProfile {

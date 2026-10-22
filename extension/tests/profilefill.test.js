@@ -80,3 +80,25 @@ const profile = {
   console.log("ok: job info");
   await b.close();
 })().catch((e) => { console.error("FAIL jobinfo", e.message); process.exit(1); });
+
+// ---- resume attach (third suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  const payload = { filename: "Jane_Resume.pdf", content_type: "application/pdf", data: Buffer.from("%PDF-1.4 test").toString("base64") };
+  const run = async (file) => {
+    await p.goto("file://" + path.join(__dirname, file));
+    await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+    return p.evaluate((pl) => window.RisePlyFill.attachResume(pl), payload);
+  };
+  const names = (sel) => p.$eval(sel, (e) => Array.from(e.files).map((f) => f.name + ":" + f.size));
+  assert.equal(await run("fixture_upload.html"), true);
+  assert.deepEqual(await names("#r"), ["Jane_Resume.pdf:13"], "resume field gets the file");
+  assert.deepEqual(await names("#c"), [], "cover letter field is left alone");
+  assert.equal(await p.evaluate((pl) => window.RisePlyFill.attachResume(pl), payload), false, "second run attaches nothing");
+  assert.equal(await run("fixture_single.html"), true);
+  assert.deepEqual(await names("#only"), ["Jane_Resume.pdf:13"], "a lone unlabeled upload field gets it");
+  assert.equal(await run("fixture_two.html"), false, "transcript and writing sample are not resumes");
+  console.log("ok: attach resume");
+  await b.close();
+})().catch((e) => { console.error("FAIL attach", e.message); process.exit(1); });

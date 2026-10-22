@@ -334,6 +334,63 @@
     });
   }
 
+  // ---------- attaching the resume file ----------
+
+  // File inputs are usually hidden behind a styled button, so visibility is
+  // not required here. The text around the input says what it is for.
+  function fileInputs() {
+    return Array.from(document.querySelectorAll('input[type="file"]')).filter((el) => !el.disabled);
+  }
+
+  function contextOf(el) {
+    const box = el.closest("div, fieldset, section, li, label") || el.parentElement;
+    return norm(labelText(el) + " " + (el.name || "") + " " + (el.id || "") + " " + (box ? box.textContent : "").slice(0, 300));
+  }
+
+  function acceptsFile(el, file) {
+    const accept = norm(el.getAttribute("accept"));
+    if (!accept) return true;
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    return accept.split(",").map((x) => x.trim()).some((a) => a === ext || a === file.type || (a.endsWith("/*") && file.type.startsWith(a.slice(0, -1))));
+  }
+
+  const RESUME_CTX = /\b(resume|r[eé]sum[eé]|cv|curriculum)\b/;
+  const OTHER_CTX = /(cover\s*letter|transcript|portfolio|writing sample|photo|picture|certificate|reference|license)/;
+
+  // The input meant for a resume, or null. A single unlabeled upload field is
+  // taken to be the resume only when nothing nearby says it is something else.
+  function resumeInput(file) {
+    const inputs = fileInputs().filter((el) => !(el.files && el.files.length) && acceptsFile(el, file));
+    const labeled = inputs.find((el) => { const c = contextOf(el); return RESUME_CTX.test(c) && !/cover\s*letter/.test(labelText(el)); });
+    if (labeled) return labeled;
+    const all = fileInputs();
+    if (all.length === 1 && inputs.length === 1 && !OTHER_CTX.test(contextOf(inputs[0]))) return inputs[0];
+    return null;
+  }
+
+  RF.hasResumeInput = function () { return fileInputs().length > 0; };
+
+  // `data` is base64 from the Riseply server. Chrome lets a page script give a
+  // file input a file built in memory (the same thing a drag-and-drop does).
+  RF.attachResume = function (payload) {
+    try {
+      const bin = atob(payload.data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const file = new File([bytes], payload.filename, { type: payload.content_type });
+      const input = resumeInput(file);
+      if (!input) return false;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
   // ---------- entry point ----------
 
   RF.run = function (profile) {
