@@ -1851,6 +1851,8 @@ class ExamPrep(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     exam_name = Column(String, nullable=False)
     outline = Column(Text, default="{}")
+    exam_date = Column(String, default="")          # YYYY-MM-DD, optional
+    hours_per_week = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

@@ -54,6 +54,15 @@ def _q_out(q: models.ExamQuestion, reveal: bool) -> dict:
     return d
 
 
+def weak_topics(qs: list, domain_id: str, limit: int = 6) -> list[str]:
+    """Topics of the questions the person has missed in a domain, most missed first."""
+    counts: dict = {}
+    for q in qs:
+        if q.domain_id == domain_id and (q.times_wrong or 0) > 0 and q.topic:
+            counts[q.topic] = counts.get(q.topic, 0) + q.times_wrong
+    return [t for t, _ in sorted(counts.items(), key=lambda x: -x[1])][:limit]
+
+
 def exam_view(db: Session, e: models.ExamPrep) -> dict:
     o = _outline(e)
     now = datetime.utcnow()
@@ -65,8 +74,10 @@ def exam_view(db: Session, e: models.ExamPrep) -> dict:
         wrong = sum(q.times_wrong for q in mine)
         doms.append({**d, "questions": len(mine), "answered": seen,
                      "accuracy": round(100 * (seen - wrong) / seen) if seen else None,
-                     "due": sum(1 for q in mine if q.due_at and q.due_at <= now)})
-    return {"id": e.id, "exam_name": e.exam_name, "name": o.get("name") or e.exam_name, "body": o.get("body", ""),
+                     "due": sum(1 for q in mine if q.due_at and q.due_at <= now),
+                     "weak_topics": weak_topics(qs, d["id"])})
+    sched = exam_prep.build_schedule(doms, e.exam_date, e.hours_per_week or 0) if e.exam_date else None
+    return {"exam_date": e.exam_date or "", "hours_per_week": e.hours_per_week or 0, "schedule": sched, "id": e.id, "exam_name": e.exam_name, "name": o.get("name") or e.exam_name, "body": o.get("body", ""),
             "confidence": o.get("confidence", "medium"), "summary": o.get("summary", ""), "domains": doms,
             "due": sum(d["due"] for d in doms), "note": NOTE, "created_at": e.created_at}
 
@@ -144,6 +155,20 @@ def delete_exam(exam_id: int, db: Session = Depends(get_db), user: models.User =
     db.delete(e)
     db.commit()
     return {"ok": True}
+
+
+@router.put("/{exam_id}/schedule")
+def set_schedule(exam_id: int, body: schemas.ExamScheduleRequest, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    e = get_owned(db, exam_id, user.id)
+    if body.exam_date:
+        try:
+            datetime.strptime(body.exam_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Use a date like 2026-12-15")
+    e.exam_date = body.exam_date
+    e.hours_per_week = body.hours_per_week
+    db.commit()
+    return exam_view(db, e)
 
 
 @router.post("/{exam_id}/practice")
@@ -248,11 +273,12 @@ def finish(attempt_id: int, body: schemas.ExamFinishRequest, db: Session = Depen
     by = _loads(a.by_domain, {})
     ans = _loads(a.answers, {})
     names = {d["id"]: d["name"] for d in _outline(e).get("domains", [])}
+    all_qs = db.query(models.ExamQuestion).filter_by(exam_id=e.id).all()
     qs = {q.id: q for q in db.query(models.ExamQuestion).filter(models.ExamQuestion.id.in_(ids)).all()}
     return {
         "score": a.score, "answered": len(ans), "total": len(ids),
         "domains": [{"id": k, "name": names.get(k, k), **v, "pct": round(100 * v["correct"] / v["total"])} for k, v in by.items()],
-        "study_next": [{"id": k, "name": names.get(k, k)} for k in exam_prep.weak_domains(by)],
+        "study_next": [{"id": k, "name": names.get(k, k), "weak_topics": weak_topics(all_qs, k)} for k in exam_prep.weak_domains(by)],
         "review": [{**_q_out(qs[i], True), "chosen": ans.get(str(i))} for i in ids],
         "note": NOTE,
     }

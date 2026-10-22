@@ -101,7 +101,7 @@ function Runner({ run, onDone }: { run: ExamRun; onDone: (r: ExamResult) => void
   );
 }
 
-function Results({ r, exam, onBack, onCourse, busyCourse }: { r: ExamResult; exam: ExamView; onBack: () => void; onCourse: (name: string) => void; busyCourse: string }) {
+function Results({ r, exam, onBack, onCourse, busyCourse }: { r: ExamResult; exam: ExamView; onBack: () => void; onCourse: (name: string, topics: string[]) => void; busyCourse: string }) {
   return (
     <div className="ex-res">
       <h2 style={{ margin: 0 }}>{r.score}% <span className="muted" style={{ fontSize: 15, fontWeight: 400 }}>{r.total} questions, {r.answered} answered</span></h2>
@@ -119,8 +119,8 @@ function Results({ r, exam, onBack, onCourse, busyCourse }: { r: ExamResult; exa
           <strong>Study these next</strong>
           {r.study_next.map((s) => (
             <div key={s.id} className="ex-next-row">
-              <span>{s.name}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => onCourse(s.name)} disabled={!!busyCourse}>
+              <span>{s.name}{s.weak_topics.length > 0 && <span className="muted" style={{ fontSize: 13 }}> · you missed: {s.weak_topics.join(", ")}</span>}</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => onCourse(s.name, s.weak_topics)} disabled={!!busyCourse}>
                 {busyCourse === s.name ? "Building…" : "Teach me this as a course"}
               </button>
             </div>
@@ -138,6 +138,63 @@ function Results({ r, exam, onBack, onCourse, busyCourse }: { r: ExamResult; exa
       ))}
       <p className="muted" style={{ fontSize: 13 }}>{r.note}</p>
       <button className="btn btn-primary btn-sm" onClick={onBack}>Back to {exam.name}</button>
+    </div>
+  );
+}
+
+function SchedulePanel({ exam, onSaved }: { exam: ExamView; onSaved: (e: ExamView) => void }) {
+  const [date, setDate] = useState(exam.exam_date);
+  const [hours, setHours] = useState(exam.hours_per_week || 5);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [editing, setEditing] = useState(!exam.exam_date);
+  const s = exam.schedule;
+  async function save(clear = false) {
+    setBusy(true); setErr("");
+    try {
+      onSaved(await api<ExamView>(`/exams/${exam.id}/schedule`, { method: "PUT", body: JSON.stringify({ exam_date: clear ? "" : date, hours_per_week: hours }) }));
+      if (clear) setDate("");
+      setEditing(clear);
+    } catch (e: any) { setErr(e.message || "Couldn't save."); }
+    setBusy(false);
+  }
+  return (
+    <div className="ex-sched">
+      {editing ? (
+        <div className="ex-sched-form">
+          <strong>When is your exam?</strong>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Exam date" />
+          <select value={hours} onChange={(e) => setHours(Number(e.target.value))} aria-label="Study hours per week">
+            {[2, 3, 5, 8, 10, 15, 20].map((h) => <option key={h} value={h}>{h} hours a week</option>)}
+          </select>
+          <button className="btn btn-primary btn-sm" onClick={() => save()} disabled={busy || !date}>{busy ? "Saving…" : "Make my weekly plan"}</button>
+        </div>
+      ) : s && !s.past ? (
+        <>
+          <div className="ex-domain-head">
+            <strong>{s.days_left} days to go · {s.weeks_left} {s.weeks_left === 1 ? "week" : "weeks"} · {s.hours_per_week} hours a week</strong>
+            <span style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Change</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => save(true)} disabled={busy}>Remove</button>
+            </span>
+          </div>
+          <p style={{ margin: "8px 0 4px" }}><strong>{s.this_week_is_final ? "This week: mock exams and review" : "This week"}</strong></p>
+          {s.this_week_is_final ? (
+            <p className="muted" style={{ margin: 0 }}>Take a timed mock exam, then review what you missed. Spend leftover time on the domains below 70%.</p>
+          ) : (
+            s.this_week.map((t) => (
+              <div key={t.domain_id} className="ex-next-row"><span>{t.name} <span className="muted" style={{ fontSize: 13 }}>· {t.why}</span></span><span>{t.hours} h</span></div>
+            ))
+          )}
+          {s.final_week && <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>{s.final_week} The plan updates as your scores change.</p>}
+        </>
+      ) : (
+        <div className="ex-domain-head">
+          <span>That exam date has passed.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Set a new date</button>
+        </div>
+      )}
+      {err && <p className="error">{err}</p>}
     </div>
   );
 }
@@ -180,11 +237,11 @@ function ExamPrepInner() {
     setRun(null); setResult(r);
     if (exam) setExam(await api<ExamView>(`/exams/${exam.id}`));
   }
-  async function course(domain: string) {
+  async function course(domain: string, topics: string[] = []) {
     if (!exam || busy) return;
     setBusy(domain); setError("");
     try {
-      const c = await api<CoachCourse>("/career-coach/courses", { method: "POST", body: JSON.stringify({ target_role: exam.name, topic: domain.slice(0, 200), skills: [] }) });
+      const c = await api<CoachCourse>("/career-coach/courses", { method: "POST", body: JSON.stringify({ target_role: exam.name, topic: domain.slice(0, 200), skills: topics.slice(0, 8) }) });
       router.push(`/dashboard/career-coach?course=${c.id}`);
     } catch (e: any) { setError(e.message || "Couldn't build the course."); setBusy(""); }
   }
@@ -208,6 +265,7 @@ function ExamPrepInner() {
           {exam.confidence === "low" ? "I don't know this exam well, so this is a general outline of the subject. " : ""}
           {exam.note}
         </div>
+        <SchedulePanel exam={exam} onSaved={setExam} />
         <div className="ex-doms">
           {exam.domains.map((d) => (
             <div key={d.id} className="ex-domain">
@@ -220,9 +278,14 @@ function ExamPrepInner() {
                 <span className="muted" style={{ fontSize: 13 }}>
                   {d.answered ? `${d.accuracy}% correct over ${d.answered} answers` : "Not started"}{d.due ? ` · ${d.due} due for review` : ""}
                 </span>
-                <button className="btn btn-ghost btn-sm" onClick={() => start(d.id, "practice", { domain_id: d.id, count: 5 })} disabled={!!busy}>
-                  {busy === d.id ? "Writing questions…" : "Practice 5"}
-                </button>
+                <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => course(d.name, d.weak_topics.length ? d.weak_topics : d.topics)} disabled={!!busy}>
+                    {busy === d.name ? "Building your course…" : "Teach me this"}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => start(d.id, "practice", { domain_id: d.id, count: 5 })} disabled={!!busy}>
+                    {busy === d.id ? "Writing questions…" : "Practice 5"}
+                  </button>
+                </span>
               </div>
             </div>
           ))}
