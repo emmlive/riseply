@@ -1350,3 +1350,12 @@ export interface ExamResult {
   study_next: { id: string; name: string; weak_topics: string[] }[];
   review: (ExamQuestionOut & { correct: number; explanation: string; chosen?: number })[];
 }
+
+// ---- Autofill profile ----
+export interface AfWork { company: string; title: string; location: string; start: string; end: string; current: boolean; summary: string }
+export interface AfEdu { school: string; degree: string; field: string; start: string; end: string }
+export interface AutofillProfile {
+  work: AfWork[]; education: AfEdu[]; skills: string[];
+  answers: Record<string, string>; eeo: Record<string, string>;
+  saved_answers: { question: string; answer: string }[];
+}

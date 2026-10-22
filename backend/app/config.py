@@ -284,6 +284,7 @@ class Settings(BaseSettings):
     free_tier_max_career_path_per_month: int = 2
     free_tier_max_task_guide_per_month: int = 3
     free_tier_max_exam_plan_per_month: int = 2
+    free_tier_max_autofill_profile_per_month: int = 3
     free_tier_max_exam_questions_per_month: int = 8
     free_tier_max_task_review_per_month: int = 5
     free_tier_max_course_per_month: int = 2
@@ -306,6 +307,7 @@ class Settings(BaseSettings):
     pro_tier_max_career_path_per_month: int = 20
     pro_tier_max_task_guide_per_month: int = 30
     pro_tier_max_exam_plan_per_month: int = 20
+    pro_tier_max_autofill_profile_per_month: int = 15
     pro_tier_max_exam_questions_per_month: int = 120
     pro_tier_max_task_review_per_month: int = 60
     pro_tier_max_course_per_month: int = 20
