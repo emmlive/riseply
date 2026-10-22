@@ -1894,3 +1894,14 @@ class ExamAttempt(Base):
     by_domain = Column(Text, default="{}")          # JSON {domain id: {correct, total}}
     started_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     finished_at = Column(DateTime, nullable=True)
+
+
+class AutofillProfile(Base):
+    """One row per person: the structured details job applications ask for
+    (services/autofill_profile.py). The JSON is validated on every write."""
+    __tablename__ = "autofill_profiles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    data = Column(Text, default="{}")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
