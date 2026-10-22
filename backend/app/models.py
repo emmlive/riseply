@@ -136,6 +136,11 @@ class Resume(Base):
     resume_text = Column(Text, default="")
     is_default = Column(Boolean, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    # The original PDF/Word file the person uploaded, kept so the browser
+    # extension can attach exactly what they uploaded (resume_text stays the
+    # source for matching and tailoring). Optional; see routers/resumes.py.
+    file_name = Column(String, default="")
+    file_data = Column(LargeBinary, nullable=True)
 
     owner = relationship("User", backref="resumes")
 

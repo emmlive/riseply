@@ -15,6 +15,8 @@ export default function ResumePage() {
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The file the person just dropped. It is kept with the resume when they press Save, so the extension can attach it.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   useEffect(() => {
     api<SavedResume[]>("/resumes").then((list) => {
@@ -33,6 +35,7 @@ export default function ResumePage() {
     setActiveId(r.id);
     setLabel(r.label);
     setResumeText(r.resume_text);
+    setPendingFile(null);
     setSaved(false);
     setError("");
   }
@@ -41,6 +44,7 @@ export default function ResumePage() {
     setActiveId(null);
     setLabel(`Resume ${resumes.length + 1}`);
     setResumeText("");
+    setPendingFile(null);
     setSaved(false);
     setError("");
   }
@@ -59,14 +63,16 @@ export default function ResumePage() {
           method: "POST",
           body: JSON.stringify({ label: label.trim(), resume_text: resumeText }),
         });
-        setResumes((prev) => [created, ...prev.map((r) => ({ ...r, is_default: created.is_default ? false : r.is_default }))]);
-        setActiveId(created.id);
+        const withFile = await keepFile(created);
+        setResumes((prev) => [withFile, ...prev.map((r) => ({ ...r, is_default: withFile.is_default ? false : r.is_default }))]);
+        setActiveId(withFile.id);
       } else {
         const updated = await api<SavedResume>(`/resumes/${activeId}`, {
           method: "PATCH",
           body: JSON.stringify({ label: label.trim(), resume_text: resumeText }),
         });
-        setResumes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+        const withFile = await keepFile(updated);
+        setResumes((prev) => prev.map((r) => (r.id === withFile.id ? withFile : r)));
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -74,6 +80,32 @@ export default function ResumePage() {
       setError(err.message || "Couldn't save your resume.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Keeps the dropped PDF/Word file with the resume. The text was already saved,
+  // so a failure here only means the extension will attach a generated PDF instead.
+  async function keepFile(r: SavedResume): Promise<SavedResume> {
+    if (!pendingFile) return r;
+    try {
+      const fd = new FormData();
+      fd.append("file", pendingFile);
+      const withFile = await api<SavedResume>(`/resumes/${r.id}/file`, { method: "POST", body: fd });
+      setPendingFile(null);
+      return withFile;
+    } catch (err: any) {
+      setError(err.message || "Saved the text, but couldn't keep the original file.");
+      return r;
+    }
+  }
+
+  async function removeFile() {
+    if (activeId === null) return;
+    try {
+      const updated = await api<SavedResume>(`/resumes/${activeId}/file`, { method: "DELETE" });
+      setResumes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (err: any) {
+      setError(err.message || "Couldn't remove the file.");
     }
   }
 
@@ -114,6 +146,7 @@ export default function ResumePage() {
         body: formData,
       });
       setResumeText(result.resume_text);
+      setPendingFile(file);
     } catch (err: any) {
       setError(err.message || "Couldn't read that file.");
     } finally {
@@ -213,6 +246,19 @@ export default function ResumePage() {
           </>
         )}
       </div>
+
+      {(pendingFile || resumes.find((r) => r.id === activeId)?.file_name) && (
+        <p className="hint" style={{ margin: "0 0 12px" }}>
+          {pendingFile
+            ? <>Press <strong>Save resume</strong> to keep <strong>{pendingFile.name}</strong>. The Riseply browser extension attaches it to applications.</>
+            : <>Original file kept: <strong>{resumes.find((r) => r.id === activeId)?.file_name}</strong>. The browser extension attaches it to applications. <button className="sg-link" onClick={removeFile}>Remove the file</button></>}
+        </p>
+      )}
+      {!pendingFile && activeId !== null && !resumes.find((r) => r.id === activeId)?.file_name && (
+        <p className="hint" style={{ margin: "0 0 12px" }}>
+          No original file kept. The extension will attach a plain PDF made from your resume text. Upload your own PDF or Word file above to attach that instead.
+        </p>
+      )}
 
       <div className="field">
         <textarea

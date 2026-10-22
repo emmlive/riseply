@@ -33,7 +33,7 @@ When you open a job posting, the sidebar shows:
 
 Nothing is sent from a page until you click one of those buttons. You need a free Riseply account (riseply.com). Free accounts have a monthly limit on scores and drafts; Pro raises it.
 
-The extension cannot attach your resume file, and it never submits anything without your explicit confirmation; that is deliberate.
+When a form has a resume upload field, Autofill attaches your resume: the original PDF or Word file you keep with your Riseply resume, or a plain PDF made from your resume text. It never submits anything without your explicit confirmation; that is deliberate.
 
 Privacy: https://riseply.com/privacy
 
@@ -60,7 +60,7 @@ Job postings and application forms live on thousands of different company career
 ## Privacy practices (dashboard "Data usage" tab)
 
 Collected data types to tick:
-- **Personally identifiable information**: the user's name, email, phone, location, work history, education and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms.
+- **Personally identifiable information**: the user's name, email, phone, location, work history, education, their resume file, and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms and attach their resume.
 - **Authentication information**: the sign-in token (stored locally) and the email/password typed into the extension popup, sent to Riseply to log in.
 - **Website content**: text of the job posting the user is viewing, sent only when they click Score my resume, Generate cover letter or a suggested answer.
 
@@ -70,7 +70,7 @@ Certify all three: not sold to third parties; not used or transferred for purpos
 
 ## Reviewer instructions ("Test instructions" box)
 
-> The extension needs a Riseply account. Test login: [create a test account at riseply.com, add a resume under Resume, and put its email and password here]. Open the popup, log in, then visit any job posting, for example any listing on boards.greenhouse.io. A sidebar appears at the top right. Click "Score my resume" to see a score, or "Autofill this page" on an application form to see fields fill. Nothing is submitted automatically.
+> The extension needs a Riseply account. Test login: [create a test account at riseply.com, add a resume under Resume, and put its email and password here]. Open the popup, log in, then visit any job posting, for example any listing on boards.greenhouse.io. A sidebar appears at the top right. Click "Score my resume" to see a score, or "Autofill this page" on an application form to see fields fill and the resume attach (if the form has an upload field). Nothing is submitted automatically.
 
 ## Things the reviewers are likely to look at
 

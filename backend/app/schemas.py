@@ -1553,6 +1553,7 @@ class SavedResumeOut(BaseModel):
     resume_text: str
     is_default: bool
     created_at: datetime
+    file_name: str = ""
 
     class Config:
         from_attributes = True

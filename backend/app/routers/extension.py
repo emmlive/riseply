@@ -242,3 +242,29 @@ CANDIDATE'S RESUME:
         usage.decrement(db, user.id, "interview_prep", 1)
         print(f"[extension] Cover letter generation failed for user {user.id}: {e}")
         raise HTTPException(status_code=502, detail="Couldn't generate a cover letter right now — try again shortly.")
+
+
+MAX_ATTACH_BYTES = 5 * 1024 * 1024
+
+
+@router.get("/resume-file")
+def resume_file_for_attach(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The resume the extension attaches to an application form: the original
+    file kept with the default resume, or a plain PDF made from its text.
+    Not metered (no AI involved)."""
+    import base64
+    from app.routers import resumes as resumes_router
+    from app.services import resume_pdf
+
+    r = db.query(models.Resume).filter_by(user_id=user.id, is_default=True).first()
+    if r and r.file_data and len(r.file_data) <= MAX_ATTACH_BYTES:
+        mime = resumes_router.file_type_for(r.file_name, r.file_data)
+        if mime:
+            return {"filename": r.file_name, "content_type": mime, "source": "uploaded",
+                    "data": base64.b64encode(r.file_data).decode()}
+    text = (r.resume_text if r else "") or user.resume_text or ""
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Add your resume in Riseply first.")
+    pdf = resume_pdf.build(text)
+    return {"filename": resume_pdf.safe_filename(user.full_name), "content_type": "application/pdf",
+            "source": "generated", "data": base64.b64encode(pdf).decode()}

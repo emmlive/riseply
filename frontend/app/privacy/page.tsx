@@ -24,7 +24,8 @@ export default function PrivacyPage() {
         <h2>What we collect</h2>
         <p>
           Your account email and password (stored as a hash, never in
-          plain text), your resume text, search profile preferences, and
+          plain text), your resume text (and, only if you choose to keep it,
+          the original PDF or Word file you uploaded), search profile preferences, and
           the applications, interview prep, onboarding plans, and Job
           Buddy conversations generated through your use of the app.
         </p>
@@ -85,7 +86,10 @@ export default function PrivacyPage() {
             you chose yourself, never overwrites a field you already filled,
             and the autofill step does not submit the form. The sidebar has a
             separate Submit button that clicks the site&apos;s own submit button
-            only after you confirm.
+            only after you confirm. If the form has a file upload field for a
+            resume, it also attaches your resume: the original PDF or Word
+            file you chose to keep with your resume in Riseply, or a plain
+            PDF made from your resume text if you did not keep one.
           </li>
         </ul>
         <p>
