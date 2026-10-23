@@ -79,31 +79,6 @@
     ) || null;
   }
 
-  function findSubmitButton() {
-    // Deliberately does NOT include "Apply Now" -- that phrase is
-    // ambiguous with the page's initial landing-page CTA (see
-    // APPLY_PATTERN above and GATE_PATTERN just above this function),
-    // and offering a "Submit application" action that's actually
-    // still pointing at the very first click of the flow would be
-    // actively misleading, not just imprecise. This pattern is
-    // specifically for the FINAL control on an already-filled-out
-    // form -- only offered (see its use in the fill-button handler
-    // below) once autofill has actually filled at least one real
-    // field this session, which is what keeps it from also matching
-    // on a landing page.
-    const SUBMIT_PATTERN = /^(submit|submit application|submit your application|send application)$/i;
-    // type="submit" inputs (not just <button>) are common on older-
-    // style/non-React ATS forms and wouldn't be caught by the a/button
-    // query alone.
-    const candidates = [
-      ...document.querySelectorAll("a, button"),
-      ...document.querySelectorAll('input[type="submit"]'),
-    ];
-    return candidates.find((el) =>
-      SUBMIT_PATTERN.test((el.value || el.textContent || "").trim())
-    ) || null;
-  }
-
   function findCoverLetterField() {
     // Looks specifically for a textarea labeled as a cover letter --
     // separate from the general custom-question detection, since this
@@ -365,7 +340,23 @@
     return questions;
   }
 
+  // "EMMANUEL OGUNYINKA" and "emmanuel ogunyinka" become "Emmanuel Ogunyinka".
+  // Names already in mixed case ("McDonald", "DeShawn") are left as typed.
+  function properName(full) {
+    const particles = new Set(["van", "von", "de", "del", "della", "der", "di", "da", "la", "le", "bin", "al", "dos", "du"]);
+    const cap = (w) => w.toLowerCase().replace(/(^|[-'’.])([a-z])/g, (m, a, b) => a + b.toUpperCase());
+    return String(full || "").trim().split(/\s+/).map((w, i, all) => {
+      if (!/[a-z]/i.test(w)) return w;
+      if (/^(ii|iii|iv)$/i.test(w)) return w.toUpperCase();
+      if (/^(jr|sr)\.?$/i.test(w)) return w[0].toUpperCase() + w.slice(1).toLowerCase();
+      if (w !== w.toUpperCase() && w !== w.toLowerCase()) return w;
+      if (i > 0 && i < all.length - 1 && particles.has(w.toLowerCase())) return w.toLowerCase();
+      return cap(w);
+    }).join(" ");
+  }
+
   function runAutofill(candidate) {
+    candidate = { ...candidate, full_name: properName(candidate.full_name) };
     const nameParts = (candidate.full_name || "").trim().split(" ");
     const first = nameParts[0] || "";
     const last = nameParts.slice(1).join(" ");
@@ -405,16 +396,6 @@
       if (fillElement(el, value)) filled.push(label);
     }
 
-    // Fields with no corresponding profile data at all (Riseply doesn't
-    // ask "what type of phone do you have"), but where a safe,
-    // universal default genuinely applies -- deliberately narrow, and
-    // called out explicitly in the result so it's never mistaken for
-    // real personal data being filled.
-    const phoneTypeEl = findField("phone type") || findField("device type");
-    if (phoneTypeEl && phoneTypeEl.tagName === "SELECT" && setSelectValue(phoneTypeEl, "mobile")) {
-      filled.push("phone type (defaulted to Mobile)");
-    }
-
     return filled;
   }
 
@@ -444,7 +425,7 @@
       padding: 2px 6px; opacity: 0.85;
     }
     .header button:hover { opacity: 1; }
-    .body { padding: 14px; font-size: 13px; }
+    .body { padding: 14px; font-size: 13px; max-height: calc(100vh - 170px); overflow-y: auto; }
     .job-title { font-weight: 600; margin: 0 0 2px 0; font-size: 13px; }
     .job-company { color: #5B6478; margin: 0 0 12px 0; font-size: 12px; }
     button.action {
@@ -672,9 +653,12 @@
       if (prof.success && window.RisePlyFill) {
         if (window.RisePlyFill.isEmptyProfile(prof.profile)) {
           profileHint = `<p class="hint" style="margin-top:8px;">Add your work history and common answers once, and Autofill will use them: <a href="https://riseply.com/dashboard/autofill-profile" target="_blank" style="color:inherit;font-weight:600;">Set up your Autofill profile</a>.</p>`;
-        } else {
-          filled.push(...window.RisePlyFill.run(prof.profile).filled);
         }
+        filled.push(...window.RisePlyFill.run(prof.profile).filled);
+        // Pick-from-a-list questions (country, state, Yes/No dropdowns) are
+        // answered one at a time; this can take a few seconds.
+        btn.textContent = "Filling lists…";
+        filled.push(...(await window.RisePlyFill.finishCustom()));
         // Attach the resume if the form has an upload field. Skipped quietly
         // when it fails: the person can still drag the file in themselves.
         if (window.RisePlyFill.hasResumeInput()) {
@@ -683,45 +667,18 @@
           if (rf.success && window.RisePlyFill.attachResume(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
         }
       }
-      if (filled.length) {
-        const submitBtn = findSubmitButton();
+      const uniqueFilled = Array.from(new Set(filled));
+      const left = window.RisePlyFill ? window.RisePlyFill.leftForYou() : [];
+      const leftHtml = left.length
+        ? `<p class="hint" style="margin-top:8px;"><strong>Still for you (${left.length}):</strong></p><ul class="hint" style="margin:2px 0 0 16px;padding:0;">${left.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>`
+        : "";
+      if (uniqueFilled.length) {
         slot.innerHTML = `
-          <p class="filled-list">Filled: ${filled.map(escapeHtml).join(", ")}.</p>
+          <p class="filled-list">Filled: ${uniqueFilled.map(escapeHtml).join(", ")}.</p>
+          ${leftHtml}
           <p class="hint" style="margin-top:4px;">Fields you had already filled were left alone. Questions you haven't answered in your Autofill profile are left for you. Need another job or school? Add the section on the form and press Autofill again.</p>
           ${profileHint}
-          ${submitBtn ? `
-            <p class="hint" style="margin-top:8px;">Once your resume is attached and everything looks right:</p>
-            <button class="action primary" id="riseply-submit-btn" style="margin-top:4px;">Submit application →</button>
-            <div id="riseply-submit-confirm-slot"></div>
-          ` : ""}
         `;
-        if (submitBtn) {
-          root.getElementById("riseply-submit-btn").addEventListener("click", () => {
-            // Two-step confirm, not a direct click -- unlike the gate
-            // button above (which just moves the person to the real
-            // form, fully reversible), this is the actual, effectively
-            // irreversible final step of a real application. Requiring
-            // an explicit second click keeps this squarely a
-            // human-initiated action Riseply is only proxying, not one
-            // it's making on the person's behalf.
-            const confirmSlot = root.getElementById("riseply-submit-confirm-slot");
-            confirmSlot.innerHTML = `
-              <p class="hint" style="color:#C97A2B;margin-top:8px;">This clicks ${escapeHtml(location.hostname)}'s own submit button. Make sure your resume is attached and everything above looks right -- this can't be undone.</p>
-              <div class="draft-actions">
-                <button class="confirm" id="riseply-submit-confirm">Yes, submit</button>
-                <button class="discard" id="riseply-submit-cancel">Cancel</button>
-              </div>
-            `;
-            root.getElementById("riseply-submit-confirm").addEventListener("click", () => {
-              submitBtn.click();
-              confirmSlot.innerHTML = `<p class="filled-list">Clicked the site's submit button.</p>`;
-              renderApplied(root, true);
-            });
-            root.getElementById("riseply-submit-cancel").addEventListener("click", () => {
-              confirmSlot.innerHTML = "";
-            });
-          });
-        }
       } else {
         const gateBtn = findApplicationGateButton();
         if (gateBtn) {
@@ -738,7 +695,7 @@
             gateBtn.click();
           });
         } else {
-          slot.innerHTML = `<p class="filled-list">Couldn't find matching fields on this page.</p>`;
+          slot.innerHTML = `<p class="filled-list">Couldn't find matching fields on this page.</p>${leftHtml}`;
         }
       }
 
@@ -967,36 +924,41 @@
     });
   }
 
-  // "Next page" / "Log in": clicks the site's own button, but only after the
-  // person confirms. Never a final Submit (that has its own button).
+  // "Next page" / "Log in" / "Submit": clicks the site's own button, but only
+  // after the person confirms. Submit is final, so it says so.
   function renderNext(root) {
     const slot = root.getElementById("riseply-next-slot");
     if (!slot) return;
     const adv = window.RisePlyFill && window.RisePlyFill.findAdvance();
     if (!adv) { slot.innerHTML = ""; return; }
-    const isLogin = /log ?in|sign ?in/i.test(adv.label);
+    const kind = adv.kind || (/log ?in|sign ?in/i.test(adv.label) ? "login" : "next");
+    const title = kind === "login" ? "Log in" : kind === "submit" ? "Submit application" : "Next page";
     slot.innerHTML = `
-      <button class="action primary" id="riseply-next-btn" style="margin-top:10px;">${isLogin ? "Log in" : "Next page"} →</button>
+      <button class="action primary" id="riseply-next-btn" style="margin-top:10px;">${title} →</button>
       <div id="riseply-next-confirm"></div>
     `;
     root.getElementById("riseply-next-btn").addEventListener("click", () => {
       const c = root.getElementById("riseply-next-confirm");
       c.innerHTML = `
-        <p class="hint" style="color:#C97A2B;">This clicks ${escapeHtml(location.hostname)}'s own "${escapeHtml(adv.label)}" button. Check what's filled in first.</p>
+        <p class="hint" style="color:#C97A2B;">This clicks ${escapeHtml(location.hostname)}'s own "${escapeHtml(adv.label)}" button. ${kind === "submit" ? "Make sure your resume is attached and everything looks right. This can't be undone." : "Check what's filled in first."}</p>
         <div class="draft-actions">
-          <button class="confirm" id="riseply-next-yes">Yes, go on</button>
+          <button class="confirm" id="riseply-next-yes">${kind === "submit" ? "Yes, submit" : "Yes, go on"}</button>
           <button class="discard" id="riseply-next-no">Cancel</button>
         </div>
       `;
       root.getElementById("riseply-next-yes").addEventListener("click", () => {
         const now = window.RisePlyFill.findAdvance(); // fresh: the page may have changed
         if (now) now.el.click();
-        c.innerHTML = `<p class="filled-list">Clicked "${escapeHtml(adv.label)}". When the next page loads, press Autofill again.</p>`;
+        if (kind === "submit") {
+          c.innerHTML = `<p class="filled-list">Clicked the site's submit button.</p>`;
+          renderApplied(root, true);
+        } else {
+          c.innerHTML = `<p class="filled-list">Clicked "${escapeHtml(adv.label)}". When the next page loads, press Autofill again.</p>`;
+        }
       });
       root.getElementById("riseply-next-no").addEventListener("click", () => { c.innerHTML = ""; });
     });
   }
-
 
   // What Riseply already knows about the job on this page: in the person's
   // list or not, tailored resume or not, applied or not.

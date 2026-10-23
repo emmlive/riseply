@@ -22,9 +22,16 @@ EEO_CHOICES = {
              "Native American or Alaska Native", "Native Hawaiian or Pacific Islander", "Other", "Decline to answer"},
     "veteran": {"", "Yes", "No", "Decline to answer"},
     "disability": {"", "Yes", "No", "Decline to answer"},
+    "hispanic": {"", "Yes", "No", "Decline to answer"},
 }
-ANSWER_KEYS = ("work_authorized_us", "needs_sponsorship", "willing_to_relocate")
-TEXT_ANSWER_KEYS = {"salary_expectation": 60, "notice_period": 60, "earliest_start_date": 60, "pronouns": 30}
+ANSWER_KEYS = ("work_authorized_us", "needs_sponsorship", "willing_to_relocate",
+               "over_18", "previously_employed", "has_employee_relationship",
+               "restrictive_agreement", "government_official", "related_to_official")
+TEXT_ANSWER_KEYS = {"salary_expectation": 60, "notice_period": 60, "earliest_start_date": 60, "pronouns": 30,
+                    "referral_source": 60}
+# Where the person lives, for the address block on application forms.
+CONTACT_TEXT_KEYS = {"address_line1": 120, "address_line2": 120, "city": 80, "state": 60, "postal_code": 20, "country": 60}
+PHONE_TYPES = {"", "Mobile", "Home", "Work"}
 
 
 def _clip(v, n: int) -> str:
@@ -34,7 +41,8 @@ def _clip(v, n: int) -> str:
 def empty() -> dict:
     return {"work": [], "education": [], "skills": [],
             "answers": {**{k: "" for k in ANSWER_KEYS}, **{k: "" for k in TEXT_ANSWER_KEYS}},
-            "eeo": {k: "" for k in EEO_CHOICES}, "saved_answers": []}
+            "eeo": {k: "" for k in EEO_CHOICES}, "saved_answers": [],
+            "contact": {**{k: "" for k in CONTACT_TEXT_KEYS}, "phone_type": ""}}
 
 
 def clean_work(items) -> list[dict]:
@@ -84,6 +92,11 @@ def clean(data) -> dict:
     for k, allowed in EEO_CHOICES.items():
         v = str(e.get(k) or "")
         out["eeo"][k] = v if v in allowed else ""
+    c = d.get("contact") if isinstance(d.get("contact"), dict) else {}
+    for k, n in CONTACT_TEXT_KEYS.items():
+        out["contact"][k] = _clip(c.get(k), n)
+    pt = str(c.get("phone_type") or "")
+    out["contact"]["phone_type"] = pt if pt in PHONE_TYPES else ""
     qa = []
     for item in (d.get("saved_answers") if isinstance(d.get("saved_answers"), list) else [])[:MAX_QA]:
         if isinstance(item, dict) and len(_clip(item.get("question"), 200)) >= 4 and _clip(item.get("answer"), 2000):

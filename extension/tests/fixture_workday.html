@@ -1,0 +1,64 @@
+<!doctype html><html><body>
+<div id="root"></div>
+<h2>Voluntary Self-Identification of Disability</h2>
+<fieldset id="dis">
+  <p>Please check one of the boxes below:*</p>
+  <div><input type="checkbox" id="d1"><label for="d1">Yes, I have a disability, or have had one in the past</label></div>
+  <div><input type="checkbox" id="d2"><label for="d2">No, I do not have a disability and have not had one in the past</label></div>
+  <div><input type="checkbox" id="d3"><label for="d3">I do not want to answer</label></div>
+</fieldset>
+<div data-automation-id="formField-date"><label for="dm">Date<span>*</span></label>
+  <div data-automation-id="dateInputWrapper"><input id="dm" data-automation-id="dateSectionMonth-input" size="2"><input data-automation-id="dateSectionDay-input" size="2"><input data-automation-id="dateSectionYear-input" size="4"></div></div>
+<label for="nm">Name*</label><input id="nm" type="text">
+<label for="sal">What is your Minimum Salary Expectation (Annual)?</label><input id="sal" type="text">
+<fieldset><legend>Have you previously worked for this organization? If Yes, please answer the questions below. CURRENT PARTNERS: Do not apply here.*</legend>
+  <label><input type="radio" name="prev" value="y"> Yes</label><label><input type="radio" name="prev" value="n"> No</label></fieldset>
+<label for="a1">Address Line 1<span>*</span></label><input id="a1" type="text">
+<label for="ct">City*</label><input id="ct" type="text">
+<label for="pc">Postal Code*</label><input id="pc" type="text">
+<label for="heard">How Did You Hear About Us?*</label>
+<div data-automation-id="multiSelectContainer"><input id="heard" data-automation-id="searchBox" role="combobox" aria-haspopup="listbox"></div>
+<label for="pcode">Country Phone Code*</label>
+<div data-automation-id="multiSelectContainer"><input id="pcode" data-automation-id="searchBox" role="combobox" aria-haspopup="listbox"></div>
+<button id="back">Back</button><button id="sub" onclick="window.__submitted=1">Submit</button>
+<script>
+function openList(btn, items, onPick) {
+  document.querySelectorAll('ul[role=listbox]').forEach(u => u.remove());
+  const ul = document.createElement('ul'); ul.setAttribute('role','listbox');
+  items.forEach(t => { const li = document.createElement('li'); li.setAttribute('role','option'); li.textContent = t;
+    li.addEventListener('click', () => { onPick(t); ul.remove(); }); ul.appendChild(li); });
+  document.body.appendChild(ul);
+}
+function dd(id, label, items) {
+  const root = document.getElementById('root');
+  const l = document.createElement('label'); l.htmlFor = id; l.innerHTML = label + '<span>*</span>';
+  const b = document.createElement('button'); b.id = id; b.type = 'button'; b.setAttribute('aria-haspopup','listbox');
+  b.setAttribute('aria-label', label + ' Select One Required'); b.textContent = 'Select One';
+  b.addEventListener('click', () => openList(b, items, t => { b.textContent = t; }));
+  root.append(l, b);
+}
+dd('country','Country',['Greece','United States of America','Canada']);
+dd('state','State',['Indiana','Illinois','Iowa']);
+dd('ptype','Phone Device Type',['Home','Mobile','Work']);
+dd('q18','Are you 18 years of age or older? (If you are under 18 years of age, you may be required to provide a work authorization permit)',['Yes','No']);
+dd('qspon','Will you now or in the future require sponsorship for employment visa status to work in the country of the position?',['Yes','No']);
+dd('qemp','Have you ever been an employee of either Northern Trust or any affiliates of Northern Trust?',['Yes','No']);
+dd('qrel','Do you currently have a personal relationship (including marital or other committed relationship) with any current Northern Trust employee, contractor, or vendor?',['Yes','No']);
+dd('qagr','Are you under any agreement/obligation with your current or prior employer which restricts your ability to work for Northern Trust?',['Yes','No']);
+dd('qgov','Are you currently or have you been in the last five years serving as a government official, either domestic or foreign?',['Yes','No']);
+dd('qrgov','Are you related to a government official, either domestic or foreign?',['Yes','No']);
+dd('qlast','Is there anything else we should know about your availability this fall?',['Yes','No']);
+dd('gender','Gender',['Female','Male','Not Declared']);
+dd('hisp','Hispanic or Latino',['Yes','No']);
+dd('race','Race/Ethnicity',['Asian (United States of America)','Black or African American (United States of America)','White (United States of America)']);
+dd('vet','Veterans Status',['I AM NOT A PROTECTED VETERAN','I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN','I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERAN','I DO NOT WISH TO SELF-IDENTIFY']);
+function typeahead(id, items) {
+  const input = document.getElementById(id);
+  input.addEventListener('keydown', e => { if (e.key !== 'Enter') return;
+    const q = input.value.toLowerCase();
+    openList(input, items.filter(t => t.toLowerCase().includes(q)), t => {
+      input.value = ''; const chip = document.createElement('div'); chip.setAttribute('data-automation-id','selectedItem'); chip.textContent = t; input.parentElement.appendChild(chip); }); });
+}
+typeahead('heard', ['Indeed.com','LinkedIn','Company website']);
+typeahead('pcode', ['Canada (+1)','United States of America (+1)']);
+</script></body></html>

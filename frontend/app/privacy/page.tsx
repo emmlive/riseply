@@ -79,7 +79,7 @@ export default function PrivacyPage() {
           <li>
             <strong>Autofill this page</strong> fetches your saved name, email,
             phone, location and profile links, and the details in your
-            Autofill profile (work history, education, the answers you chose
+            Autofill profile (work history, education, your address, the answers you chose
             for questions such as work authorization, salary and optional
             self-identification, and your saved answers) from your account
             and types them into the form on the page. It only fills answers
