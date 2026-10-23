@@ -36,7 +36,7 @@
     if (by) by.split(/\s+/).forEach((id) => { const n = document.getElementById(id); if (n) bits.push(n.textContent); });
     bits.push(el.getAttribute("aria-label") || "", el.getAttribute("placeholder") || "");
     if (!bits.join("").trim()) bits.push(el.name || "", el.id || "");
-    return norm(bits.join(" "));
+    return norm(bits.join(" ").replace(/\*/g, " "));
   }
 
   function controls(selector) {
@@ -57,8 +57,12 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  // Typeahead boxes (pick-from-a-list widgets) are not plain text.
+  const SEARCH_INPUT = 'input[data-automation-id="searchBox"], input[role="combobox"], input[aria-haspopup="listbox"], input[aria-autocomplete="list"]';
+  function isSearchInput(el) { return el.matches && el.matches(SEARCH_INPUT); }
+
   function fillText(el, value) {
-    if (!value || !isEmpty(el) || el.disabled || el.readOnly) return false;
+    if (!value || !isEmpty(el) || el.disabled || el.readOnly || isSearchInput(el)) return false;
     setValue(el, value);
     return true;
   }
@@ -91,6 +95,32 @@
     return true;
   }
 
+  function precedingHeading(el) {
+    const hs = Array.from(document.querySelectorAll('h1, h2, h3, h4, legend, [role="heading"]'))
+      .filter((h) => h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return hs.length ? hs[hs.length - 1].textContent : "";
+  }
+
+  // "Pick one" questions drawn as a few checkboxes (Yes / No / I do not want
+  // to answer) behave like radios, so they are grouped the same way.
+  function checkboxClusters() {
+    const boxes = controls('input[type="checkbox"]');
+    const seen = new Set(), out = [];
+    boxes.forEach((cb) => {
+      if (seen.has(cb)) return;
+      let box = cb.parentElement;
+      while (box && box !== document.body && boxes.filter((b) => box.contains(b)).length < 2) box = box.parentElement;
+      if (!box || box === document.body) return;
+      const inside = boxes.filter((b) => box.contains(b));
+      if (inside.length > 6) return;
+      const texts = inside.map((b) => norm(labelText(b) || b.value));
+      if (!texts.every((t) => /^(yes|no|i (do not|don'?t|am|identify|have|prefer|choose)|decline|prefer|not )/.test(t))) return;
+      inside.forEach((b) => seen.add(b));
+      out.push({ question: norm(precedingHeading(inside[0]) + " " + box.textContent.slice(0, 500)), radios: inside, texts });
+    });
+    return out;
+  }
+
   // Radio groups: the question is the fieldset legend or the nearest text
   // above the first radio; the choices are the radios' own labels.
   function radioGroups() {
@@ -100,7 +130,7 @@
       if (!byName.has(r.name)) byName.set(r.name, []);
       byName.get(r.name).push(r);
     });
-    return Array.from(byName.values()).map((radios) => {
+    const radios = Array.from(byName.values()).map((radios) => {
       const first = radios[0];
       const fs = first.closest("fieldset");
       const legend = fs?.querySelector("legend");
@@ -115,8 +145,9 @@
           node = node.parentElement; hops++;
         }
       }
-      return { question: norm(q), radios, texts: radios.map((r) => norm(labelText(r) || r.value)) };
+      return { question: norm(q.replace(/\*/g, " ")), radios, texts: radios.map((r) => norm(labelText(r) || r.value)) };
     });
+    return radios.concat(checkboxClusters());
   }
 
   function fillRadio(group, patterns) {
@@ -127,19 +158,148 @@
     return true;
   }
 
+  // ---------- custom dropdowns (button + pop-up list, typeahead) ----------
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let pending = [];
+
+  function customQuestion(el) {
+    let t = "";
+    if (el.id) {
+      const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (l) t = l.textContent;
+    }
+    if (!norm(t)) {
+      const by = el.getAttribute("aria-labelledby");
+      if (by) by.split(/\s+/).forEach((id) => { const n = document.getElementById(id); if (n) t += " " + n.textContent; });
+    }
+    if (!norm(t)) t = el.getAttribute("aria-label") || "";
+    if (!norm(t)) {
+      let node = el, hops = 0;
+      while (node && hops < 3 && !norm(t)) {
+        let prev = node.previousElementSibling;
+        while (prev && !norm(prev.textContent)) prev = prev.previousElementSibling;
+        if (prev && !prev.querySelector("input, select, button")) t = prev.textContent;
+        node = node.parentElement; hops++;
+      }
+    }
+    return norm(t.replace(/\*/g, " ").replace(/\b(select one|required)\b/gi, " "));
+  }
+
+  const DROPDOWN = 'button[aria-haspopup="listbox"], button[role="combobox"], div[role="combobox"][aria-haspopup="listbox"], div[role="combobox"][tabindex]';
+  function customDropdowns() { return controls(DROPDOWN).filter((e) => !e.disabled && e.getAttribute("aria-disabled") !== "true"); }
+  function searchInputs() { return controls(SEARCH_INPUT).filter((e) => !e.disabled && !e.readOnly); }
+
+  function hasChoice(input) {
+    const box = input.closest('[data-automation-id="multiSelectContainer"], [data-automation-id^="formField"]') || input.parentElement;
+    return !isEmpty(input) || !!(box && box.querySelector('[data-automation-id="selectedItem"], [data-automation-id="DELETE_charm"]'));
+  }
+
+  function queue(kind, el, re, patterns, label, text) {
+    if (!pending.some((p) => p.el === el)) pending.push({ kind, el, re, patterns, label, text });
+  }
+
   // One question, answered in whichever form the page uses.
-  function answerChoice(questionRe, patterns, groups) {
+  function answerChoice(questionRe, patterns, groups, label, typed) {
+    // Every control that asks this question gets the answer: the same
+    // question can appear as a radio group and again as a dropdown.
     let done = false;
     controls("select").forEach((sel) => {
-      if (done || !questionRe.test(labelText(sel))) return;
-      done = fillSelect(sel, patterns);
+      if (questionRe.test(labelText(sel)) && fillSelect(sel, patterns)) done = true;
     });
     groups.forEach((g) => {
-      if (done || !questionRe.test(g.question)) return;
-      done = fillRadio(g, patterns);
+      if (questionRe.test(g.question) && fillRadio(g, patterns)) done = true;
+    });
+    customDropdowns().forEach((el) => {
+      if (questionRe.test(customQuestion(el)) && isPlaceholder(el.textContent)) queue("list", el, questionRe, patterns, label || "answer");
+    });
+    searchInputs().forEach((el) => {
+      if (typed && questionRe.test(customQuestion(el)) && !hasChoice(el)) queue("search", el, questionRe, patterns, label || "answer", typed);
     });
     return done;
   }
+
+  function visibleOptions(el) {
+    const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
+    const owned = id && document.getElementById(id);
+    return Array.from((owned || document).querySelectorAll('[role="option"]')).filter(visible);
+  }
+
+  async function waitOptions(el, ms) {
+    const end = Date.now() + (ms || 1500);
+    while (Date.now() < end) {
+      const o = visibleOptions(el);
+      if (o.length) return o;
+      await sleep(40);
+    }
+    return [];
+  }
+
+  function press(el, key) {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+  }
+
+  function clickLikeUser(el) {
+    ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach((t) =>
+      el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })));
+  }
+
+  async function choose(opts, patterns) {
+    const i = pickByPatterns(opts.map((o) => norm(o.textContent)), patterns);
+    if (i === -1) return false;
+    clickLikeUser(opts[i]);
+    await sleep(150);
+    return true;
+  }
+
+  async function pickCustom(btn, patterns) {
+    clickLikeUser(btn);
+    const opts = await waitOptions(btn);
+    const ok = opts.length && (await choose(opts, patterns));
+    if (!ok) { press(btn, "Escape"); press(document.body, "Escape"); return false; }
+    return !isPlaceholder(btn.textContent);
+  }
+
+  async function pickSearch(input, text, patterns) {
+    input.focus();
+    setValue(input, text);
+    press(input, "Enter");
+    let opts = await waitOptions(input, 1800);
+    if (!opts.length) { press(input, "ArrowDown"); opts = await waitOptions(input, 800); }
+    const ok = opts.length && (await choose(opts, patterns));
+    if (!ok) { setValue(input, ""); press(input, "Escape"); return false; }
+    return true;
+  }
+
+  // Runs the choices queued by run(). One at a time: opening a list closes
+  // the others, and a pick (a country, say) can redraw later fields.
+  RF.finishCustom = async function () {
+    const done = [];
+    const items = pending; pending = [];
+    for (const it of items) {
+      let el = it.el;
+      if (!document.contains(el)) {
+        const again = (it.kind === "list" ? customDropdowns() : searchInputs()).find((e) => it.re.test(customQuestion(e)));
+        if (!again) continue;
+        el = again;
+      }
+      let ok = false;
+      try { ok = it.kind === "list" ? await pickCustom(el, it.patterns) : await pickSearch(el, it.text, it.patterns); } catch (e) { ok = false; }
+      if (ok) done.push(it.label);
+      await sleep(200);
+    }
+    return done;
+  };
+
+  // Questions still waiting for the person, so nothing is missed.
+  RF.leftForYou = function () {
+    const out = [];
+    customDropdowns().forEach((el) => { if (isPlaceholder(el.textContent)) out.push(customQuestion(el)); });
+    controls("select").forEach((sel) => { if (isPlaceholder(sel.selectedOptions[0]?.text || "")) out.push(labelText(sel)); });
+    radioGroups().forEach((g) => { if (g.question && !g.radios.some((r) => r.checked)) out.push(g.question); });
+    return Array.from(new Set(out.map((t) => t.trim()).filter((t) => t.length > 3).map((t) => (t.length > 100 ? t.slice(0, 97) + "..." : t)))).slice(0, 8);
+  };
 
   const YES = [/^yes$/, /^yes[,.]? (i am|i do|i can|i will)\b(?!.*\b(but|not|however)\b)/];
   const NO = [/^no$/, /^no[,.]? (i am not|i do not|i don'?t|i will not)\b/];
@@ -147,44 +307,73 @@
 
   // ---------- standard answers ----------
 
+  const rx = (re, not) => ({ test: (t) => re.test(t) && !(not && not.test(t)) });
+  const esc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const Q = {
+    over18: /\b(18|eighteen)\s+(years|or older|or over)|at least (18|eighteen)|over (the age of )?(18|eighteen)|legal (working )?age/,
+    prevEmp: /(previously|ever|formerly)\s+(been\s+)?(worked|an employee|employed)|worked (for|at|with) (this|our|the) (company|organi[sz]ation)|former employee/,
+    relationship: rx(/personal relationship|related to (a |any )?(current )?(employee|team member)|family member.*(employed|works?)/, /government|public official/),
+    restrict: /(agreement|obligation).*(restrict|limit)|non.?compete|restrictive covenant|restricts your ability/,
+    govOfficial: rx(/government official|public official|politically exposed/, /related to|relative|family/),
+    relatedOfficial: /(related to|relative of|family member of).*(government|public) official/,
+    referral: /how did you (hear|find|learn)|how .*hear about|referral source|source of (your )?(application|referral)/,
     auth: /(authori[sz]\w*|eligib\w*)\s+(to\s+)?work|legally\s+(able|permitted|entitled)\s+to\s+work|right\s+to\s+work/,
     sponsor: /sponsor/,
     relocate: /relocat/,
-    salary: /(salary|compensation|pay)\s+(expectation|requirement|range|desired)|desired\s+(salary|compensation|pay)|expected\s+(salary|compensation|pay)/,
+    salary: /(salary|compensation|pay)\s+(expectation|requirement|range|desired)|desired\s+(salary|compensation|pay)|(expected|minimum|target|annual)\s+(base\s+)?(salary|compensation|pay)|salary expectations?/,
     notice: /notice\s+period/,
     start: /(earliest|available|when\s+can\s+you).*start|start.*(earliest|availab)/,
     pronouns: /\bpronouns?\b/,
   };
 
+  // Digits only when the box is numeric ("$150,000" would be rejected there).
+  function moneyFor(el, text) {
+    const t = String(text || "");
+    const numeric = el.type === "number" || /numeric|decimal/.test(el.getAttribute("inputmode") || "") || /\bannual\b|numbers only|digits/.test(labelText(el));
+    if (numeric && /^\$?\s*[\d,\.]+\s*$/.test(t)) return t.replace(/[$,\s]/g, "").split(".")[0];
+    return t;
+  }
+
   function standardAnswers(a, groups, out) {
     const set = (key, label, re) => {
       const v = a[key];
       if (v !== "yes" && v !== "no") return;
-      if (answerChoice(re, yn(v), groups)) out.push(label);
+      if (answerChoice(re, yn(v), groups, label)) out.push(label);
     };
     set("work_authorized_us", "work authorization", Q.auth);
     set("needs_sponsorship", "visa sponsorship", Q.sponsor);
     set("willing_to_relocate", "willing to relocate", Q.relocate);
-    const text = (key, label, re) => {
+    set("over_18", "18 or older", Q.over18);
+    set("previously_employed", "worked here before", Q.prevEmp);
+    set("has_employee_relationship", "relationship with an employee", Q.relationship);
+    set("restrictive_agreement", "work restriction agreement", Q.restrict);
+    set("government_official", "government official", Q.govOfficial);
+    set("related_to_official", "related to an official", Q.relatedOfficial);
+    const text = (key, label, re, money) => {
       if (!a[key]) return;
       for (const el of controls(TEXT_INPUTS)) {
-        if (re.test(labelText(el)) && fillText(el, a[key])) { out.push(label); return; }
+        if (re.test(labelText(el)) && fillText(el, money ? moneyFor(el, a[key]) : a[key])) { out.push(label); return; }
       }
     };
-    text("salary_expectation", "salary expectation", Q.salary);
+    text("salary_expectation", "salary expectation", Q.salary, true);
     text("notice_period", "notice period", Q.notice);
     text("earliest_start_date", "start date", Q.start);
+    if (a.referral_source) {
+      const v = norm(a.referral_source);
+      text("referral_source", "how you heard about the job", Q.referral);
+      if (answerChoice(Q.referral, [new RegExp("^" + esc(v) + "$"), new RegExp("\\b" + esc(v) + "\\b")], groups, "how you heard about the job", a.referral_source)) out.push("how you heard about the job");
+    }
   }
 
   // ---------- optional self-identification ----------
 
-  const DECLINE = /(decline|prefer not|do not wish|don'?t wish|choose not|not to (say|answer|disclose|identify|specify)|rather not)/;
+  const DECLINE = /(decline|prefer not|do not wish|don'?t wish|do not want to|don'?t want to|choose not|not to (say|answer|disclose|identify|specify)|rather not)/;
   const EEO_Q = {
     gender: /\bgender\b/,
     race: /\b(race|ethnicity|racial)\b/,
-    veteran: /\bveteran\b/,
+    veteran: /\bveterans?\b/,
     disability: /\bdisabilit/,
+    hispanic: /\bhispanic\b|\blatino\b/,
   };
   const EEO_OPTIONS = {
     gender: {
@@ -204,7 +393,11 @@
     },
     veteran: {
       "Yes": [/identify as one or more|^i am (a )?(protected )?veteran|^yes$/],
-      "No": [/not a (protected )?veteran|^no$/],
+      "No": [/^(i am )?not a (protected )?veteran|^no$/],
+    },
+    hispanic: {
+      "Yes": [/^yes\b/, /^hispanic or latino$/],
+      "No": [/^no\b/, /^not hispanic/],
     },
     disability: {
       "Yes": [/^yes,? i (have|do)|^yes$/],
@@ -218,7 +411,8 @@
       if (!v) return; // blank: leave the question to the person
       const patterns = v === "Decline to answer" ? [DECLINE] : (EEO_OPTIONS[key][v] || []);
       if (!patterns.length) return;
-      if (answerChoice(EEO_Q[key], patterns, groups)) out.push(key === "race" ? "race/ethnicity" : key);
+      const label = key === "race" ? "race/ethnicity" : key;
+      if (answerChoice(EEO_Q[key], patterns, groups, label)) out.push(label);
     });
   }
 
@@ -428,6 +622,7 @@
     return out;
   };
 
+  const SUBMIT_BTN = /^(submit|submit application|submit your application|send application)$/;
   const LOGIN_BTN = /^(log ?in|sign ?in)$/;
   const NEXT_BTN = /^(next|next step|next page|continue|continue application|save (and|&) continue|proceed)$/;
 
@@ -447,20 +642,92 @@
     const all = clickables();
     if (f) {
       const l = all.find((e) => LOGIN_BTN.test(buttonText(e)));
-      if (l) return { el: l, label: buttonText(l) };
+      if (l) return { el: l, label: buttonText(l), kind: "login" };
     }
     const n = all.find((e) => NEXT_BTN.test(buttonText(e)));
-    return n ? { el: n, label: buttonText(n) } : null;
+    if (n) return { el: n, label: buttonText(n), kind: "next" };
+    const sub = all.find((e) => SUBMIT_BTN.test(buttonText(e)));
+    return sub ? { el: sub, label: buttonText(sub), kind: "submit" } : null;
   };
+
+  // ---------- address, phone, signature date ----------
+
+  const STATES = "AL Alabama,AK Alaska,AZ Arizona,AR Arkansas,CA California,CO Colorado,CT Connecticut,DE Delaware,DC District of Columbia,FL Florida,GA Georgia,HI Hawaii,ID Idaho,IL Illinois,IN Indiana,IA Iowa,KS Kansas,KY Kentucky,LA Louisiana,ME Maine,MD Maryland,MA Massachusetts,MI Michigan,MN Minnesota,MS Mississippi,MO Missouri,MT Montana,NE Nebraska,NV Nevada,NH New Hampshire,NJ New Jersey,NM New Mexico,NY New York,NC North Carolina,ND North Dakota,OH Ohio,OK Oklahoma,OR Oregon,PA Pennsylvania,RI Rhode Island,SC South Carolina,SD South Dakota,TN Tennessee,TX Texas,UT Utah,VT Vermont,VA Virginia,WA Washington,WV West Virginia,WI Wisconsin,WY Wyoming".split(",").map((x) => [x.slice(0, 2), x.slice(3)]);
+
+  function statePatterns(v) {
+    const t = norm(v);
+    const hit = STATES.find(([ab, name]) => ab.toLowerCase() === t || name.toLowerCase() === t);
+    const names = hit ? [hit[0].toLowerCase(), hit[1].toLowerCase()] : [t];
+    return names.map((n) => new RegExp("^" + esc(n) + "$")).concat(names.map((n) => new RegExp("^" + esc(n) + "\\b")));
+  }
+
+  function countryPatterns(v) {
+    const t = norm(v);
+    const us = /^(us|usa|u\.s\.a?\.?|united states( of america)?)$/.test(t);
+    const base = us ? ["united states of america", "united states", "usa"] : [t];
+    return base.map((n) => new RegExp("^" + esc(n) + "$")).concat(base.map((n) => new RegExp("^" + esc(n) + "\\b")), us ? [/\(\+1\)/] : []);
+  }
+
+  function textByLabel(re, value) {
+    if (!value) return false;
+    for (const el of controls(TEXT_INPUTS)) {
+      if (re.test(labelText(el)) && fillText(el, value)) return true;
+    }
+    return false;
+  }
+
+  function contactAnswers(c, groups, out) {
+    // Country first: a country can change which other fields the page shows.
+    if (c.country && answerChoice(/^country( ?\/ ?region)?$/, countryPatterns(c.country), groups, "country")) out.push("country");
+    else if (c.country && textByLabel(/^country( ?\/ ?region)?$/, c.country)) out.push("country");
+    if (textByLabel(/^(street )?address( line)?( 1| one)?$|^street( address)?$|^address 1$/, c.address_line1)) out.push("address");
+    if (textByLabel(/^(address line 2|apartment|apt|suite|unit)\b|address( line)? (2|two)$/, c.address_line2)) out.push("address line 2");
+    if (textByLabel(/^(city|town)( ?\/ ?(city|town))?$/, c.city)) out.push("city");
+    if (c.state) {
+      const re = /^(state|province)( ?\/ ?(state|province|territory|region))*$/;
+      if (answerChoice(re, statePatterns(c.state), groups, "state")) out.push("state");
+      else if (textByLabel(re, c.state)) out.push("state");
+    }
+    if (textByLabel(/\b(zip|postal)\b( code)?/, c.postal_code)) out.push("postal code");
+    const type = c.phone_type || "Mobile";
+    const typePats = [new RegExp("^" + esc(norm(type)) + "\\b")].concat(type === "Mobile" ? [/cell/] : []);
+    const typeLabel = c.phone_type ? "phone type" : "phone type (Mobile by default)";
+    if (answerChoice(/phone (device )?type|device type/, typePats, groups, typeLabel)) out.push(typeLabel);
+    if (c.country && answerChoice(/(country|phone|dial\w*)\s*(phone )?code|^country phone/, countryPatterns(c.country), groups, "phone country code", c.country)) out.push("phone country code");
+  }
+
+  // The "Date" next to a name on self-identification forms: today.
+  function signatureDate(out) {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0"), yyyy = String(d.getFullYear());
+    const plain = (e) => norm(labelText(e)).replace(/\brequired\b/g, "").trim();
+    for (const el of controls("input")) {
+      if (el.disabled || el.readOnly || !isEmpty(el) || plain(el) !== "date") continue;
+      if (el.type === "date") { setValue(el, `${yyyy}-${mm}-${dd}`); out.push("date"); return; }
+      const wrap = el.closest('[data-automation-id="dateInputWrapper"], [data-automation-id^="formField"]') || el.parentElement;
+      const seg = wrap ? Array.from(wrap.querySelectorAll('input[data-automation-id*="dateSection"]')) : [];
+      if (seg.length >= 3) {
+        const by = (w) => seg.find((x) => (x.getAttribute("data-automation-id") || "").toLowerCase().includes(w));
+        const [m, da, y] = [by("month"), by("day"), by("year")];
+        if (m && da && y) { setValue(m, mm); setValue(da, dd); setValue(y, yyyy); out.push("date"); return; }
+      }
+      const hint = norm(el.getAttribute("placeholder") || "");
+      const val = /dd\s*[\/-]\s*mm/.test(hint) ? `${dd}/${mm}/${yyyy}` : /yyyy\s*[-\/]\s*mm/.test(hint) ? `${yyyy}-${mm}-${dd}` : `${mm}/${dd}/${yyyy}`;
+      setValue(el, val); out.push("date"); return;
+    }
+  }
 
   // ---------- entry point ----------
 
   RF.run = function (profile) {
     const p = profile || {};
     const out = [];
+    pending = [];
     const groups = radioGroups();
+    contactAnswers(p.contact || {}, groups, out);
     standardAnswers(p.answers || {}, groups, out);
     selfIdentification(p.eeo || {}, groups, out);
+    signatureDate(out);
     history({ work: p.work || [], education: p.education || [] }, out);
     savedAnswers(p.saved_answers || [], out);
     return { filled: out };
@@ -470,7 +737,8 @@
     if (!p) return true;
     const a = Object.values(p.answers || {}).some(Boolean);
     const e = Object.values(p.eeo || {}).some(Boolean);
-    return !(a || e || (p.work || []).length || (p.education || []).length || (p.saved_answers || []).length);
+    const c = Object.values(p.contact || {}).some(Boolean);
+    return !(a || e || c || (p.work || []).length || (p.education || []).length || (p.saved_answers || []).length);
   };
 
   window.RisePlyFill = RF;

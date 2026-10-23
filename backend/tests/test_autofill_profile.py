@@ -89,3 +89,17 @@ def test_from_resume_needs_resume(db):
 def test_action_has_limits_and_cost():
     assert "autofill_profile" in usage.FREE_LIMITS and "autofill_profile" in usage.PRO_LIMITS
     assert "autofill_profile" in admin_stats.ESTIMATED_COST_PER_ACTION
+
+
+def test_address_new_answers_and_hispanic_are_kept_and_validated():
+    d = svc.clean({"contact": {"address_line1": " 1 Main St ", "city": "Plainfield", "state": "IL", "postal_code": "60585",
+                               "country": "United States", "phone_type": "Pager", "evil": "x"},
+                   "answers": {"over_18": "yes", "government_official": "no", "related_to_official": "maybe",
+                               "referral_source": "Indeed"},
+                   "eeo": {"hispanic": "No"}})
+    assert d["contact"]["address_line1"] == "1 Main St" and d["contact"]["postal_code"] == "60585"
+    assert d["contact"]["phone_type"] == "" and "evil" not in d["contact"]
+    assert d["answers"]["over_18"] == "yes" and d["answers"]["related_to_official"] == ""
+    assert d["answers"]["referral_source"] == "Indeed" and d["eeo"]["hispanic"] == "No"
+    e = svc.empty()
+    assert e["contact"]["city"] == "" and e["answers"]["previously_employed"] == "" and e["eeo"]["hispanic"] == ""

@@ -15,6 +15,15 @@ const EEO: { key: string; label: string; options: string[] }[] = [
   { key: "race", label: "Race or ethnicity", options: ["Asian", "Black or African American", "Hispanic or Latino", "White", "Two or more races", "Native American or Alaska Native", "Native Hawaiian or Pacific Islander", "Other", "Decline to answer"] },
   { key: "veteran", label: "Veteran status", options: ["Yes", "No", "Decline to answer"] },
   { key: "disability", label: "Disability status", options: ["Yes", "No", "Decline to answer"] },
+  { key: "hispanic", label: "Hispanic or Latino?", options: ["Yes", "No", "Decline to answer"] },
+];
+const YES_NO_QUESTIONS: [string, string][] = [
+  ["over_18", "Are you 18 or older?"],
+  ["previously_employed", "Have you worked for the company before? (usual answer)"],
+  ["has_employee_relationship", "Personal relationship with a current employee? (usual answer)"],
+  ["restrictive_agreement", "Bound by an agreement that limits where you can work? (usual answer)"],
+  ["government_official", "Current or recent government official?"],
+  ["related_to_official", "Related to a government official?"],
 ];
 const blankWork: AfWork = { company: "", title: "", location: "", start: "", end: "", current: false, summary: "" };
 const blankEdu: AfEdu = { school: "", degree: "", field: "", start: "", end: "" };
@@ -61,6 +70,7 @@ export default function AutofillProfilePage() {
   const setWork = (i: number, patch: Partial<AfWork>) => change({ ...p, work: p.work.map((w, n) => (n === i ? { ...w, ...patch } : w)) });
   const setEdu = (i: number, patch: Partial<AfEdu>) => change({ ...p, education: p.education.map((e, n) => (n === i ? { ...e, ...patch } : e)) });
   const setAns = (k: string, v: string) => change({ ...p, answers: { ...p.answers, [k]: v } });
+  const setContact = (k: string, v: string) => change({ ...p, contact: { ...(p.contact || {}), [k]: v } });
 
   return (
     <div className="af">
@@ -116,6 +126,23 @@ export default function AutofillProfilePage() {
           onBlur={(e) => change({ ...p, skills: e.target.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
       </label>
 
+      <h2>Address and phone</h2>
+      <p className="muted" style={{ marginTop: 0 }}>Used for the address and phone sections of application forms. Blank fields are skipped.</p>
+      <div className="card af-grid">
+        <label>Address line 1<input value={p.contact?.address_line1 || ""} onChange={(e) => setContact("address_line1", e.target.value)} /></label>
+        <label>Address line 2<input value={p.contact?.address_line2 || ""} onChange={(e) => setContact("address_line2", e.target.value)} /></label>
+        <label>City<input value={p.contact?.city || ""} onChange={(e) => setContact("city", e.target.value)} /></label>
+        <label>State<input value={p.contact?.state || ""} placeholder="e.g. IL or Illinois" onChange={(e) => setContact("state", e.target.value)} /></label>
+        <label>Postal code<input value={p.contact?.postal_code || ""} onChange={(e) => setContact("postal_code", e.target.value)} /></label>
+        <label>Country<input value={p.contact?.country || ""} placeholder="e.g. United States" onChange={(e) => setContact("country", e.target.value)} /></label>
+        <label>Phone type
+          <select value={p.contact?.phone_type || ""} onChange={(e) => setContact("phone_type", e.target.value)}>
+            <option value="">Mobile (default)</option>
+            {["Mobile", "Home", "Work"].map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </label>
+      </div>
+
       <h2>Standard answers</h2>
       <p className="muted" style={{ marginTop: 0 }}>The extension answers these questions only when you choose an answer here. Leave one blank and it skips that question.</p>
       <div className="card af-grid">
@@ -127,6 +154,15 @@ export default function AutofillProfilePage() {
         <label>Salary expectation<input value={p.answers.salary_expectation || ""} placeholder="e.g. $120,000" onChange={(e) => setAns("salary_expectation", e.target.value)} /></label>
         <label>Notice period<input value={p.answers.notice_period || ""} placeholder="e.g. Two weeks" onChange={(e) => setAns("notice_period", e.target.value)} /></label>
         <label>Earliest start date<input value={p.answers.earliest_start_date || ""} placeholder="e.g. Immediately" onChange={(e) => setAns("earliest_start_date", e.target.value)} /></label>
+        <label>How did you hear about us?<input value={p.answers.referral_source || ""} placeholder="e.g. Indeed" onChange={(e) => setAns("referral_source", e.target.value)} /></label>
+      </div>
+      <p className="muted">Questions many employers repeat. These fill only when you choose an answer, and you can change any of them on the form.</p>
+      <div className="card af-grid">
+        {YES_NO_QUESTIONS.map(([k, label]) => (
+          <label key={k}>{label}
+            <select value={p.answers[k] || ""} onChange={(e) => setAns(k, e.target.value)}>{YES_NO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          </label>
+        ))}
       </div>
 
       <h2>Voluntary self-identification</h2>

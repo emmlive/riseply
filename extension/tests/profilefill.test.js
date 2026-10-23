@@ -187,7 +187,7 @@ const profile = {
         ? { filename: "tailored.pdf", content_type: "application/pdf", data: pdfs.t }
         : { filename: "base.pdf", content_type: "application/pdf", data: pdfs.b });
       if (m.type === "MARK_APPLIED") return ok({ found: true, already: false, status: "submitted" });
-      if (m.type === "GET_CANDIDATE") return ok({ candidate: { full_name: "Jane Doe", email: "j@x.com" } });
+      if (m.type === "GET_CANDIDATE") return ok({ candidate: { full_name: "JANE DOE", email: "j@x.com" } });
       if (m.type === "GET_AUTOFILL_PROFILE") return ok({ profile: { work: [], education: [], answers: {}, eeo: {}, saved_answers: [] } });
       return ok({});
     } } };
@@ -228,6 +228,64 @@ const profile = {
   await q("#riseply-applied-slot .filled-list").waitFor();
   const mark = await p.evaluate(() => window.__calls.find((c) => c.type === "MARK_APPLIED"));
   assert.equal(mark.applicationId, 7);
+  // Autofill capitalizes an all-caps name, and the page's own Submit is offered with a confirm.
+  await q("#riseply-fill-btn").click();
+  await q("#riseply-filled-slot .filled-list").waitFor();
+  assert.equal(await p.$eval("#n", (e) => e.value), "Jane Doe");
+  assert.match(await q("#riseply-next-btn").innerText(), /Submit application/);
+  await q("#riseply-next-btn").click();
+  assert.equal(await p.evaluate(() => window.__submitted || 0), 0, "nothing is submitted before the confirm");
+  await q("#riseply-next-yes").click();
+  assert.equal(await p.evaluate(() => window.__submitted), 1);
   console.log("ok: sidebar ATS resume and applied");
   await b.close();
 })().catch((e) => { console.error("FAIL ats", e.message); process.exit(1); });
+
+// ---- Workday-style form: custom dropdowns, checkboxes, typeahead, date (seventh suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  await p.goto("file://" + path.join(__dirname, "fixture_workday.html"));
+  await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  const profile = {
+    work: [], education: [], skills: [], saved_answers: [],
+    contact: { address_line1: "23751 Tall Grass Dr", city: "Plainfield", state: "IL", postal_code: "60585", country: "United States", phone_type: "" },
+    answers: { over_18: "yes", needs_sponsorship: "no", previously_employed: "no", has_employee_relationship: "no", restrictive_agreement: "no",
+      government_official: "no", related_to_official: "no", salary_expectation: "$150,000", referral_source: "Indeed" },
+    eeo: { gender: "Man", hispanic: "No", race: "Black or African American", veteran: "No", disability: "No" },
+  };
+  const first = await p.evaluate((pr) => window.RisePlyFill.run(pr), profile);
+  const done = await p.evaluate(() => window.RisePlyFill.finishCustom());
+  const txt = (id) => p.$eval("#" + id, (e) => e.textContent);
+  const val = (id) => p.$eval("#" + id, (e) => e.value);
+
+  assert.equal(await val("a1"), "23751 Tall Grass Dr");
+  assert.equal(await val("ct"), "Plainfield");
+  assert.equal(await val("pc"), "60585");
+  assert.equal(await val("sal"), "150000", "annual salary box gets digits only");
+  assert.equal(await p.$eval('input[name=prev][value=n]', (e) => e.checked), true, "previously worked here: No");
+  assert.equal(await p.$eval("#d2", (e) => e.checked), true, "disability checkbox: No");
+  assert.equal(await p.$eval("#d1", (e) => e.checked), false);
+  assert.equal(await p.$eval("#d3", (e) => e.checked), false);
+  assert.equal(await txt("country"), "United States of America");
+  assert.equal(await txt("state"), "Illinois", "IL picks Illinois");
+  assert.equal(await txt("ptype"), "Mobile", "phone type defaults to Mobile");
+  assert.equal(await txt("q18"), "Yes");
+  assert.equal(await txt("qspon"), "No");
+  for (const id of ["qemp", "qrel", "qagr", "qgov", "qrgov"]) assert.equal(await txt(id), "No", id);
+  assert.equal(await txt("qlast"), "Select One", "a question the profile doesn't answer is left alone");
+  assert.equal(await txt("gender"), "Male");
+  assert.equal(await txt("hisp"), "No");
+  assert.equal(await txt("race"), "Black or African American (United States of America)");
+  assert.equal(await txt("vet"), "I AM NOT A PROTECTED VETERAN", "not the 'identify as a veteran' option");
+  assert.equal(await p.$eval('#heard ~ [data-automation-id=selectedItem], [data-automation-id=multiSelectContainer]:has(#heard) [data-automation-id=selectedItem]', (e) => e.textContent), "Indeed.com");
+  assert.equal(await p.$eval('[data-automation-id=multiSelectContainer]:has(#pcode) [data-automation-id=selectedItem]', (e) => e.textContent), "United States of America (+1)");
+  const today = new Date();
+  assert.deepEqual(await p.$$eval('input[data-automation-id*=dateSection]', (e) => e.map((x) => x.value)),
+    [String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0"), String(today.getFullYear())]);
+  assert.deepEqual(await p.evaluate(() => window.RisePlyFill.leftForYou()), ["is there anything else we should know about your availability this fall?"]);
+  assert.equal(await p.evaluate(() => window.RisePlyFill.findAdvance().kind), "submit");
+  assert.ok(done.includes("country") && done.includes("how you heard about the job"), done.join(","));
+  console.log("ok: workday-style form:", first.filled.concat(done).join(", "));
+  await b.close();
+})().catch((e) => { console.error("FAIL workday", e.message); process.exit(1); });

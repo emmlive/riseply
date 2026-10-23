@@ -1357,6 +1357,6 @@ export interface AfWork { company: string; title: string; location: string; star
 export interface AfEdu { school: string; degree: string; field: string; start: string; end: string }
 export interface AutofillProfile {
   work: AfWork[]; education: AfEdu[]; skills: string[];
-  answers: Record<string, string>; eeo: Record<string, string>;
+  answers: Record<string, string>; eeo: Record<string, string>; contact: Record<string, string>;
   saved_answers: { question: string; answer: string }[];
 }
