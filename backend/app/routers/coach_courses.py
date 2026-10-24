@@ -1,4 +1,6 @@
 import json
+from datetime import datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -99,12 +101,16 @@ def create_course(payload: schemas.CoachCourseRequest, db: Session = Depends(get
                   user: models.User = Depends(get_current_user)):
     if not (user.resume_text or "").strip():
         raise HTTPException(status_code=400, detail="Add your resume before building a course.")
-    if db.query(models.CoachCourse).filter_by(user_id=user.id).count() >= MAX_COURSES:
-        raise HTTPException(status_code=400, detail=f"You can keep up to {MAX_COURSES} courses. Delete one you no longer need.")
+    active = db.query(models.CoachCourse).filter_by(user_id=user.id).filter(models.CoachCourse.archived_at.is_(None)).count()
+    if active >= MAX_COURSES:
+        raise HTTPException(status_code=400, detail=f"You can keep up to {MAX_COURSES} active courses. Archive or delete one you no longer need.")
     role = payload.target_role.strip()
     topic = payload.topic.strip()
     # Reuse an existing course for the same role and topic instead of paying for another syllabus.
     for c in db.query(models.CoachCourse).filter_by(user_id=user.id, target_role=role, topic=topic).all():
+        if c.archived_at is not None:
+            c.archived_at = None
+            db.commit()
         return _course_out(db, c)
 
     usage.check_and_increment(db, user, ACTION, 1)
@@ -135,6 +141,7 @@ def list_courses(db: Session = Depends(get_db), user: models.User = Depends(get_
         out.append(schemas.CoachCourseListItem(
             id=c.id, title=c.title, target_role=c.target_role, created_at=c.created_at,
             modules=len(mods), done=len(done & {m["id"] for m in mods}), next_module=nxt,
+            archived=c.archived_at is not None,
         ))
     return out
 
@@ -142,6 +149,22 @@ def list_courses(db: Session = Depends(get_db), user: models.User = Depends(get_
 @router.get("/{course_id}", response_model=schemas.CoachCourseOut)
 def get_course(course_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return _course_out(db, get_owned(db, course_id, user.id))
+
+
+@router.post("/{course_id}/archive", status_code=204)
+def archive_course(course_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Put a course away without losing it: it leaves the active list and the
+    dashboard, and its lessons and recaps stay as they were."""
+    course = get_owned(db, course_id, user.id)
+    course.archived_at = datetime.utcnow()
+    db.commit()
+
+
+@router.post("/{course_id}/unarchive", status_code=204)
+def unarchive_course(course_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    course = get_owned(db, course_id, user.id)
+    course.archived_at = None
+    db.commit()
 
 
 @router.delete("/{course_id}", status_code=204)

@@ -10,7 +10,7 @@ export default function CourseProgress() {
   const [course, setCourse] = useState<CoachCourseListItem | null>(null);
   useEffect(() => {
     api<CoachCourseListItem[]>("/career-coach/courses")
-      .then((rows) => setCourse(rows.find((c) => c.modules > 0 && c.done < c.modules) ?? null))
+      .then((rows) => setCourse(rows.find((c) => !c.archived && c.modules > 0 && c.done < c.modules) ?? null))
       .catch(() => {});
   }, []);
   if (!course) return null;

@@ -5,13 +5,14 @@ import { minutesText } from "@/lib/sessionClock";
 
 // The syllabus: what the course covers, then its modules in order. Each
 // module is one class with the coach; finished ones keep their recap.
-export default function CoursePanel({ course, busyModule, onStart, onOpen, onClose, onDelete }: {
+export default function CoursePanel({ course, busyModule, onStart, onOpen, onClose, onDelete, onArchive }: {
   course: CoachCourse;
   busyModule: string;
   onStart: (moduleId: string) => void;
   onOpen: (sessionId: number) => void;
   onClose: () => void;
   onDelete: () => void;
+  onArchive?: () => void;
 }) {
   const nextId = course.modules.find((m) => !m.done)?.id;
   const spent = course.modules.reduce((n, m) => n + (m.spent_seconds || 0), 0);
@@ -77,7 +78,7 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
         ))}
       </ol>
       <p className="muted" style={{ margin: "12px 0 0", fontSize: "0.82rem" }}>
-        Each module has its own timer, set to its length. You can pause, stop or change it from inside the module. Every module starts from the basics, whatever your resume says. <button className="sg-link" onClick={onDelete}>Delete this course</button>
+        Each module has its own timer, set to its length. You can pause, stop or change it from inside the module. Every module starts from the basics, whatever your resume says. {onArchive && <><button className="sg-link" onClick={onArchive}>Archive this course</button>{" · "}</>}<button className="sg-link" onClick={onDelete}>Delete this course</button>
       </p>
     </div>
   );
