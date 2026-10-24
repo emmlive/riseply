@@ -216,6 +216,29 @@ def test_delete_course_keeps_sessions(db):
     assert len(s) == 1 and s[0]["course_id"] is None
 
 
+def test_archive_hides_restores_and_frees_a_slot(db):
+    from app.services import next_actions
+    _user(db)
+    cid = _course().json()["id"]
+    assert client.post(f"/career-coach/courses/{cid}/archive").status_code == 204
+    assert client.get("/career-coach/courses").json()[0]["archived"] is True
+    # Lessons and the course itself are untouched; asking for it again brings it back.
+    again = _course()
+    assert again.json()["id"] == cid
+    assert client.get("/career-coach/courses").json()[0]["archived"] is False
+    client.post(f"/career-coach/courses/{cid}/archive")
+    assert client.post(f"/career-coach/courses/{cid}/unarchive").status_code == 204
+    assert client.get("/career-coach/courses").json()[0]["archived"] is False
+
+
+def test_archive_is_private(db):
+    _user(db)
+    cid = _course().json()["id"]
+    _user(db)
+    assert client.post(f"/career-coach/courses/{cid}/archive").status_code == 404
+    assert client.post(f"/career-coach/courses/{cid}/unarchive").status_code == 404
+
+
 def test_course_list_reports_next_module_and_progress(db):
     _user(db)
     cid = _course().json()["id"]

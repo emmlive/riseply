@@ -128,7 +128,7 @@ def journey(db: Session, user: models.User, actions: list[dict] | None = None) -
     has_gap = bool(db.query(models.SkillGapReport.id).filter_by(user_id=user.id).first())
     has_plan = bool(db.query(models.CareerPathPlan.id).filter_by(user_id=user.id).first())
     has_exam = bool(db.query(models.ExamPrep.id).filter_by(user_id=user.id).first())
-    has_course = bool(db.query(models.CoachCourse.id).filter_by(user_id=user.id).first())
+    has_course = bool(db.query(models.CoachCourse.id).filter_by(user_id=user.id).filter(models.CoachCourse.archived_at.is_(None)).first())
 
     info = {
         "get_ready": (has_resume and has_autofill,

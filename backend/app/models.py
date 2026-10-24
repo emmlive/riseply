@@ -1844,6 +1844,7 @@ class CoachCourse(Base):
     data = Column(Text, default="{}")
     done = Column(Text, default="[]")  # JSON list of finished module ids
     folder_id = Column(Integer, nullable=True)  # study folder the recaps are filed in
+    archived_at = Column(DateTime, nullable=True)  # set when the person archives the course
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

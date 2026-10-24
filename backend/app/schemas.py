@@ -2239,6 +2239,7 @@ class CoachCourseListItem(BaseModel):
     modules: int = 0
     done: int = 0
     next_module: str = ""        # title of the first module not finished yet
+    archived: bool = False
 
 
 # --- Diagram pad ---

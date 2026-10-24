@@ -630,6 +630,16 @@ export default function CareerCoachPage() {
     try { return await api<CoachCourse>(`/career-coach/courses/${id}`); } catch { return null; }
   }
 
+  const [showArchived, setShowArchived] = useState(false);
+  async function courseAction(id: number, action: "archive" | "unarchive" | "delete", title = "") {
+    if (action === "delete" && !window.confirm(`Delete "${title}"? Lessons you already had stay in your past sessions.`)) return;
+    try {
+      if (action === "delete") await api(`/career-coach/courses/${id}`, { method: "DELETE" });
+      else await api(`/career-coach/courses/${id}/${action}`, { method: "POST" });
+      refreshCourses();
+    } catch (e: any) { setError(e.message || "Couldn't update the course."); }
+  }
+
   function refreshCourses() {
     api<CoachCourseListItem[]>("/career-coach/courses").then(setCourses).catch(() => {});
   }
@@ -846,6 +856,7 @@ export default function CareerCoachPage() {
               course={course} busyModule={busyModule}
               onStart={startModule}
               onOpen={(sid) => { const row = sessions.find((x) => x.id === sid); if (row) open(row); }}
+              onArchive={async () => { try { await api(`/career-coach/courses/${course.id}/archive`, { method: "POST" }); setCourse(null); refreshCourses(); } catch (e: any) { setError(e.message || "Couldn't archive the course."); } }}
               onClose={() => { setCourse(null); refreshCourses(); }}
               onDelete={async () => {
                 if (!window.confirm("Delete this course? Lessons you already had stay in your past sessions.")) return;
@@ -859,13 +870,37 @@ export default function CareerCoachPage() {
             <div className="card" style={{ padding: "18px 28px" }}>
               <h2 className="cc-card-title">Your courses</h2>
               <ul className="cp-mycourses">
-                {courses.map((c) => (
+                {courses.filter((c) => !c.archived).map((c) => (
                   <li key={c.id}>
                     <span><strong>{c.title}</strong><br /><span className="muted">{c.target_role} · {c.done} of {c.modules} modules done</span></span>
-                    <button className="btn btn-ghost btn-sm" onClick={() => openCourse(c.id)}>{c.done ? "Continue" : "Open"}</button>
+                    <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openCourse(c.id)}>{c.done ? "Continue" : "Open"}</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => courseAction(c.id, "archive")}>Archive</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => courseAction(c.id, "delete", c.title)}>Delete</button>
+                    </span>
                   </li>
                 ))}
               </ul>
+              {courses.some((c) => c.archived) && (
+                <>
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setShowArchived((v) => !v)} aria-expanded={showArchived}>
+                    {showArchived ? "Hide archived" : `Archived (${courses.filter((c) => c.archived).length})`}
+                  </button>
+                  {showArchived && (
+                    <ul className="cp-mycourses">
+                      {courses.filter((c) => c.archived).map((c) => (
+                        <li key={c.id}>
+                          <span><strong>{c.title}</strong><br /><span className="muted">{c.target_role} · {c.done} of {c.modules} modules done</span></span>
+                          <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => courseAction(c.id, "unarchive")}>Restore</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => courseAction(c.id, "delete", c.title)}>Delete</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
           )}
 

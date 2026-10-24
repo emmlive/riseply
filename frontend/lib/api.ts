@@ -683,7 +683,7 @@ export interface CoachCourse {
   done: number;
 }
 
-export interface CoachCourseListItem { id: number; title: string; target_role: string; created_at: string; modules: number; done: number; next_module?: string }
+export interface CoachCourseListItem { id: number; title: string; target_role: string; created_at: string; modules: number; done: number; next_module?: string; archived?: boolean }
 
 export interface CoachLesson { goals: string[]; covered: number[] }
 
