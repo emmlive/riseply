@@ -1490,5 +1490,5 @@ textarea.cc-input { resize: vertical; }
 .sidebar-group:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sidebar-group .chev { width: 8px; height: 8px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(45deg); transition: transform .15s; margin-right: 2px; }
 .sidebar-group[aria-expanded="false"] .chev { transform: rotate(-45deg); }
-.sidebar-sub { padding-left: 10px; }
+.sidebar-link.sidebar-sub { padding-left: 26px; }
 @media (prefers-reduced-motion: reduce) { .sidebar-group .chev { transition: none; } }
