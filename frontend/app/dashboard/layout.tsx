@@ -27,25 +27,44 @@ import QuotaLimitModal from "@/components/QuotaLimitModal";
 // separate system from external search, not a rename of it.
 const ALWAYS_NAV = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/profile", label: "Profile" },
+  { href: "/dashboard/profile", label: "Profile" }, // org users only: individuals see it under "Get ready"
   { href: "/dashboard/knowledge-base", label: "Knowledge Base" },
   { href: "/dashboard/support", label: "Support" },
   { href: "/security", label: "Security & Trust" },
 ];
 
-const INDIVIDUAL_NAV = [
+// The same five stages the Overview strip shows, so the sidebar tells the
+// story of the product: get ready, find, apply, win, grow. Everything an
+// individual job seeker uses lives in exactly one group.
+const INDIVIDUAL_GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
+  { label: "Get ready", items: [
+    { href: "/dashboard/resume", label: "Resume" },
+    { href: "/dashboard/autofill-profile", label: "Autofill profile" },
+    { href: "/dashboard/profile", label: "Profile" },
+  ] },
+  { label: "Find", items: [
+    { href: "/dashboard/profiles", label: "Search profiles" },
+    { href: "/dashboard/rise-index", label: "Rise Index" },
+  ] },
+  { label: "Apply", items: [
+    { href: "/dashboard/applications", label: "Applications" },
+  ] },
+  { label: "Win", items: [
+    { href: "/dashboard/career-coach", label: "Career Coach" },
+  ] },
+  { label: "Grow", items: [
+    { href: "/dashboard/skill-gap", label: "Skill gaps" },
+    { href: "/dashboard/career-path", label: "Career path" },
+    { href: "/dashboard/exam-prep", label: "Exam prep" },
+    { href: "/dashboard/job-buddy", label: "Job Buddy" },
+    { href: "/dashboard/task-guide", label: "Task guide" },
+    { href: "/dashboard/library", label: "Library" },
+  ] },
+];
+
+// Account and help, for individuals. Profile sits under "Get ready" above.
+const INDIVIDUAL_ACCOUNT_NAV = [
   { href: "/dashboard/progress", label: "Progress" },
-  { href: "/dashboard/rise-index", label: "Rise Index" },
-  { href: "/dashboard/profiles", label: "Search profiles" },
-  { href: "/dashboard/skill-gap", label: "Skill gaps" },
-  { href: "/dashboard/career-path", label: "Career path" },
-  { href: "/dashboard/career-coach", label: "Career Coach" },
-  { href: "/dashboard/task-guide", label: "Task guide" },
-  { href: "/dashboard/exam-prep", label: "Exam prep" },
-  { href: "/dashboard/library", label: "Library" },
-  { href: "/dashboard/resume", label: "Resume" },
-  { href: "/dashboard/autofill-profile", label: "Autofill profile" },
-  { href: "/dashboard/applications", label: "Applications" },
   { href: "/dashboard/billing", label: "Billing" },
 ];
 
@@ -147,21 +166,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             should stay), and also shown to plain individual users who
             are neither admin nor org employee (their normal, unrelated
             use of Job Buddy for personal job tracking). */}
-        {(isOrgEmployee || (!hasOrgAdminAccess && !isOrgEmployee)) && (
+        {/* Job Buddy is an employee's own home base (mentor, meetings,
+            internal jobs, onboarding chat) -- tied to THEIR OWN
+            org-linked Application. A pure admin with no employee
+            Application of their own would land on an empty picker, so it
+            shows for org employees here; plain individuals find it under
+            "Grow" below. */}
+        {isOrgEmployee && (
           <Link href="/dashboard/job-buddy" className={`sidebar-link ${pathname === "/dashboard/job-buddy" ? "active" : ""}`}>
             Job Buddy
           </Link>
         )}
-        {showIndividualNav && INDIVIDUAL_NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`sidebar-link ${pathname === item.href ? "active" : ""}`}
-          >
+        {showIndividualNav && INDIVIDUAL_GROUPS.map((group) => (
+          <div key={group.label} style={{ display: "contents" }}>
+            <div className="sidebar-group">{group.label}</div>
+            {group.items.map((item) => (
+              <Link key={item.href} href={item.href} className={`sidebar-link ${pathname === item.href ? "active" : ""}`}>
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        ))}
+        {showIndividualNav && <div className="sidebar-group">Account</div>}
+        {showIndividualNav && INDIVIDUAL_ACCOUNT_NAV.map((item) => (
+          <Link key={item.href} href={item.href} className={`sidebar-link ${pathname === item.href ? "active" : ""}`}>
             {item.label}
           </Link>
         ))}
-        {ALWAYS_NAV.filter((item) => item.href !== "/dashboard").map((item) => (
+        {ALWAYS_NAV.filter((item) => item.href !== "/dashboard" && !(showIndividualNav && item.href === "/dashboard/profile")).map((item) => (
           <Link
             key={item.href}
             href={item.href}

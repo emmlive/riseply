@@ -2079,10 +2079,25 @@ class RejectRequest(BaseModel):
 
 class NextAction(BaseModel):
     key: str
+    stage: str = ""
     title: str
     detail: str = ""
     href: str
     cta: str = "Open"
+
+
+class JourneyStage(BaseModel):
+    key: str
+    label: str
+    blurb: str
+    stat: str
+    href: str
+    state: str  # done | current | todo
+
+
+class Journey(BaseModel):
+    current: str
+    stages: list[JourneyStage]
 
 
 # --- Career Coach videos ---

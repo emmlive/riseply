@@ -1462,3 +1462,27 @@ textarea.cc-input { resize: vertical; }
 :root[data-theme="dark"] .ex-low { color: #F5877A; }
 :root[data-theme="dark"] .dp-overlay, :root[data-theme="dark"] .cc-rec-overlay { background: rgba(0, 0, 0, 0.6); }
 :root[data-theme="dark"] .cc-rule { background: var(--border); }
+
+/* The career loop: five stages, where the person is on them */
+.journey { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 16px; }
+.journey-step {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); text-decoration: none; min-width: 0;
+}
+.journey-step:hover { border-color: var(--border-strong); }
+.journey-step.current { border-color: var(--accent); background: var(--accent-soft); }
+.journey-mark {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 0.78rem; font-weight: 700; border: 1px solid var(--border-strong); color: var(--ink-muted);
+}
+.journey-step.done .journey-mark { background: var(--accent); border-color: var(--accent); color: #fff; }
+.journey-step.current .journey-mark { border-color: var(--accent); color: var(--accent-hover); }
+.journey-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.journey-text strong { font-size: 0.9rem; }
+.journey-stat { font-size: 0.76rem; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 860px) { .journey { grid-template-columns: 1fr 1fr; } }
+.na-stage {
+  display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent-hover);
+}
+.sidebar-group { margin: 14px 8px 2px; font-size: 0.74rem; font-weight: 600; color: var(--ink-muted); letter-spacing: 0.02em; }
