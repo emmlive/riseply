@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProgressGlance from "@/components/ProgressGlance";
 import NextActions from "@/components/NextActions";
+import JourneyStrip from "@/components/JourneyStrip";
 import CourseProgress from "@/components/CourseProgress";
 import { api, Application, Usage, RiseIndexMe, NearMiss, User, SearchProfile, Organization, showQuotaLimitModal, formatSalary, formatWhen, DirectReport, InternalJobApplication } from "@/lib/api";
 import { isPreviewingAsIndividual } from "@/lib/previewMode";
@@ -342,6 +343,8 @@ export default function OverviewPage() {
           )}
         </div>
       </div>
+
+      <JourneyStrip />
 
       {!checklistDismissed && hasResume !== null && profileCount !== null && (hasResume === false || profileCount === 0 || !hasSearchedBefore) && (
         <div className="card" style={{ borderColor: "var(--accent)" }}>

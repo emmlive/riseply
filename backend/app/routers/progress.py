@@ -36,3 +36,10 @@ def get_next_actions(db: Session = Depends(get_db), user: models.User = Depends(
     """Up to four suggestions for what to do next, from what the person already
     has. Read-only, no AI call, not metered."""
     return next_actions_service.build(db, user)
+
+
+@router.get("/journey", response_model=schemas.Journey)
+def get_journey(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Where the person is along the five stages (get ready, find, apply, win,
+    grow), with one short status line each. Read-only, no AI call."""
+    return next_actions_service.journey(db, user)

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 
-interface NextAction { key: string; title: string; detail: string; href: string; cta: string }
+interface NextAction { key: string; stage?: string; title: string; detail: string; href: string; cta: string }
+const STAGE_LABEL: Record<string, string> = { get_ready: "Get ready", find: "Find", apply: "Apply", win: "Win", grow: "Grow" };
 
 // "Do this next": up to four suggestions worked out from what the person
 // already has. Shows nothing while loading, on error, or when there is
@@ -20,6 +21,7 @@ export default function NextActions() {
         {items.map((a) => (
           <li key={a.key}>
             <div>
+              {a.stage && STAGE_LABEL[a.stage] && <span className="na-stage">{STAGE_LABEL[a.stage]}</span>}
               <strong>{a.title}</strong>
               {a.detail && <p className="hint" style={{ margin: "2px 0 0" }}>{a.detail}</p>}
             </div>
