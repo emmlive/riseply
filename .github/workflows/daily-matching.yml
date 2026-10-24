@@ -30,98 +30,100 @@ jobs:
   trigger-matching:
     runs-on: ubuntu-latest
     steps:
-      - name: Start the scheduled-run batch
-        # /internal/scheduled-run now returns 202 immediately and does the
-        # actual discovery+matching work in a background task on the
-        # server -- it used to run inline and block this curl call for as
-        # long as the batch took (potentially many minutes, one Claude API
-        # call per unseen job per user), which meant this step's success
-        # depended on a single HTTP connection staying open that whole
-        # time. Grab the run_id here; the next step polls for completion.
+      - name: Run the scheduled-run batch
+        # The batch runs as a background task inside the Render web
+        # service, so a Render restart mid-run (memory limit, deploy)
+        # kills it. On boot the server marks any run it left behind as
+        # failed with an "Interrupted" error, so this step sees that
+        # within a minute instead of waiting an hour, and starts the batch
+        # again (up to 3 starts in all). That is safe: jobs the batch has
+        # already seen are not scored twice, so a restart picks up where
+        # the last one stopped.
+        #
+        # /internal/scheduled-run returns 202 immediately and does the work
+        # in the background; this step then polls for the result every 15s
+        # (a short request every 15s is far less exposed to a proxy
+        # timeout than one connection held open for the whole batch). A
+        # non-200 or non-JSON answer while polling is treated as a
+        # transient hiccup (Render restarting) and retried. The polling
+        # budget is 240 checks * 15s = 60 minutes in total, across all
+        # starts.
         run: |
-          # Render can be asleep or restarting for a minute. A 000 (no answer) or
-          # 502/503/504 (Render's proxy saying the app isn't up yet) means the
-          # request never reached the app, so waiting and trying again is safe.
-          # Any other answer, good or bad, is final.
-          for attempt in $(seq 1 10); do
-            response=$(curl -s --max-time 60 -w "\n%{http_code}" -X POST \
-              "${{ secrets.BACKEND_URL }}/internal/scheduled-run" \
-              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}") || true
+          polls=0
+          for start in 1 2 3; do
+            # Render can be asleep or restarting for a minute. A 000 (no
+            # answer) or 502/503/504 means the request never reached the
+            # app, so waiting and trying again is safe. Any other answer,
+            # good or bad, is final.
+            for attempt in $(seq 1 10); do
+              response=$(curl -s --max-time 60 -w "\n%{http_code}" -X POST \
+                "${{ secrets.BACKEND_URL }}/internal/scheduled-run" \
+                -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}") || true
+              http_code=$(echo "$response" | tail -n1)
+              http_code=${http_code:-000}
+              case "$http_code" in
+                000|502|503|504)
+                  echo "Backend not ready (HTTP $http_code, attempt $attempt/10) -- waiting 30s"
+                  sleep 30 ;;
+                *) break ;;
+              esac
+            done
             http_code=$(echo "$response" | tail -n1)
             http_code=${http_code:-000}
-            case "$http_code" in
-              000|502|503|504)
-                echo "Backend not ready (HTTP $http_code, attempt $attempt/10) -- waiting 30s"
-                sleep 30 ;;
-              *) break ;;
-            esac
-          done
-          http_code=$(echo "$response" | tail -n1)
-          http_code=${http_code:-000}
-          body=$(echo "$response" | sed '$d')
-          echo "$body"
-          if [ "$http_code" -ne 202 ]; then
-            echo "Starting scheduled run failed with HTTP $http_code"
-            exit 1
-          fi
-          run_id=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])")
-          echo "run_id=$run_id" >> "$GITHUB_ENV"
-
-      - name: Wait for the scheduled-run batch to finish
-        # Polls rather than holding one long connection open, since a
-        # short-lived request every 15s is far less exposed to any
-        # single proxy/connection timeout along the way than one curl
-        # call held open for the whole batch. 240 attempts * 15s = 60
-        # minutes. The batch's per-user work is now capped
-        # (settings.scheduled_run_max_jobs_per_user) specifically so
-        # this budget stays sufficient regardless of how large the user
-        # base grows -- previously uncapped per-user matching meant
-        # total runtime grew with the user base and job pool, which is
-        # what caused the repeated 502s/timeouts this comment used to
-        # warn about.
-        #
-        # A non-200 (or a 200 with a non-JSON body -- e.g. Render's own
-        # branded HTML error page during a mid-batch auto-restart, which
-        # has happened when the batch itself pushed memory past the
-        # instance's limit) is treated as a TRANSIENT hiccup and
-        # retried, not an immediate failure. The old version exited on
-        # the very first bad response, which turned a Render restart
-        # that resolves itself in under a minute into a hard failure of
-        # the whole day's run. Only exhausting all 240 attempts, or the
-        # backend explicitly reporting status="failed", ends this early.
-        run: |
-          for i in $(seq 1 240); do
-            response=$(curl -s -w "\n%{http_code}" \
-              "${{ secrets.BACKEND_URL }}/internal/scheduled-run/${run_id}" \
-              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
-            http_code=$(echo "$response" | tail -n1)
             body=$(echo "$response" | sed '$d')
-
-            if [ "$http_code" -ne 200 ]; then
-              echo "Status check got HTTP $http_code (attempt $i/240) -- treating as transient, will retry"
-              sleep 15
-              continue
-            fi
-
-            status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status', ''))" 2>/dev/null) || status=""
-            if [ -z "$status" ]; then
-              echo "Status check returned 200 but body wasn't valid JSON (attempt $i/240) -- treating as transient, will retry"
-              sleep 15
-              continue
-            fi
-
-            if [ "$status" = "success" ]; then
-              echo "$body"
-              exit 0
-            fi
-            if [ "$status" = "failed" ]; then
-              echo "Scheduled run failed:"
-              echo "$body"
+            echo "$body"
+            if [ "$http_code" -ne 202 ]; then
+              echo "Starting scheduled run failed with HTTP $http_code"
               exit 1
             fi
-            sleep 15
+            run_id=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])")
+            echo "Start $start/3: run_id=$run_id"
+
+            interrupted=0
+            while [ "$polls" -lt 240 ]; do
+              polls=$((polls + 1))
+              response=$(curl -s -w "\n%{http_code}" \
+                "${{ secrets.BACKEND_URL }}/internal/scheduled-run/${run_id}" \
+                -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+              http_code=$(echo "$response" | tail -n1)
+              body=$(echo "$response" | sed '$d')
+
+              if [ "$http_code" -ne 200 ]; then
+                echo "Status check got HTTP $http_code (check $polls/240) -- treating as transient, will retry"
+                sleep 15
+                continue
+              fi
+
+              status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status', ''))" 2>/dev/null) || status=""
+              if [ -z "$status" ]; then
+                echo "Status check returned 200 but body wasn't valid JSON (check $polls/240) -- treating as transient, will retry"
+                sleep 15
+                continue
+              fi
+
+              if [ "$status" = "success" ]; then
+                echo "$body"
+                exit 0
+              fi
+              if [ "$status" = "failed" ]; then
+                echo "Scheduled run failed:"
+                echo "$body"
+                case "$body" in
+                  *Interrupted*) interrupted=1; break ;;
+                  *) exit 1 ;;
+                esac
+              fi
+              sleep 15
+            done
+
+            if [ "$interrupted" -eq 1 ] && [ "$start" -lt 3 ]; then
+              echo "The server restarted mid-run. Starting the batch again."
+              sleep 20
+              continue
+            fi
+            echo "Scheduled run did not finish (interrupted or timed out after $polls checks)"
+            exit 1
           done
-          echo "Timed out waiting for the scheduled run to finish after 60 minutes"
           exit 1
 
       - name: Send daily digest emails
