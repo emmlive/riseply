@@ -111,6 +111,30 @@ def _select_keyword_rotation(keywords: list[str], max_per_run: int) -> list[str]
     return [keywords_sorted[(offset + i) % n] for i in range(max_per_run)]
 
 
+def _memory_mb() -> dict:
+    """This process's current and peak resident memory in MB (Linux only; empty
+    elsewhere). Logged through the daily batch so an out-of-memory kill on the
+    512 MB Render plan shows which stage was growing, not just that it died."""
+    out = {}
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    out["rss"] = round(int(line.split()[1]) / 1024)
+                elif line.startswith("VmHWM:"):
+                    out["peak"] = round(int(line.split()[1]) / 1024)
+    except OSError:
+        pass
+    return out
+
+
+def _log_memory(stage: str) -> dict:
+    mem = _memory_mb()
+    if mem:
+        print(f"[mem] {stage}: rss={mem.get('rss')}MB peak={mem.get('peak')}MB")
+    return mem
+
+
 def run_scheduled_matching_batch(db: Session) -> dict:
     """Discovery once, then matching for every user who has a resume
     and at least one active search profile. This is the actual batch
@@ -131,37 +155,59 @@ def run_scheduled_matching_batch(db: Session) -> dict:
     bounds the batch's total runtime regardless of how large the user
     base gets; anything not covered in one run is picked up on a later
     one, since already-seen jobs aren't rescored."""
+    import gc
+    _log_memory("batch start")
     discovery_result = run_discovery(db)
     try:
         discovery_result["recheck"] = recheck_pending_postings(db)
     except Exception as e:  # a failed sweep must never stop the matching run
         print(f"[pipeline] pending-posting recheck failed: {e}")
+    db.expire_all()
+    gc.collect()
+    _log_memory("after discovery")
 
-    users = db.query(models.User).filter(models.User.resume_text.isnot(None)).all()
+    # Only ids and emails are held for the whole loop. Loading every User row
+    # up front kept every resume (tens of KB each) in memory until the batch
+    # ended; each person is now loaded when their turn comes and released after.
+    user_rows = db.query(models.User.id, models.User.email).filter(models.User.resume_text.isnot(None)).all()
     per_user_results = {}
-    for user in users:
-        if not user.resume_text or not user.resume_text.strip():
+    peak_rss = 0
+    for user_id, email in user_rows:
+        user = db.get(models.User, user_id)
+        if user is None or not user.resume_text or not user.resume_text.strip():
             continue
         has_active_profile = db.query(models.SearchProfile).filter_by(
-            user_id=user.id, active=True
+            user_id=user_id, active=True
         ).first()
         if not has_active_profile and not search_terms.implicit_profile(user.resume_text, user.location):
+            db.expire_all()
             continue
 
         try:
             result = run_matching_for_user(db, user, max_jobs=settings.scheduled_run_max_jobs_per_user)
-            per_user_results[user.email] = {
+            per_user_results[email] = {
                 "queued": len(result["queued_application_ids"]),
                 "usage_limit_reached": result["usage_limit_reached"],
             }
         except Exception as e:
             # One user's failure (e.g. a transient DB issue mid-loop)
             # shouldn't stop the rest of the batch from running.
-            per_user_results[user.email] = {"error": str(e)}
+            db.rollback()
+            per_user_results[email] = {"error": str(e)}
+        # Let go of everything this person's run pulled into the session (jobs,
+        # applications, tailored resumes) before the next person starts: the
+        # session only holds loaded rows weakly, so once nothing else refers
+        # to them they can be freed.
+        user = result = None
+        db.expire_all()
+        gc.collect()
+        mem = _log_memory(f"after user {user_id}")
+        peak_rss = max(peak_rss, mem.get("rss", 0))
 
     return {
         "discovery": discovery_result,
         "users_processed": len(per_user_results),
+        "memory_mb": _memory_mb(),
         "results": per_user_results,
     }
 
