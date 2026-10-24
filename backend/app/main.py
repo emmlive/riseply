@@ -14,27 +14,30 @@ from app.rate_limit import limiter
 from app.routers import auth, me, profiles, pipeline, billing, interview, job_buddy, rise_index, support, admin, internal, org_buddy, kb, extension, resumes, sso, bookmarklet, calendar, career_coach, library, discounts, discord, study, progress, feedback, skill_gap, fit_score, networking, company_brief, career_path, resume_facts, task_guides, coach_courses, exams, autofill_profile
 
 def _fail_orphaned_match_runs() -> None:
-    """Interactive searches run inside this web process, so any still
-    marked "running" when the process starts belong to a previous
-    process (a deploy or a memory restart) and can never finish. Mark
-    them failed right away, so nobody is stuck behind a dead run."""
+    """Searches and the daily batch run inside this web process, so any run
+    still marked "running" when the process starts belongs to a previous
+    process (a deploy or a memory restart) and can never finish. Mark it
+    failed right away, so nobody (a person, or the daily GitHub job that
+    polls for the result) is left waiting behind a dead run."""
     from datetime import datetime
     from app import models
 
+    messages = {
+        "interactive_match": "This search was interrupted (the server restarted while it was running). Please try again.",
+        "interactive_discover": "This search was interrupted (the server restarted while it was running). Please try again.",
+        "scheduled_run": "Interrupted: the server restarted while this run was in progress.",
+    }
     db = SessionLocal()
     try:
-        db.query(models.ScheduledRunLog).filter(
-            models.ScheduledRunLog.run_type == "interactive_match",
-            models.ScheduledRunLog.status == "running",
-        ).update({
-            "status": "failed",
-            "error": "This search was interrupted (the server restarted while it was running). Please try again.",
-            "finished_at": datetime.utcnow(),
-        }, synchronize_session=False)
+        for run_type, message in messages.items():
+            db.query(models.ScheduledRunLog).filter(
+                models.ScheduledRunLog.run_type == run_type,
+                models.ScheduledRunLog.status == "running",
+            ).update({"status": "failed", "error": message, "finished_at": datetime.utcnow()}, synchronize_session=False)
         db.commit()
     except Exception as e:  # never block startup on housekeeping
         db.rollback()
-        print(f"[startup] couldn't clear orphaned match runs: {e}")
+        print(f"[startup] couldn't clear orphaned runs: {e}")
     finally:
         db.close()
 
