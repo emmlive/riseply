@@ -1485,4 +1485,10 @@ textarea.cc-input { resize: vertical; }
   display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
   background: var(--accent-soft); color: var(--accent-hover);
 }
-.sidebar-group { margin: 14px 8px 2px; font-size: 0.74rem; font-weight: 600; color: var(--ink-muted); letter-spacing: 0.02em; }
+.sidebar-group { display: flex; align-items: center; justify-content: space-between; width: calc(100% - 16px); margin: 12px 8px 2px; padding: 6px 8px; background: none; border: 0; border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.9rem; font-weight: 700; color: var(--ink); text-align: left; }
+.sidebar-group:hover { background: var(--accent-soft); }
+.sidebar-group:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sidebar-group .chev { width: 8px; height: 8px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(45deg); transition: transform .15s; margin-right: 2px; }
+.sidebar-group[aria-expanded="false"] .chev { transform: rotate(-45deg); }
+.sidebar-sub { padding-left: 10px; }
+@media (prefers-reduced-motion: reduce) { .sidebar-group .chev { transition: none; } }

@@ -85,6 +85,22 @@ function widthClass(pathname: string): string {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Which sidebar groups are collapsed. Remembered per browser; a group that
+  // holds the page you're on always opens so you never lose your place.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("riseply.navCollapsed");
+      if (raw) setCollapsed(JSON.parse(raw));
+    } catch {}
+  }, []);
+  function toggleGroup(label: string) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      try { localStorage.setItem("riseply.navCollapsed", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
   const [user, setUser] = useState<User | null>(null);
   const [realHasOrgAdminAccess, setRealHasOrgAdminAccess] = useState(false);
   const [realIsOrgEmployee, setRealIsOrgEmployee] = useState(false);
@@ -177,22 +193,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Job Buddy
           </Link>
         )}
-        {showIndividualNav && INDIVIDUAL_GROUPS.map((group) => (
-          <div key={group.label} style={{ display: "contents" }}>
-            <div className="sidebar-group">{group.label}</div>
-            {group.items.map((item) => (
-              <Link key={item.href} href={item.href} className={`sidebar-link ${pathname === item.href ? "active" : ""}`}>
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        ))}
-        {showIndividualNav && <div className="sidebar-group">Account</div>}
-        {showIndividualNav && INDIVIDUAL_ACCOUNT_NAV.map((item) => (
-          <Link key={item.href} href={item.href} className={`sidebar-link ${pathname === item.href ? "active" : ""}`}>
-            {item.label}
-          </Link>
-        ))}
+        {showIndividualNav && INDIVIDUAL_GROUPS.map((group) => {
+          const holdsActive = group.items.some((i) => i.href === pathname);
+          const open = holdsActive || !collapsed[group.label];
+          return (
+            <div key={group.label} style={{ display: "contents" }}>
+              <button type="button" className="sidebar-group" aria-expanded={open}
+                onClick={() => toggleGroup(group.label)}>
+                {group.label}<span className="chev" aria-hidden="true" />
+              </button>
+              {open && group.items.map((item) => (
+                <Link key={item.href} href={item.href} className={`sidebar-link sidebar-sub ${pathname === item.href ? "active" : ""}`}>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          );
+        })}
+        {showIndividualNav && (() => {
+          const holdsActive = INDIVIDUAL_ACCOUNT_NAV.some((i) => i.href === pathname);
+          const open = holdsActive || !collapsed["Account"];
+          return (
+            <>
+              <button type="button" className="sidebar-group" aria-expanded={open}
+                onClick={() => toggleGroup("Account")}>
+                Account<span className="chev" aria-hidden="true" />
+              </button>
+              {open && INDIVIDUAL_ACCOUNT_NAV.map((item) => (
+                <Link key={item.href} href={item.href} className={`sidebar-link sidebar-sub ${pathname === item.href ? "active" : ""}`}>
+                  {item.label}
+                </Link>
+              ))}
+            </>
+          );
+        })()}
         {ALWAYS_NAV.filter((item) => item.href !== "/dashboard" && !(showIndividualNav && item.href === "/dashboard/profile")).map((item) => (
           <Link
             key={item.href}
