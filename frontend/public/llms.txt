@@ -1,0 +1,27 @@
+# Riseply
+
+> Riseply is an AI job-search platform. It matches new jobs to your resume every day, tailors an ATS-friendly resume for each job using only what is already in your resume, helps fill in application forms, prepares you for interviews, and coaches you into your next role. You approve every step; Riseply never applies or sends anything on its own. Riseply Enterprise applies the same approach to companies: onboarding buddies, mentoring and internal job mobility.
+
+Facts worth knowing:
+- Free plan with monthly limits; Riseply Pro raises the limits. Riseply Enterprise is for organizations.
+- Jobs come from public sources: Greenhouse and Lever company boards, RemoteOK, Arbeitnow, Adzuna and USAJobs.
+- Resume tailoring never invents employers, titles, degrees, certifications or skills.
+- The Riseply Autofill Chrome extension fills application forms (including multi-page Workday forms) and asks for confirmation before it clicks Next, Log in or Submit. It is being prepared for the Chrome Web Store and is not listed there yet.
+- Saved job-site logins stay in the user's own browser and are never sent to Riseply.
+
+## Main pages
+- [How Riseply works](https://riseply.com/how-it-works): the five stages (get ready, find, apply, win, grow) and the rules Riseply follows.
+- [FAQ](https://riseply.com/faq): pricing basics, auto-apply, honesty of tailored resumes, job sources, the extension, privacy.
+- [Riseply vs. alternatives](https://riseply.com/riseply-vs-alternatives): spreadsheets, general chatbots, auto-apply bots, resume builders and career coaches, and when each is the better choice.
+- [Home](https://riseply.com/): overview.
+
+## For organizations
+- [Riseply Enterprise](https://riseply.com/riseply-enterprise): onboarding, mentorship and internal mobility for growing teams.
+- [Buddy as a Service](https://riseply.com/buddy-as-a-service): an AI onboarding buddy grounded in the company's own handbook; conversations stay private to the employee.
+- [Mentor as a Service](https://riseply.com/mentor-as-a-service): mentor matching and mentoring support.
+- [Internal Jobs](https://riseply.com/internal-jobs): internal job mobility.
+
+## Trust
+- [Security & Trust](https://riseply.com/security)
+- [Privacy Policy](https://riseply.com/privacy)
+- [Terms of Service](https://riseply.com/terms)

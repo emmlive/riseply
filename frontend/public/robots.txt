@@ -1,7 +1,23 @@
+# Public pages are open to search engines and AI assistants alike. The AI
+# crawlers are named on purpose so Riseply can be found and cited.
 User-agent: *
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: CCBot
 Allow: /
 Disallow: /dashboard/
 Disallow: /reset-password
 Disallow: /forgot-password
+Disallow: /oauth-callback
+Disallow: /sso-callback
+Disallow: /calendar-callback
 
 Sitemap: https://riseply.com/sitemap.xml

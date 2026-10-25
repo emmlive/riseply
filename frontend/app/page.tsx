@@ -12,9 +12,11 @@ export const metadata: Metadata = {
     url: "https://riseply.com/",
     siteName: "Riseply",
     type: "website",
+    images: [{ url: "/brand/og.png", width: 1200, height: 630 }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
+    images: ["/brand/og.png"],
     title: "Riseply — AI job search & employee onboarding",
     description: "Find roles that fit, tailor your resume per job, and get an AI onboarding buddy once you land it.",
   },
@@ -40,6 +42,24 @@ const ORG_JSON_LD = {
   description: "AI-powered job search platform: job matching, resume tailoring, career planning, a Career Coach that teaches skills as courses, interview prep, and employee onboarding, including Riseply Enterprise for companies — onboarding, mentorship, and internal mobility.",
 };
 
+const APP_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Riseply",
+  url: "https://riseply.com",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  description: "AI job-search platform: daily job matching, a tailored ATS resume for each job without invented experience, application form filling, interview prep, a Career Coach, and career-path planning. The user approves every step.",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free plan with monthly limits; Pro raises them." },
+};
+
+const SITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Riseply",
+  url: "https://riseply.com",
+};
+
 export default function HomePage() {
   return (
     <div className="auth-shell">
@@ -48,6 +68,8 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }}
       />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(APP_JSON_LD) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSON_LD) }} />
       <div style={{ textAlign: "center", maxWidth: 760 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 4 }}>
           <img src="/brand/icon.svg" alt="" width={40} height={40} />
@@ -84,6 +106,9 @@ export default function HomePage() {
         <p className="muted" style={{ marginTop: 20, fontSize: "0.85rem" }}>
           Hiring, growing a team, or building internal mobility? See{" "}
           <Link href="/riseply-enterprise">Riseply Enterprise</Link>.
+        </p>
+        <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
+          <Link href="/how-it-works">How it works</Link> · <Link href="/faq">FAQ</Link> · <Link href="/riseply-vs-alternatives">Riseply vs. alternatives</Link>
         </p>
         <p className="muted" style={{ marginTop: 8, fontSize: "0.8rem" }}>
           <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>
