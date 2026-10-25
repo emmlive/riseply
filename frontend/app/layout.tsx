@@ -30,6 +30,8 @@ export const metadata: Metadata = {
   },
   description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer — backed by live response-rate data from everyone using it. You approve every step.",
   icons: { icon: "/icon.svg" },
+  openGraph: { siteName: "Riseply", type: "website", images: [{ url: "/brand/og.png", width: 1200, height: 630 }] },
+  twitter: { card: "summary_large_image", images: ["/brand/og.png"] },
 };
 
 export default function RootLayout({
