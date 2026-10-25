@@ -1036,8 +1036,12 @@ export default function CareerCoachPage() {
                 ) : null;
               })()}
               {active.lesson && active.lesson.goals.length > 0 && (
-                <div className="cc-lesson" aria-label={active.course_id ? "This module's objectives" : "Today's lesson"}>
-                  <strong>{active.course_id ? "This module" : "Today\u2019s lesson"}</strong>
+                // Folds away once the conversation is under way, so the chat gets the room.
+                <details className="cc-lesson" open={messages.length < 3} aria-label={active.course_id ? "This module's objectives" : "Today's lesson"}>
+                  <summary>
+                    <strong>{active.course_id ? "This module" : "Today\u2019s lesson"}</strong>
+                    <span className="muted"> · {active.lesson.covered.length} of {active.lesson.goals.length} done</span>
+                  </summary>
                   <ul>
                     {active.lesson.goals.map((g, i) => {
                       const done = active.lesson!.covered.includes(i + 1);
@@ -1048,7 +1052,7 @@ export default function CareerCoachPage() {
                       );
                     })}
                   </ul>
-                </div>
+                </details>
               )}
               <div className="cc-chat-window" aria-live="polite" ref={winRef}>
                 {messages.map((m) => (
@@ -1268,7 +1272,7 @@ export default function CareerCoachPage() {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
                       }}
-                      rows={2}
+                      rows={3}
                       aria-label="Your reply"
                       placeholder={active.session_type === "resume" ? "Paste a bullet or section to rewrite…" : "Write your reply. Press Enter to send, Shift+Enter for a new line."}
                     />

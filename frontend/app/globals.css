@@ -918,7 +918,7 @@ textarea.cc-input { resize: vertical; }
 
 .cc-composer { padding: 16px 24px 18px; border-top: 1px solid var(--border); background: var(--surface); }
 .cc-composer-row { display: flex; gap: 8px; align-items: flex-end; }
-.cc-composer-row textarea { flex: 1; min-height: 48px; max-height: 160px; resize: none; }
+.cc-composer-row textarea { flex: 1; min-height: 84px; max-height: 240px; resize: vertical; }
 .cc-composer-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .cc-check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.84rem; color: var(--ink-muted); cursor: pointer; }
 
@@ -1210,8 +1210,15 @@ textarea.cc-input { resize: vertical; }
 .cc-head.is-compact > p:not(.cc-head-links) { display: none; }
 .cc-head-links { display: flex; gap: 16px; font-size: 0.88rem; }
 .cc-head:not(.is-compact) .cc-head-links { display: none; }
-.cc-chat.is-live { display: flex; flex-direction: column; height: calc(100vh - 134px); height: calc(100dvh - 134px); min-height: 520px; }
-.cc-chat.is-live .cc-chat-window { flex: 1 1 auto; height: auto; min-height: 0; }
+.cc-chat.is-live { display: flex; flex-direction: column; }
+/* The conversation keeps real room however tall the lesson header is: it never
+   drops below 380px, and grows with the screen on a tall monitor. The card
+   grows with it, so on a laptop the page scrolls instead of squeezing the chat. */
+.cc-chat.is-live .cc-chat-window { flex: none; min-height: 380px; height: clamp(380px, calc(100vh - 560px), 75vh); height: clamp(380px, calc(100dvh - 560px), 75dvh); }
+.cc-lesson > summary { cursor: pointer; list-style: none; }
+.cc-lesson > summary::-webkit-details-marker { display: none; }
+.cc-lesson > summary::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-right: 2px solid var(--ink-muted); border-bottom: 2px solid var(--ink-muted); transform: rotate(-45deg); transition: transform .15s; vertical-align: 2px; }
+.cc-lesson[open] > summary::before { transform: rotate(45deg); }
 .cc-chat.is-live .cc-chat-head, .cc-chat.is-live .mc-key, .cc-chat.is-live .cc-composer { flex: none; }
 
 /* Foldable side cards */
@@ -1229,7 +1236,6 @@ textarea.cc-input { resize: vertical; }
 @media (prefers-reduced-motion: reduce) { .fold-chevron { transition: none; } }
 @media (max-width: 1040px) {
   .cc-aside { max-height: none; overflow: visible; }
-  .cc-chat.is-live { height: calc(100dvh - 96px); min-height: 480px; }
 }
 
 /* ---- Feedback ---- */
