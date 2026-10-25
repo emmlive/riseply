@@ -108,7 +108,7 @@ export default function HomePage() {
           <Link href="/riseply-enterprise">Riseply Enterprise</Link>.
         </p>
         <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
-          <Link href="/how-it-works">How it works</Link> · <Link href="/faq">FAQ</Link> · <Link href="/riseply-vs-alternatives">Riseply vs. alternatives</Link>
+          <Link href="/how-it-works">How it works</Link> · <Link href="/faq">FAQ</Link> · <Link href="/guides">Guides</Link> · <Link href="/riseply-vs-alternatives">Riseply vs. alternatives</Link>
         </p>
         <p className="muted" style={{ marginTop: 8, fontSize: "0.8rem" }}>
           <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link> · <Link href="/security">Security & Trust</Link>

@@ -9,11 +9,22 @@ Facts worth knowing:
 - The Riseply Autofill Chrome extension fills application forms (including multi-page Workday forms) and asks for confirmation before it clicks Next, Log in or Submit. It is being prepared for the Chrome Web Store and is not listed there yet.
 - Saved job-site logins stay in the user's own browser and are never sent to Riseply.
 
+The same content in one file: https://riseply.com/llms-full.txt
+
 ## Main pages
 - [How Riseply works](https://riseply.com/how-it-works): the five stages (get ready, find, apply, win, grow) and the rules Riseply follows.
 - [FAQ](https://riseply.com/faq): pricing basics, auto-apply, honesty of tailored resumes, job sources, the extension, privacy.
 - [Riseply vs. alternatives](https://riseply.com/riseply-vs-alternatives): spreadsheets, general chatbots, auto-apply bots, resume builders and career coaches, and when each is the better choice.
 - [Home](https://riseply.com/): overview.
+
+## Guides
+- [All guides](https://riseply.com/guides): plain answers to common job-search questions.
+- [How do you tailor your resume to a job without exaggerating?](https://riseply.com/guides/tailor-resume-without-exaggerating)
+- [How do you make an ATS-friendly resume?](https://riseply.com/guides/make-an-ats-friendly-resume)
+- [How do you autofill job applications safely?](https://riseply.com/guides/autofill-job-applications-safely)
+- [How and when should you follow up on a job application?](https://riseply.com/guides/follow-up-on-a-job-application)
+- [How do you prepare for a job interview?](https://riseply.com/guides/prepare-for-a-job-interview)
+- [How do you build a study plan for a certification exam?](https://riseply.com/guides/study-for-a-certification-exam)
 
 ## For organizations
 - [Riseply Enterprise](https://riseply.com/riseply-enterprise): onboarding, mentorship and internal mobility for growing teams.

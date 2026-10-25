@@ -29,7 +29,16 @@ export const metadata: Metadata = {
     template: "%s",
   },
   description: "Riseply finds jobs that fit, tailors your resume for each one, preps you for interviews, and helps you onboard once you land the offer — backed by live response-rate data from everyone using it. You approve every step.",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  alternates: { types: { "application/rss+xml": "https://riseply.com/feed.xml" } },
   openGraph: { siteName: "Riseply", type: "website", images: [{ url: "/brand/og.png", width: 1200, height: 630 }] },
   twitter: { card: "summary_large_image", images: ["/brand/og.png"] },
 };
