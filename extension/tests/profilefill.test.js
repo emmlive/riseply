@@ -289,3 +289,57 @@ const profile = {
   console.log("ok: workday-style form:", first.filled.concat(done).join(", "));
   await b.close();
 })().catch((e) => { console.error("FAIL workday", e.message); process.exit(1); });
+
+// ---- a form inside an iframe (iCIMS, embedded Greenhouse): fill, attach, Next (eighth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  const pdf = (t) => Buffer.from("%PDF-1.4 " + t).toString("base64");
+  // Stands in for background.js: runs a request from the top frame inside the sub-frame.
+  await p.exposeFunction("__frameOp", async (m) => {
+    const fr = p.frames().find((f) => f !== p.mainFrame());
+    const result = await fr.evaluate((req) => window.__rfListener({ type: "RF_OP", op: req.op, args: req.args }), m);
+    return { success: true, results: [{ frameId: 1, result }] };
+  });
+  await p.addInitScript((files) => {
+    if (window !== window.top) {
+      window.chrome = { runtime: { id: "x", lastError: null, onMessage: { addListener(fn) { window.__rfListener = (msg) => new Promise((res) => fn(msg, {}, res)); } }, sendMessage(m, cb) { cb && cb({ success: true }); } } };
+      return;
+    }
+    window.chrome = { runtime: { id: "x", lastError: null, sendMessage(m, cb) {
+      const ok = (o) => setTimeout(() => cb({ success: true, ...o }), 0);
+      if (m.type === "FRAME_OP") { window.__frameOp(m).then(cb); return; }
+      if (m.type === "GET_AUTH_STATE") return ok({ loggedIn: true, user: { email: "a@b.c" } });
+      if (m.type === "JOB_STATUS") return ok({ in_list: false });
+      if (m.type === "GET_CANDIDATE") return ok({ candidate: { full_name: "JANE DOE", email: "j@x.com" } });
+      if (m.type === "GET_AUTOFILL_PROFILE") return ok({ profile: { work: [], education: [], answers: {}, eeo: {}, saved_answers: [] } });
+      if (m.type === "GET_RESUME_FILE") return ok({ filename: "base.pdf", content_type: "application/pdf", data: files.b });
+      return ok({});
+    } } };
+  }, { b: pdf("base") });
+  await p.goto("file://" + path.join(__dirname, "fixture_frame_host.html"));
+  await p.waitForLoadState("load");
+  while (p.frames().length < 2) await p.waitForTimeout(50);
+  await p.frames().find((f) => f !== p.mainFrame()).waitForLoadState("load");
+  for (const fr of p.frames()) for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await fr.addScriptTag({ path: path.join(__dirname, "..", f) });
+  const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
+  const fr = () => p.frames().find((f) => f !== p.mainFrame());
+  assert.equal(await fr().locator("#riseply-sidebar-host").count(), 0, "no second sidebar inside the iframe");
+
+  await q("#riseply-fill-btn").waitFor();
+  await q("#riseply-fill-btn").click();
+  await fr().waitForFunction(() => document.getElementById("r").files.length === 1);
+  assert.equal(await fr().$eval("#fn", (e) => e.value), "Jane");
+  assert.equal(await fr().$eval("#ln", (e) => e.value), "Doe");
+  assert.equal(await fr().$eval("#em", (e) => e.value), "j@x.com");
+  assert.equal(await fr().$eval("#r", (e) => e.files[0].name), "base.pdf", "resume attached inside the iframe");
+
+  // Next lives in the iframe too: found, confirmed, then clicked there
+  await q("#riseply-next-btn").waitFor();
+  await q("#riseply-next-btn").click();
+  assert.equal(await fr().evaluate(() => window.__clicked || 0), 0, "nothing clicked before the confirm");
+  await q("#riseply-next-yes").click();
+  await fr().waitForFunction(() => window.__clicked === 1);
+  console.log("ok: form inside an iframe");
+  await b.close();
+})().catch((e) => { console.error("FAIL iframe", e.message); process.exit(1); });

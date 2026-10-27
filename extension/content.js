@@ -399,6 +399,108 @@
     return filled;
   }
 
+
+  // --- Forms inside iframes ---
+  // Some application systems (iCIMS, embedded Greenhouse) put the whole form in
+  // an iframe. This script also runs in every sub-frame, but there it only
+  // answers requests from the sidebar in the top frame (through background.js);
+  // the sidebar itself is only ever shown once, in the top frame.
+
+  function countFormControls() {
+    return Array.from(document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]), select, textarea"))
+      .filter((e) => e.offsetWidth || e.offsetHeight || e.getClientRects().length).length;
+  }
+
+  async function handleFrameOp(op, a) {
+    const RF = window.RisePlyFill;
+    if (!RF) return null;
+    switch (op) {
+      case "probe": {
+        const adv = RF.findAdvance();
+        return {
+          host: location.hostname, fields: countFormControls(), login: RF.hasLogin(),
+          file: RF.hasResumeInput(), advance: adv ? { label: adv.label, kind: adv.kind } : null,
+        };
+      }
+      case "fill": {
+        const filled = [];
+        if (a.candidate) filled.push(...runAutofill(a.candidate));
+        if (a.login && RF.hasLogin() && RF.fillLogin(a.login).length) filled.push("site login");
+        if (a.profile) {
+          filled.push(...RF.run(a.profile).filled);
+          filled.push(...(await RF.finishCustom()));
+        }
+        if (a.resume && RF.hasResumeInput() && RF.attachResume(a.resume, { replace: !!a.replace })) {
+          filled.push(`${a.replace ? "ATS resume" : "resume"} (${a.resume.filename})`);
+        }
+        return { filled, left: RF.leftForYou() };
+      }
+      case "fillLogin": return RF.fillLogin(a.login);
+      case "attach": return RF.attachResume(a.resume, { replace: true });
+      case "advanceClick": {
+        const now = RF.findAdvance(); // fresh: the page may have changed
+        if (!now) return { clicked: false };
+        now.el.click();
+        return { clicked: true, label: now.label };
+      }
+      default: return null;
+    }
+  }
+
+  function installFrameAgent() {
+    if (/^(about|blob|data|javascript):$/.test(location.protocol)) return;
+    try {
+      chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+        if (!msg || msg.type !== "RF_OP") return;
+        handleFrameOp(msg.op, msg.args || {}).then(send).catch((e) => send({ error: String((e && e.message) || e) }));
+        return true;
+      });
+      chrome.runtime.sendMessage({ type: "FRAME_HELLO" }, () => void chrome.runtime.lastError);
+    } catch (e) { /* extension context gone: nothing to do */ }
+  }
+
+  // Top frame: ask the sub-frames to do something. One answer per frame.
+  async function frameOps(op, args, frameId, timeoutMs) {
+    const r = await sendMessage({ type: "FRAME_OP", op, args: args || {}, frameId, timeoutMs }, (timeoutMs || 30000) + 5000);
+    return r && r.success && Array.isArray(r.results) ? r.results.filter((x) => x.result && !x.result.error) : [];
+  }
+
+  // What the sub-frames hold right now (a sign-in box, an upload box, a Next
+  // button). Refreshed every moment the sidebar checks the page.
+  let frameState = [];
+  async function refreshFrameState() {
+    frameState = (await frameOps("probe", {}, undefined, 4000)).map((x) => ({ frameId: x.frameId, ...x.result }));
+    return frameState;
+  }
+  function frameLogin() { return frameState.find((f) => f.login); }
+  function frameAdvance() {
+    const f = frameState.find((x) => x.advance);
+    return f ? { label: f.advance.label, kind: f.advance.kind, frameId: f.frameId } : null;
+  }
+  // The site a sign-in box belongs to: this page's, or the iframe's that holds it.
+  function currentLoginHost() {
+    return window.RisePlyFill && window.RisePlyFill.hasLogin() ? location.hostname : (frameLogin() || {}).host || location.hostname;
+  }
+  function anyLogin() { return !!(window.RisePlyFill && window.RisePlyFill.hasLogin()) || !!frameLogin(); }
+  function anyAdvance() { return (window.RisePlyFill && window.RisePlyFill.findAdvance()) || frameAdvance(); }
+  async function fillLoginAnywhere(cred) {
+    const done = window.RisePlyFill && window.RisePlyFill.hasLogin() ? window.RisePlyFill.fillLogin(cred) : [];
+    for (const f of frameState.filter((x) => x.login)) {
+      const r = await frameOps("fillLogin", { login: cred }, f.frameId, 8000);
+      if (r[0] && Array.isArray(r[0].result)) done.push(...r[0].result);
+    }
+    return done;
+  }
+  async function attachAnywhere(payload) {
+    if (window.RisePlyFill && window.RisePlyFill.attachResume(payload, { replace: true })) return true;
+    await refreshFrameState();
+    for (const f of frameState.filter((x) => x.file)) {
+      const r = await frameOps("attach", { resume: payload }, f.frameId, 15000);
+      if (r[0] && r[0].result === true) return true;
+    }
+    return false;
+  }
+
   // --- Sidebar UI (Shadow DOM) ---
 
   const PANEL_STYLES = `
@@ -573,11 +675,16 @@
     // Pages change without reloading (sign-in, then the form, then the next
     // step), so keep these two sections in step with what is on the page now.
     let lastSeen = "";
-    setInterval(() => {
-      const f = window.RisePlyFill;
-      const adv = f && f.findAdvance();
-      const sig = (f && f.hasLogin() ? "L" : "-") + (adv ? adv.label : "");
-      if (sig !== lastSeen) { lastSeen = sig; renderLogin(root); renderNext(root); }
+    let checking = false;
+    setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        await refreshFrameState();
+        const adv = anyAdvance();
+        const sig = (anyLogin() ? "L" : "-") + (adv ? adv.label : "");
+        if (sig !== lastSeen) { lastSeen = sig; renderLogin(root); renderNext(root); }
+      } finally { checking = false; }
     }, 1500);
 
     root.getElementById("riseply-score-btn").addEventListener("click", async () => {
@@ -650,6 +757,12 @@
       // above still stands.
       let profileHint = "";
       const prof = await sendMessage({ type: "GET_AUTOFILL_PROFILE" });
+      const tailored = pageApp && pageApp.has_tailored ? pageApp.application_id : null;
+      let resumeFile = null; // fetched once, whichever frame has the upload box
+      const getResume = async () => {
+        if (!resumeFile) resumeFile = await sendMessage({ type: "GET_RESUME_FILE", applicationId: tailored });
+        return resumeFile;
+      };
       if (prof.success && window.RisePlyFill) {
         if (window.RisePlyFill.isEmptyProfile(prof.profile)) {
           profileHint = `<p class="hint" style="margin-top:8px;">Add your work history and common answers once, and Autofill will use them: <a href="https://riseply.com/dashboard/autofill-profile" target="_blank" style="color:inherit;font-weight:600;">Set up your Autofill profile</a>.</p>`;
@@ -662,13 +775,38 @@
         // Attach the resume if the form has an upload field. Skipped quietly
         // when it fails: the person can still drag the file in themselves.
         if (window.RisePlyFill.hasResumeInput()) {
-          const tailored = pageApp && pageApp.has_tailored ? pageApp.application_id : null;
-          const rf = await sendMessage({ type: "GET_RESUME_FILE", applicationId: tailored });
+          const rf = await getResume();
           if (rf.success && window.RisePlyFill.attachResume(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
         }
       }
+      // The same again inside any iframes on the page (iCIMS, embedded
+      // Greenhouse): the form there is out of this frame's reach.
+      let frameLeft = [];
+      await refreshFrameState();
+      const formFrames = frameState.filter((f) => f.fields > 0 || f.login || f.file);
+      if (formFrames.length) {
+        btn.textContent = "Filling the form…";
+        const rf = formFrames.some((f) => f.file) && prof.success ? await getResume() : null;
+        const answers = await Promise.all(formFrames.map(async (f) => {
+          let login = null;
+          if (f.login) {
+            const sl = await sendMessage({ type: "GET_SITE_LOGIN", host: f.host });
+            login = sl.success && sl.login ? sl.login : null;
+          }
+          const r = await frameOps("fill", {
+            candidate: result.candidate, login, profile: prof.success ? prof.profile : null,
+            resume: rf && rf.success ? rf : null, replace: !!tailored,
+          }, f.frameId, 60000);
+          return r[0] ? r[0].result : null;
+        }));
+        for (const a of answers) {
+          if (!a) continue;
+          filled.push(...(a.filled || []));
+          frameLeft.push(...(a.left || []));
+        }
+      }
       const uniqueFilled = Array.from(new Set(filled));
-      const left = window.RisePlyFill ? window.RisePlyFill.leftForYou() : [];
+      const left = (window.RisePlyFill ? window.RisePlyFill.leftForYou() : []).concat(frameLeft);
       const leftHtml = left.length
         ? `<p class="hint" style="margin-top:8px;"><strong>Still for you (${left.length}):</strong></p><ul class="hint" style="margin:2px 0 0 16px;padding:0;">${left.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>`
         : "";
@@ -873,9 +1011,10 @@
   async function renderLogin(root) {
     const slot = root.getElementById("riseply-login-slot");
     if (!slot) return;
-    if (!window.RisePlyFill || !window.RisePlyFill.hasLogin()) { slot.innerHTML = ""; return; }
-    const r = await sendMessage({ type: "GET_SITE_LOGIN", host: location.hostname });
-    const site = (r && r.site) || location.hostname;
+    if (!window.RisePlyFill || !anyLogin()) { slot.innerHTML = ""; return; }
+    const loginHost = currentLoginHost();
+    const r = await sendMessage({ type: "GET_SITE_LOGIN", host: loginHost });
+    const site = (r && r.site) || loginHost;
     if (r && r.success && r.login) {
       slot.innerHTML = `
         <p class="filled-list" style="margin-top:12px;">Saved login for ${escapeHtml(site)}: ${escapeHtml(r.login.username)}</p>
@@ -883,8 +1022,8 @@
         <p class="hint"><a href="#" id="riseply-login-change" style="color:inherit;font-weight:600;">Change</a> &nbsp; <a href="#" id="riseply-login-forget" style="color:inherit;font-weight:600;">Forget</a></p>
         <div id="riseply-login-msg"></div>
       `;
-      root.getElementById("riseply-login-fill").addEventListener("click", () => {
-        const done = window.RisePlyFill.fillLogin(r.login);
+      root.getElementById("riseply-login-fill").addEventListener("click", async () => {
+        const done = await fillLoginAnywhere(r.login);
         root.getElementById("riseply-login-msg").innerHTML = done.length
           ? `<p class="filled-list">Filled: ${done.join(", ")}. Check it, then use the button below.</p>`
           : `<p class="hint">Those boxes already have something in them, so nothing changed.</p>`;
@@ -892,7 +1031,7 @@
       });
       root.getElementById("riseply-login-forget").addEventListener("click", async (e) => {
         e.preventDefault();
-        await sendMessage({ type: "FORGET_SITE_LOGIN", host: location.hostname });
+        await sendMessage({ type: "FORGET_SITE_LOGIN", host: currentLoginHost() });
         renderLogin(root);
       });
       root.getElementById("riseply-login-change").addEventListener("click", (e) => {
@@ -915,7 +1054,7 @@
     root.getElementById("riseply-login-save").addEventListener("click", async () => {
       const username = root.getElementById("riseply-login-user").value.trim();
       const password = root.getElementById("riseply-login-pass").value;
-      const res = await sendMessage({ type: "SAVE_SITE_LOGIN", host: location.hostname, username, password });
+      const res = await sendMessage({ type: "SAVE_SITE_LOGIN", host: currentLoginHost(), username, password });
       if (!res.success) {
         root.getElementById("riseply-login-msg").innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(res.error || "Couldn't save.")}</p>`;
         return;
@@ -929,7 +1068,7 @@
   function renderNext(root) {
     const slot = root.getElementById("riseply-next-slot");
     if (!slot) return;
-    const adv = window.RisePlyFill && window.RisePlyFill.findAdvance();
+    const adv = anyAdvance();
     if (!adv) { slot.innerHTML = ""; return; }
     const kind = adv.kind || (/log ?in|sign ?in/i.test(adv.label) ? "login" : "next");
     const title = kind === "login" ? "Log in" : kind === "submit" ? "Submit application" : "Next page";
@@ -946,9 +1085,13 @@
           <button class="discard" id="riseply-next-no">Cancel</button>
         </div>
       `;
-      root.getElementById("riseply-next-yes").addEventListener("click", () => {
-        const now = window.RisePlyFill.findAdvance(); // fresh: the page may have changed
-        if (now) now.el.click();
+      root.getElementById("riseply-next-yes").addEventListener("click", async () => {
+        if (adv.frameId != null) {
+          await frameOps("advanceClick", {}, adv.frameId, 8000);
+        } else {
+          const now = window.RisePlyFill.findAdvance(); // fresh: the page may have changed
+          if (now) now.el.click();
+        }
         if (kind === "submit") {
           c.innerHTML = `<p class="filled-list">Clicked the site's submit button.</p>`;
           renderApplied(root, true);
@@ -996,7 +1139,7 @@
       root.getElementById("riseply-attach-btn").addEventListener("click", async () => {
         const msg = root.getElementById("riseply-attach-msg");
         const rf = await sendMessage({ type: "GET_RESUME_FILE", applicationId: pageApp.application_id });
-        if (rf.success && window.RisePlyFill && window.RisePlyFill.attachResume(rf, { replace: true })) {
+        if (rf.success && window.RisePlyFill && await attachAnywhere(rf)) {
           msg.innerHTML = `<p class="filled-list">Attached ${escapeHtml(rf.filename)}.</p>`;
         } else {
           msg.innerHTML = `<p class="hint">I couldn't find a resume upload box on this page yet. Open the application form and press this again.</p>`;
@@ -1148,7 +1291,9 @@
     log("watching for removal");
   }
 
-  if (document.readyState === "complete" || document.readyState === "interactive") {
+  if (window !== window.top) {
+    installFrameAgent();
+  } else if (document.readyState === "complete" || document.readyState === "interactive") {
     init();
   } else {
     document.addEventListener("DOMContentLoaded", init);

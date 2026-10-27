@@ -55,7 +55,7 @@ Stores the user's Riseply sign-in token in the browser so they stay logged in (r
 The extension's only server. All requests (sign-in, resume scoring, cover letters, answers, profile fetch) go to the Riseply API at this address, made from the extension's background service worker.
 
 **Content script on all sites (`<all_urls>`)**
-Job postings and application forms live on thousands of different company career sites and applicant-tracking systems, so the sidebar has to be able to appear on any of them. On each page the script only checks locally whether the page looks like a job posting; if not, it does nothing. It reads page text and fills form fields only after the user clicks a button in the sidebar, and sends data to Riseply only for the actions the user clicked (score, cover letter, suggested answer). It does not collect browsing history.
+Job postings and application forms live on thousands of different company career sites and applicant-tracking systems, so the sidebar has to be able to appear on any of them. The script also runs inside frames on the page, because some application systems (iCIMS, embedded Greenhouse) put the whole form in an iframe; only the top frame shows the sidebar, and the frames only act when the user clicks one of its buttons. On each page the script only checks locally whether the page looks like a job posting; if not, it does nothing. It reads page text and fills form fields only after the user clicks a button in the sidebar, and sends data to Riseply only for the actions the user clicked (score, cover letter, suggested answer). It does not collect browsing history.
 
 **Remote code:** No. All code is in the package; nothing is loaded or evaluated from a server.
 
