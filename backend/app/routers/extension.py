@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.security import get_current_user
-from app.services import matcher, usage
+from app.services import matcher, usage, unanswered
 from app import models, schemas
 
 router = APIRouter(prefix="/extension", tags=["extension"])
@@ -405,3 +405,14 @@ def mark_applied(payload: dict, db: Session = Depends(get_db), user: models.User
         return {"found": True, "already": True, "status": a.status}
     pipeline.mark_submitted(a.id, db, user)
     return {"found": True, "already": False, "status": "submitted"}
+
+
+@router.post("/unanswered")
+def log_unanswered(payload: dict, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The questions Autofill left for the person ("Still for you"). Only the
+    question text and the site's address are kept; see services/unanswered.py."""
+    qs = payload.get("questions")
+    if not isinstance(qs, list):
+        raise HTTPException(status_code=422, detail="questions must be a list")
+    new = unanswered.record(db, user.id, qs, str(payload.get("host") or ""))
+    return {"recorded": new}

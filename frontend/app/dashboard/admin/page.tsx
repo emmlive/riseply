@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import DiscountCodesTab from "@/components/DiscountCodesTab";
 import FeedbackTab from "@/components/FeedbackTab";
+import UnansweredQuestionsAdmin from "@/components/UnansweredQuestionsAdmin";
 import {
   api, User, AdminUser, AdminRevenue, AdminUsage, AdminCostPerUser, AdminErrors, AdminSupportMessage,
   AdminOrganization, AdminSystemHealth, AdminEmailHealth, AdminEmailTest, AdminFlaggedMessage, CannedReply, EnterpriseBillingRequestOut,
 } from "@/lib/api";
 
-type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "feedback" | "admins";
+type Tab = "overview" | "discounts" | "users" | "organizations" | "health" | "moderation" | "support" | "feedback" | "questions" | "admins";
 
 const ALL_TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: "overview", label: "Overview", roles: ["super", "billing", "readonly"] },
@@ -21,6 +22,7 @@ const ALL_TABS: { id: Tab; label: string; roles: string[] }[] = [
   { id: "moderation", label: "Moderation", roles: ["super", "support", "readonly"] },
   { id: "support", label: "Support inbox", roles: ["super", "support", "readonly"] },
   { id: "feedback", label: "Feedback", roles: ["super", "support", "readonly"] },
+  { id: "questions", label: "Autofill questions", roles: ["super", "support", "readonly"] },
   { id: "admins", label: "Admins", roles: ["super"] },
 ];
 
@@ -88,6 +90,7 @@ export default function AdminPage() {
       {activeTab === "moderation" && <ModerationTab />}
       {activeTab === "support" && <SupportTab role={role} />}
       {activeTab === "feedback" && <FeedbackTab canAct={role === "super" || role === "support"} />}
+      {activeTab === "questions" && <UnansweredQuestionsAdmin />}
       {activeTab === "admins" && <AdminsTab currentAdminId={user.id} />}
     </div>
   );

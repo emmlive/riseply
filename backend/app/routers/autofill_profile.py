@@ -67,3 +67,57 @@ def from_resume(db: Session = Depends(get_db), user: models.User = Depends(get_c
     cur = load(db, user.id)
     cur.update(got)
     return {"profile": _save(db, user.id, cur)}
+
+
+# ---------- questions Autofill couldn't answer ----------
+
+def _q_out(r: models.UnansweredQuestion) -> dict:
+    return {"id": r.id, "question": r.question, "host": r.host or "", "times_seen": r.times_seen or 1,
+            "last_seen": r.last_seen.isoformat() if r.last_seen else None}
+
+
+def _own_question(db: Session, qid: int, user_id: int) -> models.UnansweredQuestion:
+    r = db.query(models.UnansweredQuestion).filter_by(id=qid, user_id=user_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Question not found.")
+    return r
+
+
+@router.get("/unanswered")
+def list_unanswered(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    rows = (db.query(models.UnansweredQuestion).filter_by(user_id=user.id, status="open")
+            .order_by(models.UnansweredQuestion.last_seen.desc()).limit(50).all())
+    return {"questions": [_q_out(r) for r in rows]}
+
+
+@router.post("/unanswered/{qid}/answer")
+def answer_unanswered(qid: int, body: dict = Body(...), db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Save the person's answer as a saved answer, so Autofill uses it next time."""
+    r = _own_question(db, qid, user.id)
+    answer = str(body.get("answer") or "").strip()[:2000]
+    if not answer:
+        raise HTTPException(status_code=422, detail="Write an answer first.")
+    data = load(db, user.id)
+    same = next((qa for qa in data["saved_answers"] if svc_key(qa["question"]) == svc_key(r.question)), None)
+    if same:
+        same["answer"] = answer
+    elif len(data["saved_answers"]) >= 30:
+        raise HTTPException(status_code=400, detail="You have 30 saved answers already. Remove one on the Autofill profile page first.")
+    else:
+        data["saved_answers"].append({"question": r.question[:200], "answer": answer})
+    saved = _save(db, user.id, data)
+    r.status = "answered"
+    db.commit()
+    return {"profile": saved}
+
+
+@router.post("/unanswered/{qid}/dismiss", status_code=204)
+def dismiss_unanswered(qid: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    r = _own_question(db, qid, user.id)
+    r.status = "dismissed"
+    db.commit()
+
+
+def svc_key(q: str) -> str:
+    from app.services.unanswered import key_of
+    return key_of(q or "")

@@ -267,6 +267,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
 
+        case "LOG_UNANSWERED": {
+          // Only the text of the questions Autofill left for the person, and
+          // the site's address. Never anything typed into the form.
+          const r = await apiFetch("/extension/unanswered", {
+            method: "POST",
+            body: JSON.stringify({ questions: (message.questions || []).slice(0, 40), host: message.host || "" }),
+          });
+          sendResponse({ success: true, ...r });
+          break;
+        }
+
         case "GET_RESUME_FILE": {
           const f = await apiFetch("/extension/resume-file" + (message.applicationId ? `?application_id=${encodeURIComponent(message.applicationId)}` : ""));
           sendResponse({ success: true, ...f });

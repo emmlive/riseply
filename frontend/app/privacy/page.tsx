@@ -92,6 +92,15 @@ export default function PrivacyPage() {
             PDF made from your resume text if you did not keep one.
           </li>
           <li>
+            When <strong>Autofill this page</strong> finishes and leaves some
+            questions for you, the extension sends Riseply the text of those
+            questions and the site&apos;s address, so you can answer them once
+            in your Autofill profile and Riseply can see which questions come
+            up most often across all users, without names. It never sends what
+            you typed into the form, and it drops question text that looks
+            like personal data such as an email address or a phone number.
+          </li>
+          <li>
             <strong>ATS resume and applied status:</strong> when you press
             Generate ATS resume, the job text on the page is sent to Riseply,
             which saves the job in your Riseply list with a resume tailored
