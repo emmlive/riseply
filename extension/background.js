@@ -69,6 +69,37 @@ async function apiFetch(path, options = {}) {
   return body;
 }
 
+// ---- Forms inside iframes ----
+// Some application systems (iCIMS, embedded Greenhouse) put the whole form in
+// an iframe. The content script runs in every frame; each sub-frame announces
+// itself here, and the top frame's sidebar asks for work to be done in them.
+// The list lives in session storage so it survives the service worker sleeping.
+async function frameList(tabId) {
+  const all = (await chrome.storage.session.get("riseply_frames")).riseply_frames || {};
+  return all[tabId] || [];
+}
+async function saveFrameList(tabId, ids) {
+  const all = (await chrome.storage.session.get("riseply_frames")).riseply_frames || {};
+  if (ids.length) all[tabId] = ids; else delete all[tabId];
+  await chrome.storage.session.set({ riseply_frames: all });
+}
+function sendToFrame(tabId, frameId, op, args, timeoutMs) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ frameId, failed: true }), timeoutMs);
+    try {
+      chrome.tabs.sendMessage(tabId, { type: "RF_OP", op, args }, { frameId }, (result) => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) { resolve({ frameId, failed: true }); return; }
+        resolve({ frameId, result });
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      resolve({ frameId, failed: true });
+    }
+  });
+}
+chrome.tabs.onRemoved.addListener((tabId) => { saveFrameList(tabId, []).catch(() => {}); });
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   log("received message:", message.type);
   (async () => {
@@ -250,6 +281,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             matchesUsed: usage.matches_used,
             matchesLimit: usage.matches_limit,
           });
+          break;
+        }
+
+        case "FRAME_HELLO": {
+          const tabId = _sender.tab && _sender.tab.id;
+          const frameId = _sender.frameId;
+          if (tabId != null && frameId) {
+            const ids = await frameList(tabId);
+            if (!ids.includes(frameId)) { ids.push(frameId); await saveFrameList(tabId, ids.slice(-40)); }
+          }
+          sendResponse({ success: true });
+          break;
+        }
+
+        case "FRAME_OP": {
+          const tabId = _sender.tab && _sender.tab.id;
+          if (tabId == null) { sendResponse({ success: true, results: [] }); break; }
+          const known = await frameList(tabId);
+          const targets = message.frameId != null ? [message.frameId] : known;
+          const timeout = message.timeoutMs || 30000;
+          const answers = await Promise.all(targets.map((id) => sendToFrame(tabId, id, message.op, message.args || {}, timeout)));
+          const gone = answers.filter((a) => a.failed).map((a) => a.frameId);
+          if (gone.length) await saveFrameList(tabId, known.filter((id) => !gone.includes(id)));
+          sendResponse({ success: true, results: answers.filter((a) => !a.failed).map((a) => ({ frameId: a.frameId, result: a.result })) });
           break;
         }
 
