@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, AfEdu, AfWork, AutofillProfile } from "@/lib/api";
+import UnansweredQuestions from "@/components/UnansweredQuestions";
 
 // The details application forms ask for again and again, kept once. The
 // Riseply browser extension fills them in. Nothing here is guessed: work
@@ -87,6 +88,8 @@ export default function AutofillProfilePage() {
         </div>
         <button className="btn btn-primary btn-sm" onClick={fromResume} disabled={!hasResume || !!busy}>{busy === "resume" ? "Reading your resume…" : "Fill from my resume"}</button>
       </div>
+
+      <UnansweredQuestions onSaved={(prof) => { setP(prof); setDirty(false); }} />
 
       <h2>Work history</h2>
       {p.work.map((w, i) => (

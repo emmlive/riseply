@@ -261,6 +261,24 @@ def cost_per_user(
     return admin_stats.cost_per_user(db, period, settings.pro_price_usd_display)
 
 
+@router.get("/unanswered-questions")
+def unanswered_questions(
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_admin_view("support")),
+):
+    """Questions Autofill couldn't answer, counted across people (no names or
+    emails), most common first: what to support next."""
+    q = models.UnansweredQuestion
+    rows = db.query(
+        func.max(q.question), func.count(func.distinct(q.user_id)), func.sum(q.times_seen),
+        func.max(q.host), func.max(q.last_seen),
+    ).group_by(q.qkey).order_by(
+        func.count(func.distinct(q.user_id)).desc(), func.sum(q.times_seen).desc()
+    ).limit(100).all()
+    return [{"question": a, "people": int(b), "times_seen": int(c or 0), "sample_site": d or "",
+             "last_seen": e.isoformat() if e else None} for a, b, c, d, e in rows]
+
+
 @router.get("/errors", response_model=schemas.AdminErrorsOut)
 def error_stats(
     db: Session = Depends(get_db),

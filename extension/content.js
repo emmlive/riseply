@@ -807,6 +807,9 @@
       }
       const uniqueFilled = Array.from(new Set(filled));
       const left = (window.RisePlyFill ? window.RisePlyFill.leftForYou() : []).concat(frameLeft);
+      // Remember what Autofill couldn't answer, so the person can answer it once
+      // in Riseply and the product can learn what to support. Question text only.
+      if (left.length) sendMessage({ type: "LOG_UNANSWERED", questions: left, host: location.hostname }, 8000);
       const leftHtml = left.length
         ? `<p class="hint" style="margin-top:8px;"><strong>Still for you (${left.length}):</strong></p><ul class="hint" style="margin:2px 0 0 16px;padding:0;">${left.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>`
         : "";

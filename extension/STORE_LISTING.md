@@ -33,7 +33,7 @@ When you open a job posting, the sidebar shows:
 - Generate cover letter: a first draft from your resume and the posting, ready to edit.
 - Suggested answers: help with custom application questions, based on your resume.
 
-Nothing is sent from a page until you click one of those buttons. You need a free Riseply account (riseply.com). Free accounts have a monthly limit on scores and drafts; Pro raises it.
+Nothing is sent from a page until you click one of those buttons. When Autofill leaves questions for you, it sends their text (never what you typed) and the site's address to Riseply, so you can answer them once in your profile. You need a free Riseply account (riseply.com). Free accounts have a monthly limit on scores and drafts; Pro raises it.
 
 When a form has a resume upload field, Autofill attaches your resume: the original PDF or Word file you keep with your Riseply resume, or a plain PDF made from your resume text. It never submits anything without your explicit confirmation; that is deliberate.
 

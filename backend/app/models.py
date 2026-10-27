@@ -1911,3 +1911,23 @@ class AutofillProfile(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
     data = Column(Text, default="{}")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UnansweredQuestion(Base):
+    """A question on an application form that Autofill had no answer for (the
+    "Still for you" list). Kept per person so they can answer it once and have
+    it filled next time, and counted across people so the product can learn
+    which questions to support. Holds the question text only: never answers or
+    anything typed into the form."""
+    __tablename__ = "unanswered_questions"
+    __table_args__ = (UniqueConstraint("user_id", "qkey", name="uq_unanswered_user_question"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    question = Column(String, nullable=False)
+    qkey = Column(String, nullable=False, index=True)  # normalized, for matching repeats
+    host = Column(String, default="")
+    times_seen = Column(Integer, default=1)
+    status = Column(String, default="open")  # open | answered | dismissed
+    first_seen = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    last_seen = Column(DateTime, default=datetime.utcnow, server_default=func.now())
