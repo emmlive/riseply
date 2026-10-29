@@ -33,34 +33,9 @@
     return;
   }
 
-  const ATS_HOSTS = [
-    "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com",
-    "smartrecruiters.com", "jobvite.com", "icims.com", "taleo.net",
-    "breezy.hr", "workable.com", "bamboohr.com", "recruitee.com",
-  ];
-  const JOB_URL_HINTS = ["/jobs/", "/job/", "/careers/", "/career/", "/viewjob", "/positions/", "/vacancy/"];
-
+  // The job-or-not decision lives in jobdetect.js so it can be tested on its own.
   function looksLikeJobPage() {
-    const host = location.hostname.toLowerCase();
-    const path = location.pathname.toLowerCase();
-
-    if (ATS_HOSTS.some((h) => host.endsWith(h))) return true;
-    if (JOB_URL_HINTS.some((hint) => path.includes(hint))) return true;
-
-    // Generic fallback: a page with a prominent "Apply" control and a
-    // meaningful amount of body text is very likely a job posting even
-    // on a site not on the known-ATS list (a company's own in-house
-    // careers page, for instance). Deliberately narrow -- "Apply
-    // filters", "Apply coupon", "Apply changes" all start with the word
-    // "apply" too, and would false-positive on any sufficiently long
-    // page (a blog post with a filter sidebar, an e-commerce checkout)
-    // without this being specific about what "apply" actually means.
-    const APPLY_PATTERN = /^apply\s*(now|for this (job|position|role|opening))?\s*$/i;
-    const applyEl = Array.from(document.querySelectorAll("a, button")).find((el) =>
-      APPLY_PATTERN.test((el.textContent || "").trim())
-    );
-    const bodyTextLength = (document.body?.innerText || "").length;
-    return Boolean(applyEl) && bodyTextLength > 1500;
+    return window.RisePlyDetect ? window.RisePlyDetect.inspect() : { job: false, why: "detector missing" };
   }
 
   function findApplicationGateButton() {
@@ -1239,9 +1214,9 @@
 
   function init() {
     log("init() running, readyState:", document.readyState);
-    const isJob = looksLikeJobPage();
-    log("looksLikeJobPage():", isJob);
-    if (!isJob) return;
+    const verdict = looksLikeJobPage();
+    log("job page?", verdict.job, "-", verdict.why);
+    if (!verdict.job) return;
     const root = injectSidebar();
     log("injectSidebar() returned:", root ? "a shadow root" : "null (already existed?)");
     if (!root) return;

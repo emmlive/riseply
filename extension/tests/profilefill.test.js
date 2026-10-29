@@ -151,7 +151,7 @@ const profile = {
     } } };
   });
   await p.goto("file://" + path.join(__dirname, "fixture_sidebar_login.html"));
-  for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
+  for (const f of ["jobdetect.js", "jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
   const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
   await q("#riseply-login-user").waitFor();
   await q("#riseply-login-user").fill("me@x.com");
@@ -193,7 +193,7 @@ const profile = {
     } } };
   }, { t: pdf("tailored"), b: pdf("base") });
   await p.goto("file://" + path.join(__dirname, "fixture_sidebar_apply.html"));
-  for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
+  for (const f of ["jobdetect.js", "jobinfo.js", "profilefill.js", "content.js"]) await p.addScriptTag({ path: path.join(__dirname, "..", f) });
   const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
   const fileName = () => p.$eval("#r", (e) => Array.from(e.files).map((f) => f.name).join(","));
 
@@ -321,7 +321,7 @@ const profile = {
   await p.waitForLoadState("load");
   while (p.frames().length < 2) await p.waitForTimeout(50);
   await p.frames().find((f) => f !== p.mainFrame()).waitForLoadState("load");
-  for (const fr of p.frames()) for (const f of ["jobinfo.js", "profilefill.js", "content.js"]) await fr.addScriptTag({ path: path.join(__dirname, "..", f) });
+  for (const fr of p.frames()) for (const f of ["jobdetect.js", "jobinfo.js", "profilefill.js", "content.js"]) await fr.addScriptTag({ path: path.join(__dirname, "..", f) });
   const q = (sel) => p.locator("#riseply-sidebar-host " + sel);
   const fr = () => p.frames().find((f) => f !== p.mainFrame());
   assert.equal(await fr().locator("#riseply-sidebar-host").count(), 0, "no second sidebar inside the iframe");
@@ -343,3 +343,30 @@ const profile = {
   console.log("ok: form inside an iframe");
   await b.close();
 })().catch((e) => { console.error("FAIL iframe", e.message); process.exit(1); });
+
+// ---- job-page detection: only job pages get the panel (ninth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const filler = "<p>" + "Soft, comfortable tee in twelve colors with a tailored fit. ".repeat(40) + "</p>";
+  const pages = {
+    "https://www.ssactivewear.com/p/next_level/6211": ["<h1>Long Sleeve Tee</h1><button>Apply</button><button>Add to Cart</button>" + filler, false, "shop with an Apply filter button"],
+    "https://shop.example.com/careers/gear": ["<h1>Careers gear</h1><button>Add to Cart</button><p>Resume your order. Requirements: none. Qualifications: none.</p>", false, "shop under a careers URL"],
+    "https://blog.example.com/careers/our-office": ["<h1>Our new office</h1><p>We moved. Come say hi.</p>", false, "careers URL with no job words"],
+    "https://www.example.com/news/story": ["<a href='#'>Apply</a>" + filler, false, "long page with only an Apply link"],
+    "https://boards.greenhouse.io/acme/jobs/1": ["<h1>Anything</h1>", true, "known application site"],
+    "https://acme.example.com/careers/analyst": ["<h1>Analyst</h1><h2>Responsibilities</h2><p>Qualifications: 3+ years of experience. Upload your resume.</p>", true, "company careers page with a job description"],
+    "https://acme.example.com/open-role": ["<script type='application/ld+json'>{\"@type\":\"JobPosting\",\"title\":\"Analyst\"}</script><h1>Analyst</h1>", true, "page with JobPosting data"],
+    "https://acme.example.com/work-with-us": ["<a href='#'>Apply now</a><h2>Responsibilities</h2><p>Qualifications: 3+ years of experience. Equal opportunity employer.</p>" + "<p>" + "Audit the controls and report to the team. ".repeat(50) + "</p>", true, "Apply button on a page that reads like a job"],
+  };
+  for (const [url, [html, want, label]] of Object.entries(pages)) {
+    const p = await b.newPage();
+    await p.route("**/*", (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><html><head><title>t</title></head><body>" + html + "</body></html>" }));
+    await p.goto(url);
+    await p.addScriptTag({ path: path.join(__dirname, "..", "jobdetect.js") });
+    const got = await p.evaluate(() => window.RisePlyDetect.inspect());
+    assert.equal(got.job, want, label + ": " + got.why);
+    await p.close();
+  }
+  console.log("ok: only job pages are detected");
+  await b.close();
+})().catch((e) => { console.error("FAIL detection", e.message); process.exit(1); });
