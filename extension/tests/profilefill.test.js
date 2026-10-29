@@ -248,7 +248,8 @@ const profile = {
   await p.goto("file://" + path.join(__dirname, "fixture_workday.html"));
   await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
   const profile = {
-    work: [], education: [], skills: [], saved_answers: [],
+    work: [], education: [], skills: [],
+    saved_answers: [{ question: "Do you hold an active professional license or certification relevant to this role?", answer: "Yes" }],
     contact: { address_line1: "23751 Tall Grass Dr", city: "Plainfield", state: "IL", postal_code: "60585", country: "United States", phone_type: "" },
     answers: { over_18: "yes", needs_sponsorship: "no", previously_employed: "no", has_employee_relationship: "no", restrictive_agreement: "no",
       government_official: "no", related_to_official: "no", salary_expectation: "$150,000", referral_source: "Indeed" },
@@ -259,6 +260,7 @@ const profile = {
   const txt = (id) => p.$eval("#" + id, (e) => e.textContent);
   const val = (id) => p.$eval("#" + id, (e) => e.value);
 
+  assert.equal(await txt("qlic"), "Yes", "a saved answer picks the option in a custom dropdown");
   assert.equal(await val("a1"), "23751 Tall Grass Dr");
   assert.equal(await val("ct"), "Plainfield");
   assert.equal(await val("pc"), "60585");
@@ -370,3 +372,30 @@ const profile = {
   console.log("ok: only job pages are detected");
   await b.close();
 })().catch((e) => { console.error("FAIL detection", e.message); process.exit(1); });
+
+// ---- saved answers also pick dropdown and radio options (tenth suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  await p.goto("file://" + path.join(__dirname, "fixture_saved_choices.html"));
+  await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  const saved = [
+    { question: "Do you have a valid driver's license?", answer: "Yes" },
+    { question: "Are you willing to undergo a background check?", answer: "Yes." },
+    { question: "Which best describes your current employment status?", answer: "Student" },
+    { question: "What is your preferred work arrangement?", answer: "Remote" },
+    { question: "Have you ever held a security clearance?", answer: "Public Trust" },
+  ];
+  const res = await p.evaluate((s) => window.RisePlyFill.run({ saved_answers: s }), saved);
+  const sel = (id) => p.$eval("#" + id, (e) => e.value);
+  assert.equal(await sel("dl"), "y", "yes picks the Yes option");
+  assert.equal(await p.$eval('input[name=bg][value=y]', (e) => e.checked), true, "radio gets Yes");
+  assert.equal(await p.$eval('input[name=bg][value=n]', (e) => e.checked), false);
+  assert.equal(await sel("es"), "st", "same text picks that option");
+  assert.equal(await sel("wa"), "", "two options contain 'Remote': left for the person");
+  assert.equal(await sel("cl"), "", "an answer that is not an option is not guessed");
+  assert.equal(await sel("al"), "", "a question with no saved answer is left alone");
+  assert.equal(res.filled.filter((x) => x === "saved answer").length, 3);
+  console.log("ok: saved answers pick dropdown and radio options");
+  await b.close();
+})().catch((e) => { console.error("FAIL saved choices", e.message); process.exit(1); });

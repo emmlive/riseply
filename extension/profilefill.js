@@ -528,6 +528,72 @@
     });
   }
 
+  // A saved answer also answers a question that is a list of choices (a
+  // dropdown or radio buttons), but only when it points at exactly one
+  // option: the same text, yes or no, or a phrase only one option contains.
+  // Anything less clear is left for the person. Never a guess.
+  function tidyAnswer(answer) {
+    return norm(answer).replace(/[.!\s]+$/, "");
+  }
+
+  function choicePatterns(answer) {
+    const a = tidyAnswer(answer);
+    if (!a || a.length > 80) return [];
+    const list = [{ test: (t) => t === a }];
+    if (a === "yes" || a === "no") list.push(...yn(a));
+    return list;
+  }
+
+  function choiceIndex(texts, answer) {
+    const a = tidyAnswer(answer);
+    if (!a || a.length > 80) return -1;
+    const real = (t) => t && !isPlaceholder(t);
+    const exact = texts.map((t, i) => (real(t) && t === a ? i : -1)).filter((i) => i !== -1);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return -1;
+    if (a === "yes" || a === "no") {
+      const i = pickByPatterns(texts, yn(a));
+      return i !== -1 && real(texts[i]) ? i : -1;
+    }
+    if (a.length < 3) return -1;
+    const re = new RegExp("(^|[^a-z0-9])" + esc(a) + "([^a-z0-9]|$)");
+    const part = texts.map((t, i) => (real(t) && re.test(t) ? i : -1)).filter((i) => i !== -1);
+    return part.length === 1 ? part[0] : -1;
+  }
+
+  function savedChoices(list, groups, out) {
+    if (!list || !list.length) return;
+    const find = (question) => (question && question.length >= 8 ? list.find((qa) => similar(question, qa.question)) : null);
+    controls("select").forEach((sel) => {
+      if (sel.disabled) return;
+      if (sel.value && !isPlaceholder(sel.selectedOptions[0]?.text || "")) return;
+      const hit = find(labelText(sel));
+      if (!hit) return;
+      const i = choiceIndex(Array.from(sel.options).map((o) => norm(o.text)), hit.answer);
+      if (i === -1) return;
+      sel.value = sel.options[i].value;
+      sel.dispatchEvent(new Event("input", { bubbles: true }));
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      out.push("saved answer");
+    });
+    groups.forEach((g) => {
+      if (g.radios.some((r) => r.checked)) return;
+      const hit = find(g.question);
+      if (!hit) return;
+      const i = choiceIndex(g.texts, hit.answer);
+      if (i === -1) return;
+      g.radios[i].click();
+      out.push("saved answer");
+    });
+    customDropdowns().forEach((el) => {
+      if (!isPlaceholder(el.textContent)) return;
+      const q = customQuestion(el);
+      const hit = find(q);
+      const patterns = hit ? choicePatterns(hit.answer) : [];
+      if (patterns.length) queue("list", el, { test: (t) => similar(t, hit.question) }, patterns, "saved answer");
+    });
+  }
+
   // ---------- attaching the resume file ----------
 
   // File inputs are usually hidden behind a styled button, so visibility is
@@ -730,6 +796,7 @@
     signatureDate(out);
     history({ work: p.work || [], education: p.education || [] }, out);
     savedAnswers(p.saved_answers || [], out);
+    savedChoices(p.saved_answers || [], groups, out);
     return { filled: out };
   };
 
