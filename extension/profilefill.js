@@ -61,9 +61,18 @@
   const SEARCH_INPUT = 'input[data-automation-id="searchBox"], input[role="combobox"], input[aria-haspopup="listbox"], input[aria-autocomplete="list"]';
   function isSearchInput(el) { return el.matches && el.matches(SEARCH_INPUT); }
 
+  // What this run changed, so the person can see it and undo it. Fields are
+  // only ever filled while empty, so undoing is putting the old state back.
+  let changes = [];
+  function note(kind, el, label, value, undo) {
+    if (el && el.type === "password") return;
+    changes.push({ kind, el, label: String(label || "").trim().slice(0, 140), value: String(value || "").trim().slice(0, 140), undo });
+  }
+
   function fillText(el, value) {
     if (!value || !isEmpty(el) || el.disabled || el.readOnly || isSearchInput(el)) return false;
     setValue(el, value);
+    note("text", el, labelText(el), value, () => setValue(el, ""));
     return true;
   }
 
@@ -82,6 +91,12 @@
     return -1;
   }
 
+  function setSelect(sel, value) {
+    sel.value = value;
+    sel.dispatchEvent(new Event("input", { bubbles: true }));
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   function fillSelect(sel, patterns) {
     if (sel.disabled) return false;
     const cur = sel.selectedOptions[0]?.text || "";
@@ -89,9 +104,9 @@
     const texts = Array.from(sel.options).map((o) => norm(o.text));
     const i = pickByPatterns(texts, patterns);
     if (i === -1 || isPlaceholder(sel.options[i].text)) return false;
-    sel.value = sel.options[i].value;
-    sel.dispatchEvent(new Event("input", { bubbles: true }));
-    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    const before = sel.value;
+    setSelect(sel, sel.options[i].value);
+    note("choice", sel, labelText(sel), sel.options[i].text, () => setSelect(sel, before));
     return true;
   }
 
@@ -150,11 +165,21 @@
     return radios.concat(checkboxClusters());
   }
 
+  function pickRadio(group, i) {
+    group.radios[i].click();
+    note("choice", group.radios[i], group.question, group.texts[i], () => {
+      const r = group.radios[i];
+      r.checked = false;
+      r.dispatchEvent(new Event("input", { bubbles: true }));
+      r.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
   function fillRadio(group, patterns) {
     if (group.radios.some((r) => r.checked)) return false;
     const i = pickByPatterns(group.texts, patterns);
     if (i === -1) return false;
-    group.radios[i].click();
+    pickRadio(group, i);
     return true;
   }
 
@@ -286,7 +311,10 @@
       }
       let ok = false;
       try { ok = it.kind === "list" ? await pickCustom(el, it.patterns) : await pickSearch(el, it.text, it.patterns); } catch (e) { ok = false; }
-      if (ok) done.push(it.label);
+      if (ok) {
+        done.push(it.label);
+        note("list", el, customQuestion(el), el.value || el.textContent, null);
+      }
       await sleep(200);
     }
     return done;
@@ -571,9 +599,9 @@
       if (!hit) return;
       const i = choiceIndex(Array.from(sel.options).map((o) => norm(o.text)), hit.answer);
       if (i === -1) return;
-      sel.value = sel.options[i].value;
-      sel.dispatchEvent(new Event("input", { bubbles: true }));
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      const before = sel.value;
+      setSelect(sel, sel.options[i].value);
+      note("choice", sel, labelText(sel), sel.options[i].text, () => setSelect(sel, before));
       out.push("saved answer");
     });
     groups.forEach((g) => {
@@ -582,7 +610,7 @@
       if (!hit) return;
       const i = choiceIndex(g.texts, hit.answer);
       if (i === -1) return;
-      g.radios[i].click();
+      pickRadio(g, i);
       out.push("saved answer");
     });
     customDropdowns().forEach((el) => {
@@ -798,6 +826,32 @@
     savedAnswers(p.saved_answers || [], out);
     savedChoices(p.saved_answers || [], groups, out);
     return { filled: out };
+  };
+
+  // Start of an Autofill press: forget the last one's changes.
+  RF.resetChanges = function () { changes = []; };
+
+  // Lets the page script record a change it made itself (name, email, phone).
+  RF.record = function (el, label, value, before) {
+    note("text", el, label, value, () => (el.tagName === "SELECT" ? setSelect(el, before) : setValue(el, before)));
+  };
+
+  // For the review list: what was filled, in which question.
+  RF.changes = function () {
+    return changes.map((c) => ({ kind: c.kind, label: c.label, value: c.value, undoable: !!c.undo }));
+  };
+
+  // Puts every text box, dropdown and radio button back to how it was.
+  // Pick-from-a-list widgets can't be reset from here; they are counted so
+  // the person knows to change them by hand.
+  RF.undo = function () {
+    let undone = 0, manual = 0;
+    changes.forEach((c) => {
+      if (!c.undo) { manual++; return; }
+      try { c.undo(); undone++; } catch (e) { manual++; }
+    });
+    changes = [];
+    return { undone, manual };
   };
 
   RF.isEmptyProfile = function (p) {
