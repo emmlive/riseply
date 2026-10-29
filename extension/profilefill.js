@@ -626,12 +626,24 @@
 
   // File inputs are usually hidden behind a styled button, so visibility is
   // not required here. The text around the input says what it is for.
+  // Some sites (Dice among them) build their forms from web components, so
+  // the input sits inside a shadow root that document.querySelectorAll skips.
+  function deepAll(selector, root, depth) {
+    const out = Array.from((root || document).querySelectorAll(selector));
+    if ((depth || 0) > 6) return out;
+    (root || document).querySelectorAll("*").forEach((el) => {
+      if (el.shadowRoot) out.push(...deepAll(selector, el.shadowRoot, (depth || 0) + 1));
+    });
+    return out;
+  }
+
   function fileInputs() {
-    return Array.from(document.querySelectorAll('input[type="file"]')).filter((el) => !el.disabled);
+    return deepAll('input[type="file"]').filter((el) => !el.disabled);
   }
 
   function contextOf(el) {
-    const box = el.closest("div, fieldset, section, li, label") || el.parentElement;
+    let box = el.closest("div, fieldset, section, li, label") || el.parentElement;
+    if (!box && el.getRootNode && el.getRootNode().host) box = el.getRootNode().host;
     return norm(labelText(el) + " " + (el.name || "") + " " + (el.id || "") + " " + (box ? box.textContent : "").slice(0, 300));
   }
 
@@ -659,7 +671,59 @@
     return null;
   }
 
-  RF.hasResumeInput = function () { return fileInputs().length > 0; };
+  // Upload areas with no file input in the page (the input is only made when
+  // you click): the drag-and-drop area itself. Found by what it says, e.g.
+  // "Upload your resume", and only when its words are about a resume.
+  const DROP_TEXT = /(upload|attach|drop|drag|add)\b[^.]{0,40}\b(resume|r[eé]sum[eé]|cv)\b/;
+  function dropZones() {
+    const hits = deepAll("div, section, label, button, span, p, a").filter((el) => {
+      if (!visible(el)) return false;
+      const t = norm(el.textContent);
+      if (t.length > 160 || !DROP_TEXT.test(t) || /cover\s*letter/.test(t)) return false;
+      // the smallest element that says it: skip it if a child says it too
+      return !Array.from(el.children).some((c) => visible(c) && DROP_TEXT.test(norm(c.textContent)));
+    });
+    return hits;
+  }
+
+  RF.hasResumeInput = function () { return fileInputs().length > 0 || dropZones().length > 0; };
+
+  function fileFrom(payload) {
+    const bin = atob(payload.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], payload.filename, { type: payload.content_type });
+  }
+
+  // Same as dropping the file onto the upload area by hand. Counted as done
+  // only when the page then shows the file's name, so a drop the site ignored
+  // is reported honestly.
+  async function dropResume(payload) {
+    const zones = dropZones();
+    if (!zones.length) return false;
+    const file = fileFrom(payload);
+    const zone = zones[0];
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    const before = norm(document.body.innerText);
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+      await sleep(60);
+    }
+    for (let i = 0; i < 12; i++) {
+      await sleep(150);
+      const now = norm(document.body.innerText);
+      if (now.includes(norm(file.name)) || (now !== before && !DROP_TEXT.test(norm(zone.textContent)))) return true;
+    }
+    return false;
+  }
+
+  // The file-input way first; the drop way when the page has no input.
+  RF.attachResumeAsync = async function (payload, opts) {
+    if (RF.attachResume(payload, opts)) return true;
+    if (fileInputs().length && !dropZones().length) return false;
+    try { return await dropResume(payload); } catch (e) { return false; }
+  };
 
   // `data` is base64 from the Riseply server. Chrome lets a page script give a
   // file input a file built in memory (the same thing a drag-and-drop does).

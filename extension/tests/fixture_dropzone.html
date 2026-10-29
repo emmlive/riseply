@@ -1,0 +1,19 @@
+<!doctype html><html><body>
+<h2>Resume &amp; Cover Letter</h2>
+<div id="rz" style="border:2px dashed #09c;padding:30px;width:400px"><svg width="10" height="10"></svg><div><span id="rt">Upload your resume</span></div></div>
+<p>File types supported .pdf, .doc, .docx up to 2MB</p>
+<div id="cz" style="border:2px dashed #09c;padding:30px;width:400px"><div><span>Upload your cover letter</span></div></div>
+<script>
+window.__drops = { r: 0, c: 0 };
+function zone(id, key) {
+  const z = document.getElementById(id);
+  z.addEventListener('dragover', (e) => e.preventDefault());
+  z.addEventListener('drop', (e) => {
+    e.preventDefault();
+    window.__drops[key]++;
+    const f = e.dataTransfer.files[0];
+    if (f) z.innerHTML = '<div>' + f.name + '</div>';
+  });
+}
+zone('rz', 'r'); zone('cz', 'c');
+</script></body></html>
