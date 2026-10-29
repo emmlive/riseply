@@ -2109,6 +2109,19 @@ class CoachVideo(BaseModel):
     thumb: str = ""
 
 
+class CoachDefineRequest(BaseModel):
+    term: str = Field(min_length=2, max_length=200)
+    context: str = Field(default="", max_length=2000)
+    topic: str = Field(default="", max_length=200)
+
+
+class CoachDefineOut(BaseModel):
+    term: str
+    meaning: str
+    example: str = ""
+    related: list[str] = []
+
+
 class CoachVideosOut(BaseModel):
     query: str
     videos: list[CoachVideo] = []

@@ -1,0 +1,13 @@
+/* Look up a word in a lesson */
+.cc-define-bar { margin: 0 0 10px; }
+.cc-define-panel { border: 1px solid var(--border, #d9dee7); border-radius: 12px; padding: 10px 12px; background: var(--surface, #fff); }
+.cc-define-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cc-define-form input { flex: 1 1 220px; min-width: 0; padding: 7px 10px; border: 1px solid var(--border, #d9dee7); border-radius: 8px; font: inherit; }
+.cc-define-hint { font-size: 12px; margin: 6px 0 0; }
+.cc-define-error { color: #b23b3b; font-size: 13px; margin: 8px 0 0; }
+.cc-define-card { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border, #d9dee7); }
+.cc-define-card p { margin: 4px 0; line-height: 1.5; }
+.cc-define-card .cc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.cc-define-float { position: fixed; z-index: 60; transform: translate(-50%, -100%); padding: 6px 12px; border-radius: 999px; border: 0;
+  background: #1f6f5c; color: #fff; font-weight: 600; font-size: 13px; line-height: 1.2; font-family: inherit; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25); max-width: 92vw; }
+.cc-define-float:hover { background: #17604f; }
