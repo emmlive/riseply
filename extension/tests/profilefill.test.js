@@ -336,6 +336,14 @@ const profile = {
   assert.equal(await fr().$eval("#em", (e) => e.value), "j@x.com");
   assert.equal(await fr().$eval("#r", (e) => e.files[0].name), "base.pdf", "resume attached inside the iframe");
 
+  // The review list shows what went in, including the iframe's fields, and Undo puts it back
+  await q("#riseply-review summary").waitFor();
+  const reviewText = await q("#riseply-review").textContent(); // the list is collapsed, so read the text, not what is visible
+  assert.ok(/Jane/.test(reviewText) && /j@x\.com/.test(reviewText), "review lists the values: " + reviewText);
+  await q("#riseply-undo-btn").click();
+  await fr().waitForFunction(() => document.getElementById("fn").value === "" && document.getElementById("em").value === "");
+  assert.equal(await fr().$eval("#ln", (e) => e.value), "", "undo clears the iframe's fields too");
+
   // Next lives in the iframe too: found, confirmed, then clicked there
   await q("#riseply-next-btn").waitFor();
   await q("#riseply-next-btn").click();
@@ -396,6 +404,13 @@ const profile = {
   assert.equal(await sel("cl"), "", "an answer that is not an option is not guessed");
   assert.equal(await sel("al"), "", "a question with no saved answer is left alone");
   assert.equal(res.filled.filter((x) => x === "saved answer").length, 3);
+  const ch = await p.evaluate(() => window.RisePlyFill.changes());
+  assert.equal(ch.length, 3, "every change is listed for review");
+  assert.ok(ch.some((c) => /driver/.test(c.label) && c.value === "Yes"));
+  const un = await p.evaluate(() => window.RisePlyFill.undo());
+  assert.equal(un.undone, 3);
+  assert.equal(await sel("dl"), "", "undo puts the dropdown back");
+  assert.equal(await p.$eval('input[name=bg][value=y]', (e) => e.checked), false, "undo clears the radio");
   console.log("ok: saved answers pick dropdown and radio options");
   await b.close();
 })().catch((e) => { console.error("FAIL saved choices", e.message); process.exit(1); });

@@ -201,9 +201,14 @@
     // matched field turned out to be a text input or a dropdown --
     // keeps the matching logic below from needing to know or care
     // which one it found.
-    if (el.tagName === "SELECT") return setSelectValue(el, value);
-    setNativeValue(el, value);
-    return true;
+    const before = el.value;
+    let done = true;
+    if (el.tagName === "SELECT") done = setSelectValue(el, value);
+    else setNativeValue(el, value);
+    if (done && window.RisePlyFill && el.value !== before) {
+      window.RisePlyFill.record(el, getLabelForElement(el) || el.name || "Field", el.tagName === "SELECT" ? (el.selectedOptions[0]?.text || value) : value, before);
+    }
+    return done;
   }
 
   function findByLabelText(text) {
@@ -330,6 +335,18 @@
     }).join(" ");
   }
 
+  // The "what did it just put where" list, with one button to take it back.
+  function reviewHtml(items) {
+    if (!items.length) return "";
+    const rows = items.map((c) => `<li><span style="color:#2B3445;">${escapeHtml(c.label || "Field")}</span>: <strong>${escapeHtml(c.value)}</strong></li>`).join("");
+    return `<div id="riseply-review" style="margin-top:8px;">
+      <details><summary class="hint" style="cursor:pointer;font-weight:600;margin-top:0;">Review what was filled (${items.length})</summary>
+        <ul class="hint" style="margin:4px 0 6px 16px;padding:0;max-height:180px;overflow:auto;">${rows}</ul>
+      </details>
+      <button class="action secondary" id="riseply-undo-btn" style="margin-top:4px;">Undo autofill</button>
+    </div>`;
+  }
+
   function runAutofill(candidate) {
     candidate = { ...candidate, full_name: properName(candidate.full_name) };
     const nameParts = (candidate.full_name || "").trim().split(" ");
@@ -399,6 +416,7 @@
       }
       case "fill": {
         const filled = [];
+        RF.resetChanges();
         if (a.candidate) filled.push(...runAutofill(a.candidate));
         if (a.login && RF.hasLogin() && RF.fillLogin(a.login).length) filled.push("site login");
         if (a.profile) {
@@ -408,8 +426,9 @@
         if (a.resume && RF.hasResumeInput() && RF.attachResume(a.resume, { replace: !!a.replace })) {
           filled.push(`${a.replace ? "ATS resume" : "resume"} (${a.resume.filename})`);
         }
-        return { filled, left: RF.leftForYou() };
+        return { filled, left: RF.leftForYou(), changes: RF.changes() };
       }
+      case "undo": return RF.undo();
       case "fillLogin": return RF.fillLogin(a.login);
       case "attach": return RF.attachResume(a.resume, { replace: true });
       case "advanceClick": {
@@ -722,6 +741,7 @@
         slot.innerHTML = `<p class="hint" style="color:#B23B3B;">${escapeHtml(result.error || "Couldn't load your profile.")}</p>`;
         return;
       }
+      if (window.RisePlyFill) window.RisePlyFill.resetChanges();
       const filled = runAutofill(result.candidate);
       if (window.RisePlyFill && window.RisePlyFill.hasLogin()) {
         const sl = await sendMessage({ type: "GET_SITE_LOGIN", host: location.hostname });
@@ -757,6 +777,8 @@
       // The same again inside any iframes on the page (iCIMS, embedded
       // Greenhouse): the form there is out of this frame's reach.
       let frameLeft = [];
+      let frameChanges = [];
+      const filledFrames = [];
       await refreshFrameState();
       const formFrames = frameState.filter((f) => f.fields > 0 || f.login || f.file);
       if (formFrames.length) {
@@ -778,9 +800,12 @@
           if (!a) continue;
           filled.push(...(a.filled || []));
           frameLeft.push(...(a.left || []));
+          frameChanges.push(...(a.changes || []));
         }
+        formFrames.forEach((f, i) => { if (answers[i] && (answers[i].changes || []).length) filledFrames.push(f.frameId); });
       }
       const uniqueFilled = Array.from(new Set(filled));
+      const reviewItems = (window.RisePlyFill ? window.RisePlyFill.changes() : []).concat(frameChanges);
       const left = (window.RisePlyFill ? window.RisePlyFill.leftForYou() : []).concat(frameLeft);
       // Remember what Autofill couldn't answer, so the person can answer it once
       // in Riseply and the product can learn what to support. Question text only.
@@ -791,6 +816,7 @@
       if (uniqueFilled.length) {
         slot.innerHTML = `
           <p class="filled-list">Filled: ${uniqueFilled.map(escapeHtml).join(", ")}.</p>
+          ${reviewHtml(reviewItems)}
           ${leftHtml}
           <p class="hint" style="margin-top:4px;">Fields you had already filled were left alone. Questions you haven't answered in your Autofill profile are left for you. Need another job or school? Add the section on the form and press Autofill again.</p>
           ${profileHint}
@@ -813,6 +839,21 @@
         } else {
           slot.innerHTML = `<p class="filled-list">Couldn't find matching fields on this page.</p>${leftHtml}`;
         }
+      }
+
+      const undoBtn = root.getElementById("riseply-undo-btn");
+      if (undoBtn) {
+        undoBtn.addEventListener("click", async () => {
+          undoBtn.disabled = true;
+          const r = window.RisePlyFill ? window.RisePlyFill.undo() : { undone: 0, manual: 0 };
+          let undone = r.undone, manual = r.manual;
+          for (const id of filledFrames) {
+            const fr = await frameOps("undo", {}, id, 15000);
+            if (fr[0] && fr[0].result) { undone += fr[0].result.undone || 0; manual += fr[0].result.manual || 0; }
+          }
+          const rev = root.getElementById("riseply-review");
+          if (rev) rev.innerHTML = `<p class="hint">Undone: ${undone} ${undone === 1 ? "answer" : "answers"} cleared.${manual ? ` ${manual} pick-from-a-list ${manual === 1 ? "choice was" : "choices were"} not reset; change ${manual === 1 ? "it" : "them"} on the form.` : ""} Press Autofill again to refill.</p>`;
+        });
       }
 
       renderLogin(root);
