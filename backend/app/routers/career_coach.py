@@ -13,6 +13,7 @@ from app.services import library as library_service
 from app.services import visuals as visuals_service
 from app.services import discord_notify
 from app.services import videos as videos_service
+from app.services import define as define_service
 from app.services import coach_notebook, lesson as lesson_service, study_quiz, syllabus
 from app.routers import coach_courses
 
@@ -455,6 +456,28 @@ def coach_videos(
     if not found:
         out["note"] = "No embeddable videos found for that. Try the YouTube link or different words."
     return out
+
+
+@router.post("/define", response_model=schemas.CoachDefineOut)
+def define_term(payload: schemas.CoachDefineRequest, db: Session = Depends(get_db),
+                user: models.User = Depends(get_current_user)):
+    """What does this word mean? A short plain-language answer for something
+    the person is reading in a lesson. Counted per lookup; given back if the
+    model fails."""
+    term = define_service.clean_term(payload.term)
+    if not define_service.usable_term(term):
+        raise HTTPException(status_code=422, detail="Select a word or short phrase to look up.")
+    usage.check_and_increment(db, user, "coach_define", 1)
+    try:
+        found = define_service.lookup(term, payload.context, payload.topic)
+    except Exception as e:
+        usage.decrement(db, user.id, "coach_define", 1)
+        print(f"[define] lookup failed for {term!r}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't look that up just now. Try again.")
+    if not found:
+        usage.decrement(db, user.id, "coach_define", 1)
+        raise HTTPException(status_code=422, detail="That doesn't look like a term I can define. Try a word or short phrase.")
+    return schemas.CoachDefineOut(term=term, **found)
 
 
 # --- What the coach remembers (see services/coach_notebook.py) -----------

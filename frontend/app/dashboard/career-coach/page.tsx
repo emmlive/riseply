@@ -8,6 +8,7 @@ import VisualDiagram from "@/components/VisualDiagram";
 import { focusIndex } from "@/lib/whiteboard";
 import { heardTail, parseInterruption, restAfterWait, sentenceStart } from "@/lib/interrupt";
 import CoachVideos from "@/components/CoachVideos";
+import DefineLookup from "@/components/DefineLookup";
 import CoachNotebook from "@/components/CoachNotebook";
 import SaveToStudy, { StudyDraft } from "@/components/SaveToStudy";
 import VoicePicker from "@/components/VoicePicker";
@@ -1026,6 +1027,7 @@ export default function CareerCoachPage() {
               <SessionClock seconds={sessionClock.seconds} limitMin={sessionClock.limitMin} onLimit={sessionClock.setLimit} state={sessionClock.state} onState={sessionClock.setState} live={active.status === "in_progress"} moduleMin={active.course_id && lessonCourse ? (lessonCourse.modules.find((m) => m.id === active.module_id)?.minutes ?? 0) : 0} />
               <CueKey used={usedCues} />
               {!IN_CHARACTER.includes(active.session_type) && <CoachVideos key={active.id} topic={active.topic} />}
+              {!IN_CHARACTER.includes(active.session_type) && <DefineLookup key={`d${active.id}`} topic={active.topic} sessionId={active.id} onSave={setSaveDraft} />}
               {active.course_id && lessonCourse && (() => {
                 const idx = lessonCourse.modules.findIndex((m) => m.id === active.module_id);
                 return idx >= 0 ? (
@@ -1054,7 +1056,7 @@ export default function CareerCoachPage() {
                   </ul>
                 </details>
               )}
-              <div className="cc-chat-window" aria-live="polite" ref={winRef}>
+              <div className="cc-chat-window" aria-live="polite" ref={winRef} data-define-scope>
                 {messages.map((m) => (
                   <div key={m.id} className={`cc-msg ${m.role}`}>
                     {m.role === "assistant" && <span className={`cc-avatar${speakingId === m.id ? " speaking" : ""}`} aria-hidden>C</span>}
