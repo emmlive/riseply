@@ -423,14 +423,14 @@
           filled.push(...RF.run(a.profile).filled);
           filled.push(...(await RF.finishCustom()));
         }
-        if (a.resume && RF.hasResumeInput() && RF.attachResume(a.resume, { replace: !!a.replace })) {
+        if (a.resume && RF.hasResumeInput() && await RF.attachResumeAsync(a.resume, { replace: !!a.replace })) {
           filled.push(`${a.replace ? "ATS resume" : "resume"} (${a.resume.filename})`);
         }
         return { filled, left: RF.leftForYou(), changes: RF.changes() };
       }
       case "undo": return RF.undo();
       case "fillLogin": return RF.fillLogin(a.login);
-      case "attach": return RF.attachResume(a.resume, { replace: true });
+      case "attach": return RF.attachResumeAsync(a.resume, { replace: true });
       case "advanceClick": {
         const now = RF.findAdvance(); // fresh: the page may have changed
         if (!now) return { clicked: false };
@@ -486,7 +486,7 @@
     return done;
   }
   async function attachAnywhere(payload) {
-    if (window.RisePlyFill && window.RisePlyFill.attachResume(payload, { replace: true })) return true;
+    if (window.RisePlyFill && await window.RisePlyFill.attachResumeAsync(payload, { replace: true })) return true;
     await refreshFrameState();
     for (const f of frameState.filter((x) => x.file)) {
       const r = await frameOps("attach", { resume: payload }, f.frameId, 15000);
@@ -775,7 +775,7 @@
         // when it fails: the person can still drag the file in themselves.
         if (window.RisePlyFill.hasResumeInput()) {
           const rf = await getResume();
-          if (rf.success && window.RisePlyFill.attachResume(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
+          if (rf.success && await window.RisePlyFill.attachResumeAsync(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
         }
       }
       // The same again inside any iframes on the page (iCIMS, embedded

@@ -414,3 +414,32 @@ const profile = {
   console.log("ok: saved answers pick dropdown and radio options");
   await b.close();
 })().catch((e) => { console.error("FAIL saved choices", e.message); process.exit(1); });
+
+// ---- resume upload areas: inside a shadow root, and drag-and-drop only (eleventh suite) ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const payload = { filename: "tailored.pdf", content_type: "application/pdf", data: Buffer.from("%PDF-1.4 x").toString("base64") };
+
+  const p1 = await b.newPage();
+  await p1.goto("file://" + path.join(__dirname, "fixture_shadow_upload.html"));
+  await p1.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  assert.equal(await p1.evaluate(() => window.RisePlyFill.hasResumeInput()), true, "an input inside a shadow root is found");
+  assert.equal(await p1.evaluate((pl) => window.RisePlyFill.attachResumeAsync(pl, { replace: true }), payload), true);
+  assert.equal(await p1.evaluate(() => document.getElementById("host").shadowRoot.getElementById("r").files[0].name), "tailored.pdf");
+
+  const p2 = await b.newPage();
+  await p2.goto("file://" + path.join(__dirname, "fixture_dropzone.html"));
+  await p2.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  assert.equal(await p2.evaluate(() => window.RisePlyFill.hasResumeInput()), true, "a drop area with no input is found");
+  assert.equal(await p2.evaluate((pl) => window.RisePlyFill.attachResumeAsync(pl, { replace: true }), payload), true, "drop reported as attached");
+  assert.equal(await p2.evaluate(() => document.getElementById("rz").textContent.trim()), "tailored.pdf");
+  assert.deepEqual(await p2.evaluate(() => window.__drops), { r: 1, c: 0 }, "only the resume area got the file");
+
+  const p3 = await b.newPage();
+  await p3.setContent("<p>Nothing to upload here</p>");
+  await p3.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  assert.equal(await p3.evaluate(() => window.RisePlyFill.hasResumeInput()), false);
+  assert.equal(await p3.evaluate((pl) => window.RisePlyFill.attachResumeAsync(pl, {}), payload), false);
+  console.log("ok: resume goes into a shadow-root input and a drag-and-drop area");
+  await b.close();
+})().catch((e) => { console.error("FAIL upload areas", e.message); process.exit(1); });
