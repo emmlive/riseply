@@ -677,7 +677,11 @@
         await refreshFrameState();
         const adv = anyAdvance();
         const sig = (anyLogin() ? "L" : "-") + (adv ? adv.label : "");
-        if (sig !== lastSeen) { lastSeen = sig; renderLogin(root); renderNext(root); }
+        // Never redraw under the person's hands: an open "are you sure?" or a
+        // half-typed site login would vanish. Try again on the next tick.
+        const busy = !!(root.getElementById("riseply-next-confirm")?.innerHTML.trim()) ||
+          !!root.getElementById("riseply-login-slot")?.contains(root.activeElement);
+        if (sig !== lastSeen && !busy) { lastSeen = sig; renderLogin(root); renderNext(root); }
       } finally { checking = false; }
     }, 1500);
 

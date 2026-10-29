@@ -1,63 +1,49 @@
-# Riseply Autofill (Chrome Extension)
+# Riseply Autofill (Chrome extension)
 
-Not published to the Chrome Web Store yet — this is loaded locally in
-Developer Mode for testing. See the main README for the plan to
-publish later.
+Adds a sidebar to job postings and application forms: score your resume
+against the job, tailor an ATS resume, autofill the form, draft a cover
+letter, and click Next or Log in for you after you confirm. The sidebar only
+appears on pages that look like a job (known application sites, pages with
+job-posting data, or careers pages whose text reads like a job). It never
+appears on shops, news or search pages, or on Riseply's own site.
+
+Not on the Chrome Web Store yet. See `STORE_LISTING.md` for the submission
+pack. Until then it is loaded in Developer Mode.
 
 ## Install (Developer Mode)
 
-1. Open Chrome, go to `chrome://extensions`.
-2. Toggle **Developer mode** on (top right).
-3. Click **Load unpacked**.
-4. Select this `extension/` folder.
-5. You should see "Riseply Autofill" appear in your extensions list
-   with the green Riseply icon. Pin it to the toolbar for easy access
-   (puzzle-piece icon → pin).
+1. Open `chrome://extensions` and turn **Developer mode** on.
+2. **Load unpacked**, then pick this `extension/` folder.
+3. Pin it, click the icon and log in with your Riseply account.
 
-## Using it
+After any code change, press the refresh icon on the extension's card.
 
-1. Click the toolbar icon, log in with your Riseply account (same
-   email/password as riseply.com).
-2. Go to any job posting page — a Greenhouse/Lever/Ashby/Workday
-   posting, or most companies' own in-house careers pages.
-3. A sidebar should appear in the top-right with the detected job
-   title/company, a "Score my resume" button, and an "Autofill this
-   page" button.
+## What it does
 
-## What to actually check (this is real-browser-only — I couldn't
-verify any of this myself)
+- **Autofill this page**: name, email, phone, links, address, work history,
+  education, standard answers (work authorization, sponsorship, salary,
+  notice period), optional self-identification answers, and your saved
+  answers. Saved answers fill text boxes, dropdowns and radio buttons, but
+  only when they point at exactly one option.
+- **Works inside iframes** (iCIMS, embedded Greenhouse) and on Workday-style
+  pick-from-a-list questions.
+- **Attaches your resume** to the upload field (the tailored one if you made
+  it).
+- **Review and undo**: after Autofill, a list shows what went into each
+  question, with an Undo button. Pick-from-a-list choices can't be reset from
+  the page and are counted for you to change by hand.
+- **Still for you**: lists the questions it couldn't answer and sends their
+  text (never your answers) to Riseply, so you can answer once in your
+  Autofill profile.
 
-- Does the sidebar actually appear on real job pages you visit?
-- Does it correctly **not** appear on non-job pages (news sites, your
-  own Riseply dashboard, random browsing)?
-- Does "Score my resume" return a sensible score and reason?
-- Does "Autofill this page" actually fill in real fields on a real
-  application form? Which fields does it miss?
-- Any console errors? Right-click the sidebar → Inspect (or check the
-  page's DevTools console) if something looks broken.
+## Rules it keeps
 
-## Known limitations (by design, not bugs to fix)
+- Fills only empty fields and never overwrites what you typed.
+- Never guesses between options.
+- Never submits for you. Next, Log in and Submit are clicked only after you
+  confirm.
+- Site logins you save stay in this browser and are never sent to Riseply.
 
-- Can't attach your resume to the file input — browsers block scripts
-  from setting a file input's value, on purpose. Same limitation as
-  the bookmarklet.
-- Can't click Submit for you — same reasoning, this fills fields, you
-  review and submit.
-- The generic "looks like a job page" fallback (for sites not on the
-  known-ATS list) is a heuristic, not perfect — it may miss some real
-  job pages or occasionally show up somewhere unexpected. Worth
-  reporting back what you see so the heuristic can be tuned.
+## Tests
 
-## Reloading after code changes
-
-Every time the code changes, go back to `chrome://extensions` and
-click the refresh icon on the Riseply Autofill card — Chrome doesn't
-auto-reload unpacked extensions.
-
-## Publishing later (not done yet)
-
-To get the one-click "Install" experience from riseply.com, this needs
-to go through the Chrome Web Store: a one-time $5 developer account
-fee, then Google reviews the submission (usually a few days) before it
-goes live. Until then, this only works via the manual Developer Mode
-install above.
+`node extension/tests/profilefill.test.js` (needs Playwright and Chromium).
