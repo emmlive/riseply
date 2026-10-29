@@ -49,7 +49,7 @@ export default function UnansweredQuestions({ onSaved }: { onSaved: (p: Autofill
         <div key={q.id} className="af-item" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
           <strong>{q.question}</strong>
           <div className="hint">{q.host ? `Seen on ${q.host}` : "Seen on an application form"}{q.times_seen > 1 ? ` · ${q.times_seen} times` : ""}</div>
-          <textarea rows={2} value={text[q.id] || ""} placeholder="Your answer, in your own words" onChange={(e) => setText({ ...text, [q.id]: e.target.value })} style={{ width: "100%", marginTop: 6 }} />
+          <textarea rows={2} value={text[q.id] || ""} placeholder="Your answer. For a Yes/No or dropdown question, type Yes, No, or the option exactly as the form shows it" onChange={(e) => setText({ ...text, [q.id]: e.target.value })} style={{ width: "100%", marginTop: 6 }} />
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <button className="btn btn-primary btn-sm" disabled={busy === q.id || !(text[q.id] || "").trim()} onClick={() => save(q)}>Save as an answer</button>
             <button className="btn btn-ghost btn-sm" disabled={busy === q.id} onClick={() => dismiss(q)}>Not for me</button>
