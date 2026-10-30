@@ -30,18 +30,41 @@ export function isEcho(heard: string[], spoken: string[], at: number): boolean {
   return heard.length <= 2 ? hits === heard.length : hits / heard.length >= 0.6;
 }
 
+// A command in the middle of a transcript has to be unmistakable: the words
+// that are also ordinary speech ("actually", "sorry", "question") only count
+// when they are the very first thing heard.
+const WAIT_ANYWHERE = /^(wait|hold on|hang on|hold up|stop|pause|one second|one sec|just a sec(ond)?|excuse me|i have a question)\b[\s,.!?-]*/i;
+const LOOK_BACK_WORDS = 14;
+
+function nearSpoken(spoken: string[], at: number): Set<string> {
+  const lo = Math.max(0, at - 30), hi = Math.min(spoken.length, at + 12);
+  return new Set(spoken.slice(lo, hi).flatMap((w) => norm(w)));
+}
+
 /**
  * What the person said (`transcript` = everything heard since listening
  * started), judged against the words being read aloud.
+ *
+ * The transcript is cumulative. On speakers it starts with the coach's own
+ * voice, so a command is looked for among the latest words, not only at the
+ * start. A command word the coach is saying right now is not a command.
  */
 export function parseInterruption(transcript: string, spoken: string[], at: number): Interruption {
   const text = transcript.trim();
   if (!text) return { kind: "none" };
-  const heard = norm(text);
-  if (isEcho(heard, spoken, at)) return { kind: "none" };
-  if (BACK.test(text)) return { kind: "back" };
-  const m = text.match(WAIT);
-  if (m) return { kind: "wait", rest: text.slice(m[0].length).trim() };
+  const words = text.split(/\s+/);
+  const near = nearSpoken(spoken, at);
+  const first = Math.max(0, words.length - LOOK_BACK_WORDS);
+  for (let i = first === 0 ? 0 : first; i < words.length; i++) {
+    const phrase = words.slice(i).join(" ");
+    const atStart = i === 0;
+    const heardCommand = (m: RegExpMatchArray) => norm(m[0]).some((w) => near.has(w));
+    const back = phrase.match(BACK);
+    if (back && !heardCommand(back)) return { kind: "back" };
+    const wait = phrase.match(atStart ? WAIT : WAIT_ANYWHERE);
+    if (wait && !heardCommand(wait)) return { kind: "wait", rest: phrase.slice(wait[0].length).trim() };
+  }
+  // Only the person's own voice (headphones), no command: nothing to do.
   return { kind: "none" };
 }
 
