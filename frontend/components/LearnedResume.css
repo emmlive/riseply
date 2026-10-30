@@ -1,0 +1,11 @@
+.lr-box { margin: 18px 0; padding: 14px 16px; border: 1px solid var(--border, #E2E5EA); border-radius: 12px; background: var(--surface, #fff); }
+.lr-box h3 { margin: 0 0 4px; font-size: 16px; }
+.lr-box p { margin: 6px 0; line-height: 1.5; }
+.lr-mods { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; }
+.lr-mods label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.lr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.lr-warn { background: #FFF6E5; border: 1px solid #F0D9A8; color: #7A5200; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.lr-text { width: 100%; min-height: 320px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; resize: vertical; }
+.lr-label { width: 100%; max-width: 420px; padding: 7px 10px; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; font: inherit; }
+.lr-error { color: #B23B3B; font-size: 13px; }
+.lr-ok { color: #1F6F5C; font-weight: 600; }
