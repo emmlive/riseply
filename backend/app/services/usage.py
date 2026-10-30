@@ -27,6 +27,7 @@ FREE_LIMITS = {
     "course": settings.free_tier_max_course_per_month,
     "coach_video": settings.free_tier_max_coach_video_per_month,
     "coach_define": settings.free_tier_max_coach_define_per_month,
+    "learned_resume": settings.free_tier_max_learned_resume_per_month,
 }
 
 PRO_LIMITS = {
@@ -51,6 +52,7 @@ PRO_LIMITS = {
     "course": settings.pro_tier_max_course_per_month,
     "coach_video": settings.pro_tier_max_coach_video_per_month,
     "coach_define": settings.pro_tier_max_coach_define_per_month,
+    "learned_resume": settings.pro_tier_max_learned_resume_per_month,
 }
 
 

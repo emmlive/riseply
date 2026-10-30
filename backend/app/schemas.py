@@ -2231,6 +2231,19 @@ class CoachModuleOut(BaseModel):
     spent_seconds: int = 0                 # active time across every session of this module
 
 
+class LearnedResumeRequest(BaseModel):
+    module_ids: list[str] = Field(min_length=1, max_length=12)
+
+
+class LearnedResumeOut(BaseModel):
+    label: str
+    base_label: str
+    resume_text: str
+    training: list[str] = []
+    skills: list[str] = []
+    modules: list[str] = []
+
+
 class CoachCourseOut(BaseModel):
     id: int
     target_role: str

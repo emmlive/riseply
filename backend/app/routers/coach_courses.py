@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
-from app.services import syllabus, usage
+from app.services import syllabus, usage, coach_resume
 
 # Career Coach courses: a syllabus the coach teaches module by module, one
 # coach session per module (CareerCoachSession.course_id/module_id), with an
@@ -174,6 +174,46 @@ def delete_course(course_id: int, db: Session = Depends(get_db), user: models.Us
     db.query(models.CareerCoachSession).filter_by(user_id=user.id, course_id=course.id).update({"course_id": None})
     db.delete(course)
     db.commit()
+
+
+@router.post("/{course_id}/learned-resume", response_model=schemas.LearnedResumeOut)
+def learned_resume(course_id: int, payload: schemas.LearnedResumeRequest, db: Session = Depends(get_db),
+                   user: models.User = Depends(get_current_user)):
+    """A copy of the person's resume with what they learned in this course added,
+    worded as training. Only finished modules count; nothing is saved here (the
+    person reads it, edits it and saves it as a new resume)."""
+    course = get_owned(db, course_id, user.id)
+    data = course_data(course)
+    done = set(done_ids(course))
+    picked = [m for m in payload.module_ids if m in done]
+    if not picked:
+        raise HTTPException(status_code=422, detail="Finish a module first. Only modules you have completed can go on your resume.")
+    base = db.query(models.Resume).filter_by(user_id=user.id, is_default=True).first()
+    base_text = (base.resume_text if base else user.resume_text) or ""
+    if not base_text.strip():
+        raise HTTPException(status_code=422, detail="Add your resume first, then we can add what you learned to it.")
+    recaps: dict = {}
+    for sess in db.query(models.CareerCoachSession).filter_by(user_id=user.id, course_id=course.id).all():
+        r = _loads(sess.recap or "", {})
+        if r:
+            recaps[sess.module_id] = r
+    items = coach_resume.evidence(data.get("modules", []), done, picked, recaps)
+    if not items:
+        raise HTTPException(status_code=422, detail="Finish a module first. Only modules you have completed can go on your resume.")
+    usage.check_and_increment(db, user, "learned_resume", 1)
+    try:
+        added = coach_resume.generate(course.target_role, data.get("title") or course.title, items, base_text)
+    except Exception as e:
+        usage.decrement(db, user.id, "learned_resume", 1)
+        print(f"[learned-resume] failed: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't build your resume just now. Try again.")
+    base_label = (base.label if base else "") or "My resume"
+    label = f"{base_label} + {course.target_role} training"[:60]
+    return schemas.LearnedResumeOut(
+        label=label, base_label=base_label,
+        resume_text=coach_resume.assemble(base_text, added["training"], added["skills"]),
+        training=added["training"], skills=added["skills"], modules=[it["title"] for it in items],
+    )
 
 
 @router.post("/sessions/{session_id}/recap", response_model=dict)

@@ -2,6 +2,7 @@
 
 import { CoachCourse } from "@/lib/api";
 import { minutesText } from "@/lib/sessionClock";
+import LearnedResume from "@/components/LearnedResume";
 
 // The syllabus: what the course covers, then its modules in order. Each
 // module is one class with the coach; finished ones keep their recap.
@@ -37,6 +38,8 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
           <div><h4>Before you start</h4><ul>{course.prerequisites.map((o) => <li key={o}>{o}</li>)}</ul></div>
         )}
       </div>
+
+      <LearnedResume key={`lr${course.id}-${course.done}`} course={course} />
 
       <h3 className="cp-syllabus-title">Syllabus</h3>
       <ol className="cp-modules">
