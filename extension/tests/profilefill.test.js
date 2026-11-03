@@ -128,6 +128,9 @@ const profile = {
   assert.deepEqual(await p.evaluate(() => window.RisePlyFill.fillLogin({ username: "a", password: "b" })), []);
   assert.equal(await p.$eval("#p1", (e) => e.value), "");
   assert.equal(await p.evaluate(() => window.RisePlyFill.hasSignup()), true, "two password boxes is a sign-up step");
+  await p.setContent('<input type="email"><input type="password"><button>Sign In</button><a href="#x">Create Account</a>');
+  assert.equal(await p.evaluate(() => window.RisePlyFill.findCreateAccount().label), "create account");
+  await load("fixture_signup.html");
   const pw = await p.evaluate(() => window.RisePlyFill.generatePassword(16));
   assert.ok(pw.length === 16 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw), "strong password");
   assert.deepEqual(await p.evaluate((x) => window.RisePlyFill.fillSignup({ username: "me@x.com", password: x }), pw), ["email", "password", "confirm password"]);
