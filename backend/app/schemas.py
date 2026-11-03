@@ -163,6 +163,12 @@ class ImportJobIn(BaseModel):
     # The person has already applied (on the employer's site). The job is
     # saved as Submitted and no tailoring is spent on it.
     already_applied: bool = False
+    # How the person wants the resume pointed (optional).
+    focus: str = Field(default="", max_length=600)
+
+
+class RetailorIn(BaseModel):
+    focus: Optional[str] = Field(default=None, max_length=600)  # None keeps the saved one
 
 
 class ApplicationOut(BaseModel):
@@ -185,6 +191,7 @@ class ApplicationOut(BaseModel):
     organization_logo_url: str = ""
     organization_accent_color: str = ""
     tailoring_rationale: str = ""
+    tailoring_focus: str = ""
     has_tailored_resume_data: bool = False
     has_cover_letter: bool = False
     salary_min: Optional[int] = None

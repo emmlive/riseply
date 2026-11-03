@@ -272,6 +272,10 @@ class Application(Base):
     # model's response didn't follow the expected format -- the
     # tailoring itself still succeeds either way, this is additive.
     tailoring_rationale = Column(Text, default="", server_default="")
+    # The person's own direction for this resume ("Security Architect; keep
+    # every role on security, don't make me look like a developer"). Kept so
+    # re-tailoring uses it again. Never overrides the no-invention rules.
+    tailoring_focus = Column(Text, default="", server_default="")
     # The tailored cover letter for this application (plain text), written
     # on request and editable. Empty until the person asks for one.
     cover_letter = Column(Text, default="", server_default="")

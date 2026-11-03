@@ -1,6 +1,7 @@
 "use client";
 
 import ResumeCheck from "@/components/ResumeCheck";
+import TailorFocus, { FOCUS_EXAMPLE } from "@/components/TailorFocus";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
@@ -114,7 +115,7 @@ export default function ApplicationsPage() {
   const [addedNote, setAddedNote] = useState("");
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [addError, setAddError] = useState("");
-  const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "" });
+  const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "", focus: "" });
 
   async function load(status: string) {
     // A failed load must not look like "you have no applications".
@@ -141,7 +142,7 @@ export default function ApplicationsPage() {
     setAddError("");
     try {
       await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied }) });
-      setAddForm({ description: "", url: "", title: "", company: "" });
+      setAddForm({ description: "", url: "", title: "", company: "", focus: "" });
       setAdding(false);
       setFilter("");
       await load("");
@@ -252,10 +253,10 @@ export default function ApplicationsPage() {
     }
   }
 
-  async function retailor(id: number) {
+  async function retailor(id: number, focus?: string) {
     setBusyId(id);
     try {
-      await api(`/applications/${id}/retailor`, { method: "POST" });
+      await api(`/applications/${id}/retailor`, { method: "POST", ...(focus === undefined ? {} : { body: JSON.stringify({ focus }) }) });
       await load(filter);
     } catch (err: any) {
       alert(err.message || "Couldn't re-tailor this resume.");
@@ -433,6 +434,17 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          <label htmlFor="add-focus" style={{ fontWeight: 600 }}>What should the resume focus on? (optional)</label>
+          <textarea
+            id="add-focus" rows={3} maxLength={600} value={addForm.focus}
+            onChange={(e) => setAddForm({ ...addForm, focus: e.target.value })}
+            placeholder={FOCUS_EXAMPLE}
+            style={{ width: "100%", marginBottom: 4 }}
+          />
+          <p className="hint">
+            Tell Riseply how to point your resume, for example the role you want it built for. It leads with the
+            experience that fits, and never adds experience you don&apos;t have.
+          </p>
           <p className="hint">
             The job doesn&apos;t have to look like your resume. If it&apos;s in a different field, Riseply builds a
             resume around the skills and experience of yours that carry over, and tells you plainly what&apos;s missing.
@@ -772,6 +784,10 @@ export default function ApplicationsPage() {
                 </div>
               );
             })()}
+
+            {app.has_tailored_resume_data && (
+              <TailorFocus key={`${app.id}-${app.tailoring_focus || ""}`} saved={app.tailoring_focus || ""} busy={busyId === app.id} onRetailor={(f) => retailor(app.id, f)} />
+            )}
 
             {app.has_tailored_resume_data && (
               <ResumeCheck applicationId={app.id} busy={busyId === app.id} onRetailor={() => retailor(app.id)} />
