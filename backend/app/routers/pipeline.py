@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from typing import Literal
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, defer
@@ -330,6 +330,7 @@ def _to_out(app: models.Application, job: models.Job,
         organization_logo_url=(app.organization.logo_url or "") if app.organization else "",
         organization_accent_color=(app.organization.accent_color or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
+        tailoring_focus=app.tailoring_focus or "",
         has_tailored_resume_data=has_resume,
         has_cover_letter=has_letter,
         salary_min=job.salary_min, salary_max=job.salary_max,
@@ -458,6 +459,7 @@ def import_job(
     application = models.Application(
         user_id=user.id, job_id=job.id, matched_profile=profile_name, match_score=score,
         match_reason=reason, status="pending_approval",
+        tailoring_focus=(payload.focus or "").strip()[:600],
     )
     if payload.already_applied:
         # Already sent on the employer's site: record it as Submitted and
@@ -480,7 +482,8 @@ def import_job(
         usage.check_and_increment(db, user, "tailor_resume", 1)
         job_dict["matched_profile"], job_dict["match_score"] = profile_name, score
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, application.id, facts=resume_facts.for_prompt(db, user.id)
+            user.id, user.resume_text, job_dict, application.id, facts=resume_facts.for_prompt(db, user.id),
+            focus=application.tailoring_focus,
         )
         application.tailored_resume_path = filename
         application.tailored_resume_data = docx_bytes
@@ -857,6 +860,7 @@ def retailor_resume(
     application_id: int,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
+    payload: schemas.RetailorIn | None = Body(default=None),
 ):
     """Regenerates the tailored resume for an existing application --
     mainly for applications whose original tailoring predates the
@@ -876,6 +880,12 @@ def retailor_resume(
     if not user.resume_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before re-tailoring.")
 
+    # A new direction replaces the saved one; none given keeps it. Saved only
+    # once the resume was actually rebuilt.
+    focus = app_row.tailoring_focus or ""
+    if isinstance(payload, schemas.RetailorIn) and payload.focus is not None:
+        focus = payload.focus.strip()[:600]
+
     usage.check_and_increment(db, user, "tailor_resume", 1)
     try:
         job_dict = {
@@ -884,7 +894,8 @@ def retailor_resume(
             "match_score": app_row.match_score,
         }
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id)
+            user.id, user.resume_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id),
+            focus=focus,
         )
     except Exception:
         usage.decrement(db, user.id, "tailor_resume", 1)
@@ -893,6 +904,7 @@ def retailor_resume(
     app_row.tailored_resume_path = filename
     app_row.tailored_resume_data = docx_bytes
     app_row.tailoring_rationale = rationale
+    app_row.tailoring_focus = focus
     db.commit()
     db.refresh(app_row)
     return _to_out(app_row, job)

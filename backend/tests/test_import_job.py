@@ -183,7 +183,7 @@ def test_retailor_passes_the_stored_match_score(setup):
         app_id = client.post("/applications/import", json={"description": POSTING}).json()["id"]
     seen = {}
 
-    def spy(user_id, resume, job, application_id, facts=None):
+    def spy(user_id, resume, job, application_id, facts=None, focus=None):
         seen.update(job)
         return "r.docx", b"d", "ok"
 
@@ -191,3 +191,33 @@ def test_retailor_passes_the_stored_match_score(setup):
         r = client.post(f"/applications/{app_id}/retailor")
     assert r.status_code == 200, r.text
     assert seen["match_score"] == 88
+
+
+def test_focus_is_used_saved_and_kept_on_retailor(setup):
+    db, user, client = setup
+    seen = []
+
+    def spy(user_id, resume, job, application_id, facts=None, focus=None):
+        seen.append(focus)
+        return "r.docx", b"d", "ok"
+
+    a, b, _ = _fakes()
+    with a, b, patch("app.routers.pipeline.resume_customizer.customize_for_job", side_effect=spy):
+        r = client.post("/applications/import", json={"description": POSTING, "focus": "Security Architect, not a developer"})
+        assert r.json()["tailoring_focus"] == "Security Architect, not a developer"
+        app_id = r.json()["id"]
+        client.post(f"/applications/{app_id}/retailor")                                  # no body: keeps it
+        client.post(f"/applications/{app_id}/retailor", json={"focus": "Lead with GRC"})  # new direction
+        out = client.post(f"/applications/{app_id}/retailor").json()                      # keeps the new one
+    assert seen == ["Security Architect, not a developer", "Security Architect, not a developer", "Lead with GRC", "Lead with GRC"]
+    assert out["tailoring_focus"] == "Lead with GRC"
+
+
+def test_focus_reaches_the_prompt_and_never_replaces_the_rules():
+    from app.services import resume_customizer as rc
+    job = {"title": "Security Architect", "company": "Acme", "description": "Design secure systems."}
+    with_focus = rc._build_prompt("Resume text", job, None, "Security Architect; do not look like a developer")
+    flat = " ".join(with_focus.split())
+    assert "do not look like a developer" in flat and "CANDIDATE'S DIRECTION" in flat
+    assert "Do NOT invent" in flat and "never add anything they do not have" in flat
+    assert "CANDIDATE'S DIRECTION" not in rc._build_prompt("Resume text", job, None, "")

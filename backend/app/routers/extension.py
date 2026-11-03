@@ -358,7 +358,7 @@ def tailor_for_page(payload: schemas.ImportJobIn, db: Session = Depends(get_db),
     if hit and hit[0].tailored_resume_data:
         a, j = hit
     elif hit:
-        out = pipeline.retailor_resume(hit[0].id, db, user)
+        out = pipeline.retailor_resume(hit[0].id, db, user, None)
         a = db.query(models.Application).filter_by(id=out.id, user_id=user.id).first()
         j = hit[1]
     else:
