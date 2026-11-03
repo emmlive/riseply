@@ -767,6 +767,39 @@
     return { pw, user: before.length ? before[before.length - 1] : null, scope };
   }
 
+  // A "create account" step: two password boxes. Never filled with a saved
+  // login; only by the explicit sign-up helper below.
+  function signupFields() {
+    const pws = controls('input[type="password"]').filter((e) => !e.disabled && visible(e));
+    if (pws.length !== 2) return null;
+    const before = Array.from(document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"]'))
+      .filter((e) => visible(e) && !e.disabled && !e.readOnly)
+      .filter((e) => e.compareDocumentPosition(pws[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return { pw: pws[0], confirm: pws[1], user: before.length ? before[before.length - 1] : null };
+  }
+  RF.hasSignup = function () { return !!signupFields(); };
+  RF.fillSignup = function (cred) {
+    const f = signupFields();
+    const out = [];
+    if (!f || !cred) return out;
+    if (f.user && cred.username && fillText(f.user, cred.username)) out.push("email");
+    if (cred.password && fillText(f.pw, cred.password)) {
+      out.push("password");
+      if (fillText(f.confirm, cred.password)) out.push("confirm password");
+    }
+    return out;
+  };
+  RF.generatePassword = function (len) {
+    const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%*?-_"];
+    const n = Math.max(len || 16, 12);
+    const rnd = (m) => { const a = new Uint32Array(1); let x; do { crypto.getRandomValues(a); x = a[0]; } while (x >= 4294967296 - (4294967296 % m)); return x % m; };
+    const all = sets.join("");
+    const chars = sets.map((s) => s[rnd(s.length)]);
+    while (chars.length < n) chars.push(all[rnd(all.length)]);
+    for (let i = chars.length - 1; i > 0; i--) { const j = rnd(i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+    return chars.join("");
+  };
+
   RF.hasLogin = function () {
     return !!loginFields();
   };
