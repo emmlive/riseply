@@ -777,6 +777,12 @@
       .filter((e) => e.compareDocumentPosition(pws[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
     return { pw: pws[0], confirm: pws[1], user: before.length ? before[before.length - 1] : null };
   }
+  // The site's own "Create Account" link or button on a sign-in step.
+  const CREATE_BTN = /^(create (an )?account|sign ?up|register|create one)$/;
+  RF.findCreateAccount = function () {
+    const el = clickables().find((e) => CREATE_BTN.test(buttonText(e).toLowerCase()));
+    return el ? { el, label: buttonText(el) } : null;
+  };
   RF.hasSignup = function () { return !!signupFields(); };
   RF.fillSignup = function (cred) {
     const f = signupFields();

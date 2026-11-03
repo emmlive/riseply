@@ -1034,7 +1034,27 @@
   // Sign-in: the person saves a username and password for a site once; they
   // stay in this browser only (never sent to Riseply) and are filled on that
   // site's own sign-in form when the person asks.
+  // On a sign-in step with no account yet: a button that clicks the site's own
+  // "Create Account" link. Only on the person's click.
+  function addCreateAccount(root, slot) {
+    const ca = window.RisePlyFill && window.RisePlyFill.findCreateAccount();
+    if (!ca || root.getElementById("riseply-create-acct")) return;
+    const box = document.createElement("div");
+    box.innerHTML = `<p class="hint" style="margin-top:10px;">No account on this site yet?</p><button class="action secondary" id="riseply-create-acct" style="margin-top:4px;">Create an account →</button>`;
+    slot.appendChild(box);
+    root.getElementById("riseply-create-acct").addEventListener("click", () => {
+      ca.el.click();
+      box.innerHTML = `<p class="hint">Opened the sign-up form. When it loads, Riseply offers to fill your email and a new password.</p>`;
+    });
+  }
+
   async function renderLogin(root) {
+    await renderLoginInner(root);
+    const slot = root.getElementById("riseply-login-slot");
+    if (slot && window.RisePlyFill && !window.RisePlyFill.hasSignup() && window.RisePlyFill.hasLogin()) addCreateAccount(root, slot);
+  }
+
+  async function renderLoginInner(root) {
     const slot = root.getElementById("riseply-login-slot");
     if (!slot) return;
     if (window.RisePlyFill && window.RisePlyFill.hasSignup()) { renderSignup(root, slot); return; }
