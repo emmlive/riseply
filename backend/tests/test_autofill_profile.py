@@ -103,3 +103,15 @@ def test_address_new_answers_and_hispanic_are_kept_and_validated():
     assert d["answers"]["referral_source"] == "Indeed" and d["eeo"]["hispanic"] == "No"
     e = svc.empty()
     assert e["contact"]["city"] == "" and e["answers"]["previously_employed"] == "" and e["eeo"]["hispanic"] == ""
+
+
+def test_clean_keeps_languages_and_new_answers():
+    got = svc.clean({
+        "languages": [{"language": "English", "level": "Native", "fluent": True}, {"language": "", "level": "x"}, "junk"],
+        "answers": {"confirm_accurate": "yes", "work_states": "All states", "needs_sponsorship": "maybe"},
+    })
+    assert got["languages"] == [{"language": "English", "level": "Native", "fluent": True}]
+    assert got["answers"]["confirm_accurate"] == "yes"
+    assert got["answers"]["work_states"] == "All states"
+    assert got["answers"]["needs_sponsorship"] == ""
+    assert svc.empty()["languages"] == []

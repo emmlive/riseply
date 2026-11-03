@@ -453,3 +453,43 @@ const profile = {
   console.log("ok: resume goes into a shadow-root input and a drag-and-drop area");
   await b.close();
 })().catch((e) => { console.error("FAIL upload areas", e.message); process.exit(1); });
+
+// ---- profile questions: location, states, textarea yes/no, salary range, degree, languages ----
+(async () => {
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium" });
+  const p = await b.newPage();
+  await p.goto("file://" + path.join(__dirname, "fixture_questions.html"));
+  await p.addScriptTag({ path: path.join(__dirname, "..", "profilefill.js") });
+  const prof = {
+    contact: { city: "Plainfield", state: "IL" },
+    answers: { work_authorized_us: "yes", needs_sponsorship: "no", restrictive_agreement: "no", salary_expectation: "$150,000", confirm_accurate: "yes", work_states: "All states" },
+    education: [{ school: "The Polytechnic Ibadan", degree: "B.S.", field: "Accounting" }],
+    languages: [{ language: "English", level: "Native", fluent: true }],
+  };
+  await p.evaluate((x) => window.RisePlyFill.run(x), prof);
+  await p.evaluate(() => window.RisePlyFill.finishCustom());
+  const v = (id) => p.$eval("#" + id, (e) => e.value);
+  assert.equal(await v("loc"), "Plainfield, IL");
+  assert.equal(await v("ws"), "All states");
+  assert.equal(await p.$eval("#auth", (e) => e.selectedOptions[0].text), "Yes");
+  assert.equal(await v("spon"), "No");
+  assert.equal(await v("rc"), "No");
+  assert.equal(await p.$eval("#sal", (e) => e.selectedOptions[0].text), "$140,000 - $160,000", "the range that holds 150k");
+  assert.equal(await p.$eval("#conf", (e) => e.selectedOptions[0].text), "Yes");
+  assert.equal(await p.$eval("#lang", (e) => e.selectedOptions[0].text), "English");
+  assert.equal(await p.$eval("#lvl", (e) => e.selectedOptions[0].text), "Native or bilingual");
+  assert.equal(await p.$eval("#fl", (e) => e.checked), true);
+  assert.equal(await p.$eval("#deg", (e) => e.textContent), "Bachelors", "B.S. picks Bachelors");
+  const un = await p.evaluate(() => window.RisePlyFill.undo());
+  assert.equal(await p.$eval("#fl", (e) => e.checked), false, "undo unticks the box");
+  assert.equal(await v("loc"), "");
+  // helpers
+  const r = await p.evaluate(() => {
+    const F = window.RisePlyFill;
+    return [F.inSalaryRange("$160,000+", 170000), F.inSalaryRange("Under $80,000", 90000), F.inSalaryRange("$100,000 - $120,000", 110000), F.salaryAmount("150k"), F.salaryAmount("$55"),
+      F.degreePatterns("M.S. in Cybersecurity")[0].source, F.degreePatterns("Ph.D.")[0].source];
+  });
+  assert.deepEqual(r, [true, false, true, 150000, 0, "^master", "^doctor"]);
+  console.log("ok: profile questions");
+  await b.close();
+})().catch((e) => { console.error("FAIL profile questions", e.message); process.exit(1); });

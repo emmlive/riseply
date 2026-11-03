@@ -1,0 +1,35 @@
+<!doctype html><html><body>
+<div id="root"></div>
+<label for="school">School or University*</label><input id="school" type="text">
+<label for="loc">Please list your current location (City, State or Province)*</label><textarea id="loc"></textarea>
+<label for="ws">If applying to Remote US location, what state(s) are you able to work in?*</label><textarea id="ws"></textarea>
+<label for="auth">Are you legally authorized to work in the country in which the job you are applying for is located?*</label>
+<select id="auth"><option>Select One</option><option>Yes</option><option>No</option></select>
+<label for="spon">Do you now or will you in the future require sponsorship for employment for the location that you are applying to? If so, please explain.*</label><textarea id="spon"></textarea>
+<label for="rc">Are you subject to any restrictive covenant or non-competition agreement that may affect your ability to work for Acme?*</label><textarea id="rc"></textarea>
+<label for="sal">My realistic base gross annual salary expectation (not including bonus/commission) for my next role is:*</label>
+<select id="sal"><option>Select One</option><option>$80,000 - $100,000</option><option>$100,000 - $140,000</option><option>$140,000 - $160,000</option><option>$160,000+</option></select>
+<label for="conf">I confirm that my answers to questions in this online application are complete and accurate and that Acme may rely on my answers.*</label>
+<select id="conf"><option>Select One</option><option>Yes</option><option>No</option></select>
+<label for="lang">Language*</label><select id="lang"><option>Select One</option><option>English</option><option>French</option></select>
+<div><input type="checkbox" id="fl"><label for="fl">I am fluent in this language.</label></div>
+<label for="lvl">Level*</label><select id="lvl"><option>Select One</option><option>Beginner</option><option>Intermediate</option><option>Fluent</option><option>Native or bilingual</option></select>
+<div id="eduroot"></div>
+<script>
+function dd(id, label, items) {
+  const root = document.getElementById('eduroot');
+  const l = document.createElement('label'); l.htmlFor = id; l.innerHTML = label + '<span>*</span>';
+  const b = document.createElement('button'); b.id = id; b.type = 'button'; b.setAttribute('aria-haspopup','listbox');
+  b.setAttribute('aria-label', label + ' Select One Required'); b.textContent = 'Select One';
+  b.addEventListener('click', () => {
+    document.querySelectorAll('ul[role=listbox]').forEach(u => u.remove());
+    const ul = document.createElement('ul'); ul.setAttribute('role','listbox');
+    items.forEach(t => { const li = document.createElement('li'); li.setAttribute('role','option'); li.textContent = t;
+      li.addEventListener('click', () => { b.textContent = t; ul.remove(); }); ul.appendChild(li); });
+    document.body.appendChild(ul);
+  });
+  root.append(l, b);
+}
+dd('deg', 'Degree', ['Select One', 'Associates', 'Bachelors', 'Masters', 'Doctorate']);
+</script>
+</body></html>

@@ -13,7 +13,7 @@ import re
 
 from app.services.job_buddy import client, MODEL
 
-MAX_WORK, MAX_EDU, MAX_SKILLS, MAX_QA = 10, 5, 30, 30
+MAX_WORK, MAX_EDU, MAX_SKILLS, MAX_QA, MAX_LANG = 10, 5, 30, 30, 6
 
 YES_NO = {"", "yes", "no"}
 EEO_CHOICES = {
@@ -26,9 +26,10 @@ EEO_CHOICES = {
 }
 ANSWER_KEYS = ("work_authorized_us", "needs_sponsorship", "willing_to_relocate",
                "over_18", "previously_employed", "has_employee_relationship",
-               "restrictive_agreement", "government_official", "related_to_official")
+               "restrictive_agreement", "government_official", "related_to_official",
+               "confirm_accurate")
 TEXT_ANSWER_KEYS = {"salary_expectation": 60, "notice_period": 60, "earliest_start_date": 60, "pronouns": 30,
-                    "referral_source": 60}
+                    "referral_source": 60, "work_states": 120}
 # Where the person lives, for the address block on application forms.
 CONTACT_TEXT_KEYS = {"address_line1": 120, "address_line2": 120, "city": 80, "state": 60, "postal_code": 20, "country": 60}
 PHONE_TYPES = {"", "Mobile", "Home", "Work"}
@@ -39,7 +40,7 @@ def _clip(v, n: int) -> str:
 
 
 def empty() -> dict:
-    return {"work": [], "education": [], "skills": [],
+    return {"work": [], "education": [], "skills": [], "languages": [],
             "answers": {**{k: "" for k in ANSWER_KEYS}, **{k: "" for k in TEXT_ANSWER_KEYS}},
             "eeo": {k: "" for k in EEO_CHOICES}, "saved_answers": [],
             "contact": {**{k: "" for k in CONTACT_TEXT_KEYS}, "phone_type": ""}}
@@ -69,6 +70,16 @@ def clean_education(items) -> list[dict]:
     return out
 
 
+def clean_languages(items) -> list[dict]:
+    out = []
+    for l in (items if isinstance(items, list) else [])[:MAX_LANG]:
+        if not isinstance(l, dict) or not _clip(l.get("language"), 40):
+            continue
+        out.append({"language": _clip(l.get("language"), 40), "level": _clip(l.get("level"), 30),
+                    "fluent": bool(l.get("fluent"))})
+    return out
+
+
 def clean(data) -> dict:
     """Validate everything the person (or the model) sends; unknown keys and
     out-of-list choices are dropped, not trusted."""
@@ -76,6 +87,7 @@ def clean(data) -> dict:
     out = empty()
     out["work"] = clean_work(d.get("work"))
     out["education"] = clean_education(d.get("education"))
+    out["languages"] = clean_languages(d.get("languages"))
     seen, skills = set(), []
     for s in (d.get("skills") if isinstance(d.get("skills"), list) else []):
         s = _clip(s, 50)

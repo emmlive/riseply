@@ -352,6 +352,9 @@
     notice: /notice\s+period/,
     start: /(earliest|available|when\s+can\s+you).*start|start.*(earliest|availab)/,
     pronouns: /\bpronouns?\b/,
+    location: /current location|currently (located|reside|live)|where are you (currently )?(located|based)|where do you (currently )?live/,
+    workStates: /state\(?s?\)?.*(able|eligible|can|authori[sz]ed|permitted)\s+(to\s+)?work|which states?.*work/,
+    confirm: /\b(confirm|certify|attest|acknowledge)\b.*\b(answers|information|statements|responses)\b.*\b(complete|accurate|true|correct)/,
   };
 
   // Digits only when the box is numeric ("$150,000" would be rejected there).
@@ -362,11 +365,42 @@
     return t;
   }
 
+  // "$150,000", "150k", "150000": the yearly figure, or 0 when it is not one.
+  function salaryAmount(text) {
+    const m = String(text || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*(k)?/i);
+    if (!m) return 0;
+    const n = parseFloat(m[1]) * (m[2] ? 1000 : 1);
+    return n >= 10000 ? n : 0;
+  }
+  // Does a dropdown option like "$100,000 - $120,000", "$150,000+" or "Under $80,000" hold the amount?
+  function inSalaryRange(optionText, amt) {
+    const t = norm(optionText).replace(/,/g, "");
+    const nums = [];
+    t.replace(/\$?\s*(\d+(?:\.\d+)?)\s*(k|m)?\b/g, (_, n, u) => { nums.push(parseFloat(n) * (u === "k" ? 1000 : u === "m" ? 1e6 : 1)); return ""; });
+    const big = nums.filter((n) => n >= 1000);
+    if (big.length >= 2) return amt >= big[0] && amt <= big[1];
+    if (big.length === 1) {
+      if (/under|less than|below|up to|maximum|<|or less/.test(t)) return amt <= big[0];
+      if (/\+|over|above|more than|at least|or more|minimum|>/.test(t)) return amt >= big[0];
+    }
+    return false;
+  }
+  RF.salaryAmount = salaryAmount;
+  RF.inSalaryRange = inSalaryRange;
+
   function standardAnswers(a, groups, out) {
-    const set = (key, label, re) => {
+    const set = (key, label, re, yesExtra) => {
       const v = a[key];
       if (v !== "yes" && v !== "no") return;
-      if (answerChoice(re, yn(v), groups, label)) out.push(label);
+      const pats = v === "yes" && yesExtra ? YES.concat(yesExtra) : yn(v);
+      let done = answerChoice(re, pats, groups, label);
+      // Some forms ask the same yes/no question in a free-text box
+      // ("...require sponsorship? If so, please explain.").
+      controls("textarea").forEach((el) => {
+        const q = labelText(el);
+        if (re.test(q) && /\?|explain|if so|yes or no/.test(q) && fillText(el, v === "yes" ? "Yes" : "No")) done = true;
+      });
+      if (done) out.push(label);
     };
     set("work_authorized_us", "work authorization", Q.auth);
     set("needs_sponsorship", "visa sponsorship", Q.sponsor);
@@ -377,6 +411,10 @@
     set("restrictive_agreement", "work restriction agreement", Q.restrict);
     set("government_official", "government official", Q.govOfficial);
     set("related_to_official", "related to an official", Q.relatedOfficial);
+    set("confirm_accurate", "answers confirmed", Q.confirm, [/^i (agree|confirm|certify|accept|acknowledge)/, /^(agree|accept|confirm)/]);
+    // A salary dropdown ("$100,000 - $120,000"): the range that holds the number.
+    const amt = salaryAmount(a.salary_expectation);
+    if (amt && answerChoice(Q.salary, [{ test: (t) => inSalaryRange(t, amt) }], groups, "salary range")) out.push("salary range");
     const text = (key, label, re, money) => {
       if (!a[key]) return;
       for (const el of controls(TEXT_INPUTS)) {
@@ -384,6 +422,7 @@
       }
     };
     text("salary_expectation", "salary expectation", Q.salary, true);
+    text("work_states", "states you can work in", Q.workStates);
     text("notice_period", "notice period", Q.notice);
     text("earliest_start_date", "start date", Q.start);
     if (a.referral_source) {
@@ -504,6 +543,33 @@
     if (any) out.push(label);
   }
 
+  // "B.S. in Accounting" -> the option a form calls "Bachelor's" or "Bachelors".
+  function degreePatterns(text) {
+    const t = norm(text).replace(/\./g, "");
+    const raw = [new RegExp("^" + esc(t) + "$"), new RegExp("^" + esc(t) + "\\b")];
+    let lvl = [];
+    if (/\b(phd|doctor\w*|dphil|edd)\b/.test(t)) lvl = [/^doctor/, /doctor/, /ph\.?d/];
+    else if (/\b(masters?|ms|msc|ma|mba|meng|mphil|mtech|mcom)\b/.test(t)) lvl = [/^master/, /master/, /graduate degree/];
+    else if (/\b(bachelors?|bs|bsc|ba|beng|btech|bcom|bba|undergraduate)\b/.test(t)) lvl = [/^bachelor/, /bachelor/, /undergraduate/];
+    else if (/\b(associates?|aa|aas)\b/.test(t)) lvl = [/^associate/, /associate/];
+    else if (/\b(diploma|ond|hnd|certificate)\b/.test(t)) lvl = [/diploma/, /certificate/];
+    else if (/\b(high school|ged|secondary)\b/.test(t)) lvl = [/high school/, /ged/];
+    return lvl.concat(raw);
+  }
+  RF.degreePatterns = degreePatterns;
+
+  function degreeChoice(block, degree, out, n) {
+    const pats = degreePatterns(degree);
+    let done = false;
+    Array.from(block.querySelectorAll("select")).forEach((sel) => {
+      if (visible(sel) && DEGREE.test(labelText(sel)) && fillSelect(sel, pats)) done = true;
+    });
+    Array.from(block.querySelectorAll(DROPDOWN)).forEach((el) => {
+      if (visible(el) && DEGREE.test(customQuestion(el)) && isPlaceholder(el.textContent)) queue("list", el, DEGREE, pats, `degree ${n}`);
+    });
+    if (done) out.push(`degree ${n}`);
+  }
+
   function history(p, out) {
     // Jobs: the Nth job-title field gets the Nth entry (most recent first).
     // Fields that already have text are skipped, so pressing Autofill again
@@ -526,6 +592,7 @@
         [SCHOOL, e.school], [DEGREE, e.degree], [FIELD, e.field],
         [START, e.start, true], [END, e.end, true],
       ], out, `school ${i + 1}`);
+      if (e.degree) degreeChoice(block, e.degree, out, i + 1);
     });
   }
 
@@ -886,6 +953,10 @@
       else if (textByLabel(re, c.state)) out.push("state");
     }
     if (textByLabel(/\b(zip|postal)\b( code)?/, c.postal_code)) out.push("postal code");
+    const where = [c.city, c.state].filter(Boolean).join(", ");
+    if (where) for (const el of controls(TEXT_INPUTS)) {
+      if (Q.location.test(labelText(el)) && fillText(el, where)) { out.push("current location"); break; }
+    }
     const type = c.phone_type || "Mobile";
     const typePats = [new RegExp("^" + esc(norm(type)) + "\\b")].concat(type === "Mobile" ? [/cell/] : []);
     const typeLabel = c.phone_type ? "phone type" : "phone type (Mobile by default)";
@@ -914,6 +985,52 @@
     }
   }
 
+  // ---------- languages ----------
+
+  const LANG_Q = /^language$/;
+  const LEVEL_Q = /^(level|language level|proficiency|language proficiency|proficiency level)$/;
+
+  function inOrder(list) {
+    return list.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  }
+  function levelPatterns(level) {
+    const t = norm(level);
+    const pats = [new RegExp("^" + esc(t) + "$"), new RegExp("\\b" + esc(t) + "\\b")];
+    if (/native|bilingual|mother/.test(t)) pats.push(/native|bilingual/, /fluent|proficient|full/);
+    else if (/fluent|advanced|proficient|full/.test(t)) pats.push(/fluent|advanced|proficient|full/);
+    else if (/intermediate|conversational|professional working/.test(t)) pats.push(/intermediate|conversational|professional/);
+    else if (/basic|beginner|elementary/.test(t)) pats.push(/basic|beginner|elementary/);
+    return pats;
+  }
+  function languages(list, out) {
+    if (!list || !list.length) return;
+    const asking = (re) => inOrder(
+      controls("select").filter((e) => visible(e) && re.test(labelText(e)))
+        .concat(customDropdowns().filter((e) => re.test(customQuestion(e)))));
+    const langs = asking(LANG_Q), levels = asking(LEVEL_Q);
+    const boxes = inOrder(controls('input[type="checkbox"]').filter((e) => visible(e) && /fluent/.test(labelText(e))));
+    const put = (el, re, pats, label) => {
+      if (el.tagName === "SELECT") return fillSelect(el, pats);
+      if (isPlaceholder(el.textContent)) queue("list", el, re, pats, label);
+      return false;
+    };
+    list.forEach((l, i) => {
+      let any = false;
+      if (langs[i] && l.language) {
+        const t = norm(l.language);
+        any = put(langs[i], LANG_Q, [new RegExp("^" + esc(t) + "$"), new RegExp("^" + esc(t) + "\\b")], "language") || any;
+      }
+      if (levels[i] && l.level) any = put(levels[i], LEVEL_Q, levelPatterns(l.level), "language level") || any;
+      const cb = boxes[i];
+      if (cb && l.fluent && !cb.checked && !cb.disabled) {
+        cb.click();
+        note("check", cb, labelText(cb), "checked", () => { if (cb.checked) cb.click(); });
+        any = true;
+      }
+      if (any) out.push(`language ${i + 1}`);
+    });
+  }
+
   // ---------- entry point ----------
 
   RF.run = function (profile) {
@@ -926,6 +1043,7 @@
     selfIdentification(p.eeo || {}, groups, out);
     signatureDate(out);
     history({ work: p.work || [], education: p.education || [] }, out);
+    languages(p.languages || [], out);
     savedAnswers(p.saved_answers || [], out);
     savedChoices(p.saved_answers || [], groups, out);
     return { filled: out };
@@ -962,7 +1080,7 @@
     const a = Object.values(p.answers || {}).some(Boolean);
     const e = Object.values(p.eeo || {}).some(Boolean);
     const c = Object.values(p.contact || {}).some(Boolean);
-    return !(a || e || c || (p.work || []).length || (p.education || []).length || (p.saved_answers || []).length);
+    return !(a || e || c || (p.work || []).length || (p.education || []).length || (p.languages || []).length || (p.saved_answers || []).length);
   };
 
   window.RisePlyFill = RF;
