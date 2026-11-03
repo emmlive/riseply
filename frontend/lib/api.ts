@@ -1355,8 +1355,9 @@ export interface ExamResult {
 // ---- Autofill profile ----
 export interface AfWork { company: string; title: string; location: string; start: string; end: string; current: boolean; summary: string }
 export interface AfEdu { school: string; degree: string; field: string; start: string; end: string }
+export interface AfLang { language: string; level: string; fluent: boolean }
 export interface AutofillProfile {
-  work: AfWork[]; education: AfEdu[]; skills: string[];
+  work: AfWork[]; education: AfEdu[]; skills: string[]; languages: AfLang[];
   answers: Record<string, string>; eeo: Record<string, string>; contact: Record<string, string>;
   saved_answers: { question: string; answer: string }[];
 }
