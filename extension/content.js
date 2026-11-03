@@ -48,7 +48,7 @@
     // real form field exists at all, seen live more than once tonight.
     // A bit broader is fine here since a false match just offers an
     // extra button to click, not a change in what gets scored/filled.
-    const GATE_PATTERN = /^(start (your )?application|start now|continue|apply now|begin)$/i;
+    const GATE_PATTERN = /^(start (your )?application|start now|continue|apply now|begin|apply manually|sign in with (your )?email|sign in with email address|use my email|create account)$/i;
     return Array.from(document.querySelectorAll("a, button")).find((el) =>
       GATE_PATTERN.test((el.textContent || "").trim())
     ) || null;
@@ -676,7 +676,7 @@
       try {
         await refreshFrameState();
         const adv = anyAdvance();
-        const sig = (anyLogin() ? "L" : "-") + (adv ? adv.label : "");
+        const sig = (window.RisePlyFill && window.RisePlyFill.hasSignup() ? "S" : anyLogin() ? "L" : "-") + (adv ? adv.label : "");
         // Never redraw under the person's hands: an open "are you sure?" or a
         // half-typed site login would vanish. Try again on the next tick.
         const busy = !!(root.getElementById("riseply-next-confirm")?.innerHTML.trim()) ||
@@ -735,6 +735,9 @@
 
     root.getElementById("riseply-fill-btn").addEventListener("click", async () => {
       const btn = root.getElementById("riseply-fill-btn");
+      try { await runFillClick(root, btn); } finally { btn.disabled = false; btn.textContent = "Autofill this page"; }
+    });
+    async function runFillClick(root, btn) {
       btn.disabled = true;
       btn.textContent = "Filling…";
       const result = await sendMessage({ type: "GET_CANDIDATE" });
@@ -829,8 +832,8 @@
         const gateBtn = findApplicationGateButton();
         if (gateBtn) {
           slot.innerHTML = `
-            <p class="filled-list">This looks like a landing page, not the application form yet.</p>
-            <button class="action secondary" id="riseply-gate-btn" style="margin-top:6px;">Go to the application →</button>
+            <p class="filled-list">This is a landing or sign-in step, not the application form yet.</p>
+            <button class="action secondary" id="riseply-gate-btn" style="margin-top:6px;">${escapeHtml((gateBtn.textContent || "").trim())} →</button>
           `;
           root.getElementById("riseply-gate-btn").addEventListener("click", () => {
             // Human-initiated either way: the person clicked THIS
@@ -863,7 +866,7 @@
       renderLogin(root);
       renderNext(root);
       renderUnansweredQuestions(root, scrapeJobInfo()); // fresh scrape -- see the Score button's handler for why
-    });
+    }
 
     root.getElementById("riseply-coverletter-btn").addEventListener("click", async () => {
       const btn = root.getElementById("riseply-coverletter-btn");
@@ -1034,6 +1037,7 @@
   async function renderLogin(root) {
     const slot = root.getElementById("riseply-login-slot");
     if (!slot) return;
+    if (window.RisePlyFill && window.RisePlyFill.hasSignup()) { renderSignup(root, slot); return; }
     if (!window.RisePlyFill || !anyLogin()) { slot.innerHTML = ""; return; }
     const loginHost = currentLoginHost();
     const r = await sendMessage({ type: "GET_SITE_LOGIN", host: loginHost });
@@ -1064,6 +1068,29 @@
     } else {
       showLoginForm(root, slot, site);
     }
+  }
+
+  // Create-account step: fills your profile email and a strong new password,
+  // saves the pair in this browser only, and shows it. Only on the person's click.
+  async function renderSignup(root, slot) {
+    const host = location.hostname;
+    const [cand, saved] = await Promise.all([sendMessage({ type: "GET_CANDIDATE" }), sendMessage({ type: "GET_SITE_LOGIN", host })]);
+    const email = (saved && saved.login && saved.login.username) || (cand && cand.success && cand.candidate && cand.candidate.email) || "";
+    slot.innerHTML = `
+      <p class="hint" style="margin-top:12px;"><strong>Create your account on ${escapeHtml((saved && saved.site) || host)}</strong>${email ? ` with ${escapeHtml(email)}` : ""}. Riseply ${saved && saved.login ? "reuses your saved password" : "makes a strong password"} and keeps it in this browser only, never sent to Riseply.</p>
+      <button class="action secondary" id="riseply-signup-fill" style="margin-top:6px;">Fill the sign-up form</button>
+      <div id="riseply-signup-msg"></div>
+    `;
+    root.getElementById("riseply-signup-fill").addEventListener("click", async () => {
+      const msg = root.getElementById("riseply-signup-msg");
+      if (!email) { msg.innerHTML = `<p class="hint" style="color:#B23B3B;">Add an email to your Riseply profile first.</p>`; return; }
+      const password = (saved && saved.login && saved.login.password) || window.RisePlyFill.generatePassword(16);
+      const done = window.RisePlyFill.fillSignup({ username: email, password });
+      if (!done.includes("password")) { msg.innerHTML = `<p class="hint">Those boxes already have something in them, so nothing changed.</p>`; return; }
+      await sendMessage({ type: "SAVE_SITE_LOGIN", host, username: email, password });
+      msg.innerHTML = `<p class="filled-list">Filled: ${done.join(", ")}. Saved on this device. Your password: <code>${escapeHtml(password)}</code></p><p class="hint">Check the form, tick any box the site requires, then use the button below.</p>`;
+      renderNext(root);
+    });
   }
 
   function showLoginForm(root, slot, site) {

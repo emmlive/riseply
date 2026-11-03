@@ -127,7 +127,14 @@ const profile = {
   assert.equal(await p.evaluate(() => window.RisePlyFill.hasLogin()), false, "sign-up forms are not login forms");
   assert.deepEqual(await p.evaluate(() => window.RisePlyFill.fillLogin({ username: "a", password: "b" })), []);
   assert.equal(await p.$eval("#p1", (e) => e.value), "");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.hasSignup()), true, "two password boxes is a sign-up step");
+  const pw = await p.evaluate(() => window.RisePlyFill.generatePassword(16));
+  assert.ok(pw.length === 16 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw), "strong password");
+  assert.deepEqual(await p.evaluate((x) => window.RisePlyFill.fillSignup({ username: "me@x.com", password: x }), pw), ["email", "password", "confirm password"]);
+  assert.equal(await p.$eval("#e", (e) => e.value), "me@x.com");
+  assert.equal(await p.$eval("#p2", (e) => e.value), pw, "confirm box matches");
   await load("fixture_next.html");
+  assert.equal(await p.evaluate(() => window.RisePlyFill.hasSignup()), false);
   assert.equal(await p.evaluate(() => window.RisePlyFill.findAdvance().el.id), "nx", "Next, never Submit or Back");
   console.log("ok: site login and next");
   await b.close();
