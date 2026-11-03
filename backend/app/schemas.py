@@ -165,10 +165,13 @@ class ImportJobIn(BaseModel):
     already_applied: bool = False
     # How the person wants the resume pointed (optional).
     focus: str = Field(default="", max_length=600)
+    # One of the person's saved resumes to build from; blank means the default.
+    resume_id: Optional[int] = None
 
 
 class RetailorIn(BaseModel):
     focus: Optional[str] = Field(default=None, max_length=600)  # None keeps the saved one
+    resume_id: Optional[int] = None                            # None keeps the saved one
 
 
 class ApplicationOut(BaseModel):
@@ -192,6 +195,7 @@ class ApplicationOut(BaseModel):
     organization_accent_color: str = ""
     tailoring_rationale: str = ""
     tailoring_focus: str = ""
+    tailoring_resume_id: Optional[int] = None
     has_tailored_resume_data: bool = False
     has_cover_letter: bool = False
     salary_min: Optional[int] = None

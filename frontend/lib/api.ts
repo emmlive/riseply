@@ -149,6 +149,7 @@ export interface Application {
   organization_accent_color: string;
   tailoring_rationale: string;
   tailoring_focus?: string;
+  tailoring_resume_id?: number | null;
   has_tailored_resume_data: boolean;
   has_cover_letter?: boolean;
   salary_min: number | null;

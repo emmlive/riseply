@@ -331,6 +331,7 @@ def _to_out(app: models.Application, job: models.Job,
         organization_accent_color=(app.organization.accent_color or "") if app.organization else "",
         tailoring_rationale=app.tailoring_rationale or "",
         tailoring_focus=app.tailoring_focus or "",
+        tailoring_resume_id=app.tailoring_resume_id,
         has_tailored_resume_data=has_resume,
         has_cover_letter=has_letter,
         salary_min=job.salary_min, salary_max=job.salary_max,
@@ -381,6 +382,17 @@ def list_applications(
     return [_to_out(app, job, bool(r), bool(c)) for app, job, r, c in q.all()]
 
 
+def _base_resume(db: Session, user: models.User, resume_id: int | None) -> tuple[str, int | None]:
+    """The text to build from: the saved resume the person picked, or their
+    default. A resume that isn't theirs is reported as not found."""
+    if resume_id is None:
+        return user.resume_text or "", None
+    r = db.query(models.Resume).filter_by(id=resume_id, user_id=user.id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="That resume wasn't found. Pick one from your list.")
+    return r.resume_text or "", r.id
+
+
 @router.post("/applications/import", response_model=schemas.ApplicationOut)
 def import_job(
     payload: schemas.ImportJobIn,
@@ -394,7 +406,8 @@ def import_job(
     to anyone else. Scoring counts as one match and tailoring as one
     tailored resume, same as everywhere else."""
     import time
-    if not (user.resume_text or "").strip():
+    base_text, base_id = _base_resume(db, user, payload.resume_id)
+    if not base_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume first, so Riseply has something to tailor.")
 
     description = payload.description.strip()
@@ -434,13 +447,13 @@ def import_job(
             } for p in profile_rows]
             # The person chose this job, so where it is and how far it sits from
             # their resume are not reasons to skip it; the score just says so.
-            best = matcher.best_profile_match(job_dict, user.resume_text, profiles, ignore_location=True, ignore_fit=True)
+            best = matcher.best_profile_match(job_dict, base_text, profiles, ignore_location=True, ignore_fit=True)
             profile_name, score, reason = best["profile_name"], best["score"], best["reason"]
             if profile_name is None:  # every profile excludes this company: score it anyway
-                result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60, "ignore_location": True})
+                result = matcher.score_job(base_text, job_dict, {"min_match_score": 60, "ignore_location": True})
                 profile_name, score, reason = "From your resume", result["score"], result["reason"]
         else:
-            result = matcher.score_job(user.resume_text, job_dict, {"min_match_score": 60, "ignore_location": True})
+            result = matcher.score_job(base_text, job_dict, {"min_match_score": 60, "ignore_location": True})
             profile_name, score, reason = "From your resume", result["score"], result["reason"]
     except Exception as e:
         usage.decrement(db, user.id, "match", 1)
@@ -460,6 +473,7 @@ def import_job(
         user_id=user.id, job_id=job.id, matched_profile=profile_name, match_score=score,
         match_reason=reason, status="pending_approval",
         tailoring_focus=(payload.focus or "").strip()[:600],
+        tailoring_resume_id=base_id,
     )
     if payload.already_applied:
         # Already sent on the employer's site: record it as Submitted and
@@ -482,7 +496,7 @@ def import_job(
         usage.check_and_increment(db, user, "tailor_resume", 1)
         job_dict["matched_profile"], job_dict["match_score"] = profile_name, score
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, application.id, facts=resume_facts.for_prompt(db, user.id),
+            user.id, base_text, job_dict, application.id, facts=resume_facts.for_prompt(db, user.id),
             focus=application.tailoring_focus,
         )
         application.tailored_resume_path = filename
@@ -877,7 +891,17 @@ def retailor_resume(
         raise HTTPException(status_code=404, detail="Application not found")
     app_row, job = row
 
-    if not user.resume_text.strip():
+    # The saved resume this job was built from (or a newly picked one); a saved
+    # one that has since been deleted falls back to the default.
+    want = app_row.tailoring_resume_id
+    if isinstance(payload, schemas.RetailorIn) and payload.resume_id is not None:
+        want = payload.resume_id
+    if want is not None and not db.query(models.Resume.id).filter_by(id=want, user_id=user.id).first():
+        if isinstance(payload, schemas.RetailorIn) and payload.resume_id is not None:
+            raise HTTPException(status_code=404, detail="That resume wasn't found. Pick one from your list.")
+        want = None
+    base_text, base_id = _base_resume(db, user, want)
+    if not base_text.strip():
         raise HTTPException(status_code=400, detail="Add your resume before re-tailoring.")
 
     # A new direction replaces the saved one; none given keeps it. Saved only
@@ -894,7 +918,7 @@ def retailor_resume(
             "match_score": app_row.match_score,
         }
         filename, docx_bytes, rationale = resume_customizer.customize_for_job(
-            user.id, user.resume_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id),
+            user.id, base_text, job_dict, app_row.id, facts=resume_facts.for_prompt(db, user.id),
             focus=focus,
         )
     except Exception:
@@ -905,6 +929,7 @@ def retailor_resume(
     app_row.tailored_resume_data = docx_bytes
     app_row.tailoring_rationale = rationale
     app_row.tailoring_focus = focus
+    app_row.tailoring_resume_id = base_id
     db.commit()
     db.refresh(app_row)
     return _to_out(app_row, job)

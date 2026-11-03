@@ -221,3 +221,29 @@ def test_focus_reaches_the_prompt_and_never_replaces_the_rules():
     assert "do not look like a developer" in flat and "CANDIDATE'S DIRECTION" in flat
     assert "Do NOT invent" in flat and "never add anything they do not have" in flat
     assert "CANDIDATE'S DIRECTION" not in rc._build_prompt("Resume text", job, None, "")
+
+
+def test_picked_resume_is_used_remembered_and_must_be_the_persons_own(setup):
+    db, user, client = setup
+    mine = models.Resume(user_id=user.id, label="Security", resume_text="Security architect, 12 years of zero trust work.")
+    other_user = models.User(email=f"o-{uuid.uuid4().hex[:8]}@example.com", hashed_password="x", resume_text="x")
+    db.add_all([mine, other_user]); db.commit()
+    theirs = models.Resume(user_id=other_user.id, label="Theirs", resume_text="not yours")
+    db.add(theirs); db.commit()
+    texts = []
+
+    def spy(user_id, resume, job, application_id, facts=None, focus=None):
+        texts.append(resume)
+        return "r.docx", b"d", "ok"
+
+    a, b, _ = _fakes()
+    with a, b, patch("app.routers.pipeline.resume_customizer.customize_for_job", side_effect=spy):
+        assert client.post("/applications/import", json={"description": POSTING, "resume_id": theirs.id}).status_code == 404
+        r = client.post("/applications/import", json={"description": POSTING, "resume_id": mine.id})
+        assert r.status_code == 200, r.text
+        assert r.json()["tailoring_resume_id"] == mine.id
+        client.post(f"/applications/{r.json()['id']}/retailor")                       # keeps the picked one
+        assert client.post(f"/applications/{r.json()['id']}/retailor", json={"resume_id": theirs.id}).status_code == 404
+        client.post("/applications/import", json={"description": POSTING + " two"})    # no pick: default resume
+    assert texts[0].startswith("Security architect") and texts[1].startswith("Security architect")
+    assert texts[2].startswith("Senior IT Auditor")

@@ -7,7 +7,7 @@ import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
 import CoverLetter from "@/components/CoverLetter";
 import BackToTop from "@/components/BackToTop";
-import { api, Application, FitScore, Networking, CompanyBrief, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
+import { api, Application, SavedResume, FitScore, Networking, CompanyBrief, InterviewPrep, KeywordGaps, Followup, CompanyStats, downloadFile, formatSalary, formatWhen } from "@/lib/api";
 
 const STATUS_FILTERS = [
   { value: "", label: "All" },
@@ -115,6 +115,8 @@ export default function ApplicationsPage() {
   const [addedNote, setAddedNote] = useState("");
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [addError, setAddError] = useState("");
+  const [resumes, setResumes] = useState<SavedResume[]>([]);
+  const [addResumeId, setAddResumeId] = useState("");
   const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "", focus: "" });
 
   async function load(status: string) {
@@ -135,13 +137,15 @@ export default function ApplicationsPage() {
   }
 
   useEffect(() => { load(filter); }, [filter]);
+  useEffect(() => { api<SavedResume[]>("/resumes").then(setResumes).catch(() => setResumes([])); }, []);
 
   async function addJob(e: React.FormEvent) {
     e.preventDefault();
     setAddBusy(true);
     setAddError("");
     try {
-      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied }) });
+      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied, resume_id: addResumeId ? Number(addResumeId) : null }) });
+      setAddResumeId("");
       setAddForm({ description: "", url: "", title: "", company: "", focus: "" });
       setAdding(false);
       setFilter("");
@@ -253,10 +257,13 @@ export default function ApplicationsPage() {
     }
   }
 
-  async function retailor(id: number, focus?: string) {
+  async function retailor(id: number, focus?: string, resumeId?: number | null) {
     setBusyId(id);
     try {
-      await api(`/applications/${id}/retailor`, { method: "POST", ...(focus === undefined ? {} : { body: JSON.stringify({ focus }) }) });
+      const body: Record<string, unknown> = {};
+      if (focus !== undefined) body.focus = focus;
+      if (resumeId) body.resume_id = resumeId;
+      await api(`/applications/${id}/retailor`, { method: "POST", ...(Object.keys(body).length ? { body: JSON.stringify(body) } : {}) });
       await load(filter);
     } catch (err: any) {
       alert(err.message || "Couldn't re-tailor this resume.");
@@ -434,6 +441,16 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
+          {resumes.length > 1 && (
+            <>
+              <label htmlFor="add-resume" style={{ fontWeight: 600 }}>Build it from which resume?</label>
+              <select id="add-resume" value={addResumeId} onChange={(e) => setAddResumeId(e.target.value)} style={{ width: "100%", marginBottom: 4 }}>
+                <option value="">My default resume</option>
+                {resumes.map((r) => <option key={r.id} value={r.id}>{r.label || "Untitled resume"}{r.is_default ? " (default)" : ""}</option>)}
+              </select>
+              <p className="hint">Pick one of the resumes saved on your Resume page. Riseply scores the job and tailors from the one you pick.</p>
+            </>
+          )}
           <label htmlFor="add-focus" style={{ fontWeight: 600 }}>What should the resume focus on? (optional)</label>
           <textarea
             id="add-focus" rows={3} maxLength={600} value={addForm.focus}
@@ -786,7 +803,7 @@ export default function ApplicationsPage() {
             })()}
 
             {app.has_tailored_resume_data && (
-              <TailorFocus key={`${app.id}-${app.tailoring_focus || ""}`} saved={app.tailoring_focus || ""} busy={busyId === app.id} onRetailor={(f) => retailor(app.id, f)} />
+              <TailorFocus key={`${app.id}-${app.tailoring_focus || ""}`} saved={app.tailoring_focus || ""} resumes={resumes} savedResumeId={app.tailoring_resume_id ?? null} busy={busyId === app.id} onRetailor={(f, rid) => retailor(app.id, f, rid)} />
             )}
 
             {app.has_tailored_resume_data && (
