@@ -276,6 +276,9 @@ class Application(Base):
     # every role on security, don't make me look like a developer"). Kept so
     # re-tailoring uses it again. Never overrides the no-invention rules.
     tailoring_focus = Column(Text, default="", server_default="")
+    # Which of the person's saved resumes this job was built from. Null means
+    # their default resume. Kept so re-tailoring uses the same one.
+    tailoring_resume_id = Column(Integer, nullable=True)
     # The tailored cover letter for this application (plain text), written
     # on request and editable. Empty until the person asks for one.
     cover_letter = Column(Text, default="", server_default="")
