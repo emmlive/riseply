@@ -42,10 +42,11 @@ export default function TailorFocus({ saved, resumes, savedResumeId, busy, onRet
         onChange={(e) => setText(e.target.value)}
         placeholder={FOCUS_EXAMPLE}
       />
-      {resumes.length > 0 && (
+      {(
         <>
           <label htmlFor="tf-resume" className="tf-label" style={{ marginTop: 8 }}>Build it from which resume?</label>
           <select id="tf-resume" value={resumeId} onChange={(e) => setResumeId(e.target.value)} style={{ width: "100%" }}>
+            {resumes.length === 0 && <option value="">My default resume</option>}
             {resumes.map((r) => <option key={r.id} value={r.id}>{r.label || "Untitled resume"}{r.is_default ? " (default)" : ""}</option>)}
           </select>
         </>

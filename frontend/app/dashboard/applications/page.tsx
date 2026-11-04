@@ -441,7 +441,7 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
-          {resumes.length > 0 && (
+          {(
             <>
               <label htmlFor="add-resume" style={{ fontWeight: 600 }}>Build it from which resume?</label>
               <select id="add-resume" value={addResumeId} onChange={(e) => setAddResumeId(e.target.value)} style={{ width: "100%", marginBottom: 4 }}>
@@ -450,7 +450,7 @@ export default function ApplicationsPage() {
               </select>
               <p className="hint">
                 Pick one of the resumes saved on your Resume page. Riseply scores the job and tailors from the one you pick.
-                {resumes.length === 1 && <> You have one saved resume. <Link href="/dashboard/resume">Add another on the Resume page</Link>, such as a Security Architect version, to choose between them.</>}
+                {resumes.length < 2 && <> {resumes.length === 1 ? "You have one saved resume." : "No saved resumes found."} <Link href="/dashboard/resume">Add another on the Resume page</Link>, such as a Security Architect version, to choose between them.</>}
               </p>
             </>
           )}
