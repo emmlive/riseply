@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import field_validator, model_validator, BaseModel, EmailStr, Field
 
 
@@ -1556,6 +1556,12 @@ class SavedResumeCreate(BaseModel):
 class ResumeRewriteIn(BaseModel):
     resume_id: Optional[int] = None          # which saved resume; blank = the default
     focus: str = Field(min_length=8, max_length=600)
+
+
+class ResumeDownloadIn(BaseModel):
+    text: str = Field(min_length=20, max_length=20000)
+    format: Literal["docx", "pdf"] = "docx"
+    name: str = Field(default="", max_length=120)
 
 
 class ResumeRewriteOut(BaseModel):

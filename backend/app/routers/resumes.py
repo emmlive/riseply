@@ -65,6 +65,33 @@ def create_resume(
     return resume
 
 
+@router.post("/download")
+def download_resume_text(
+    payload: schemas.ResumeDownloadIn,
+    user: models.User = Depends(get_current_user),
+):
+    """The resume text as the person has it on screen (edited or not), as a Word
+    file or an ATS-friendly PDF. Built from what they send, so edits are in it.
+    Nothing is saved and no AI is used."""
+    import re
+    from app.services import resume_customizer
+    blocks = resume_customizer.text_to_blocks(payload.text)
+    if not blocks:
+        raise HTTPException(status_code=422, detail="There's no resume text to download yet.")
+    stem = re.sub(r"[^A-Za-z0-9]+", "_", payload.name).strip("_")[:60] or "resume"
+    try:
+        if payload.format == "pdf":
+            data, mime = resume_customizer.build_pdf_from_blocks(blocks), "application/pdf"
+        else:
+            data, mime = resume_customizer.build_docx_from_blocks(blocks), \
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    except Exception as e:
+        print(f"[resumes] download build failed for user {user.id}: {e}")
+        raise HTTPException(status_code=422, detail="That couldn't be turned into a file. Try the other format.")
+    return Response(content=data, media_type=mime,
+                    headers={"Content-Disposition": f'attachment; filename="{stem}.{payload.format}"'})
+
+
 @router.post("/rewrite", response_model=schemas.ResumeRewriteOut)
 def rewrite_resume(
     payload: schemas.ResumeRewriteIn,

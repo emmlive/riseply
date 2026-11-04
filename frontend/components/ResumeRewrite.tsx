@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, SavedResume } from "@/lib/api";
+import ResumeDownload from "./ResumeDownload";
 import "./ResumeRewrite.css";
 
 interface Draft { label: string; base_label: string; resume_text: string }
@@ -95,6 +96,8 @@ export default function ResumeRewrite({ resumes, onSaved }: { resumes: SavedResu
             Draft, rewritten from &ldquo;{draft.base_label}&rdquo;. Read every line and fix anything that isn&rsquo;t right for you before you save it.
           </p>
           <textarea className="rr-text" value={text} onChange={(e) => setText(e.target.value)} aria-label="Your new resume" spellCheck={false} />
+          <p className="hint" style={{ margin: "6px 0 0" }}>Edit the text above if you like. Downloads include your edits.</p>
+          <div style={{ marginTop: 8 }}><ResumeDownload text={text} name={label} /></div>
           <label htmlFor="rr-name" className="rr-label">Name for this resume</label>
           <input id="rr-name" className="rr-name" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} />
           <label className="rr-check">

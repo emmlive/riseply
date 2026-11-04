@@ -86,3 +86,24 @@ def test_resume_list_loads_even_with_null_columns(setup):
     assert res.status_code == 200, res.text
     row = next(x for x in res.json() if x["id"] == old.id)
     assert row["label"] == "" and row["file_name"] == "" and row["is_default"] is False
+
+
+def test_download_builds_a_word_file_and_a_pdf_from_the_edited_text(setup):
+    db, u, r, client = setup
+    text = SRC + "\nCORE SKILLS\nNIST CSF, SOX, PCI-DSS\n"
+    d = client.post("/resumes/download", json={"text": text, "format": "docx", "name": "Security Architect resume"})
+    assert d.status_code == 200 and d.content[:2] == b"PK"
+    assert 'filename="Security_Architect_resume.docx"' in d.headers["content-disposition"]
+    p = client.post("/resumes/download", json={"text": text, "format": "pdf", "name": "x/y"})
+    assert p.status_code == 200 and p.content[:4] == b"%PDF" and 'filename="x_y.pdf"' in p.headers["content-disposition"]
+    assert client.post("/resumes/download", json={"text": "tiny"}).status_code == 422
+    assert client.post("/resumes/download", json={"text": text, "format": "exe"}).status_code == 422
+
+
+def test_plain_text_structure_a_skills_line_in_capitals_is_not_a_heading():
+    from app.services import resume_customizer as rc
+    kinds = [(b["type"], b.get("text", "")) for b in rc.text_to_blocks(
+        "JANE DOE\nSecurity Architect | GRC\nChicago, IL | jane@x.com\n\nCORE SKILLS\nNIST CSF, SOX, PCI-DSS\nExperience\n- Did things\n")]
+    assert kinds[1][0] == "headline"
+    assert ("heading", "Core Skills") in kinds and ("heading", "Experience") in kinds
+    assert ("text", "NIST CSF, SOX, PCI-DSS") in kinds
