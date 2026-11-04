@@ -14,6 +14,7 @@ export default function ResumePage() {
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The file the person just dropped. It is kept with the resume when they press Save, so the extension can attach it.
@@ -28,6 +29,9 @@ export default function ResumePage() {
         setLabel(active.label);
         setResumeText(active.resume_text);
       }
+      setLoaded(true);
+    }).catch((e) => {
+      setLoadError(e instanceof Error ? e.message : "Couldn't load your resumes.");
       setLoaded(true);
     });
   }, []);
@@ -174,7 +178,16 @@ export default function ResumePage() {
     e.target.value = ""; // allow re-selecting the same file later
   }
 
-  if (!loaded) return <div><h1>Resume</h1></div>;
+  if (!loaded) return <div><h1>Resume</h1><p className="muted">Loading your resumes…</p></div>;
+  if (loadError) {
+    return (
+      <div>
+        <h1>Resume</h1>
+        <p className="cc-error" role="alert">Couldn&apos;t load your resumes: {loadError}</p>
+        <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>Try again</button>
+      </div>
+    );
+  }
 
   return (
     <div>

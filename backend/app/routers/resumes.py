@@ -14,7 +14,7 @@ changes needed anywhere else.
 """
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.database import get_db
 from app.security import get_current_user
@@ -37,6 +37,7 @@ def list_resumes(
 ):
     return (
         db.query(models.Resume)
+        .options(defer(models.Resume.file_data))  # the original PDF/Word bytes are never part of the list
         .filter_by(user_id=user.id)
         .order_by(models.Resume.is_default.desc(), models.Resume.created_at.desc())
         .all()

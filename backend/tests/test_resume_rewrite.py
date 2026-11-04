@@ -75,3 +75,14 @@ def test_refused_rewrite_refunds_and_others_resumes_are_not_found(setup):
     assert usage.get_usage(db, u.id, "resume_rewrite") == 0
     assert client.post("/resumes/rewrite", json={"focus": "Security Architect", "resume_id": 99999999}).status_code == 404
     assert client.post("/resumes/rewrite", json={"focus": "short"}).status_code == 422
+
+
+def test_resume_list_loads_even_with_null_columns(setup):
+    """Older rows can have NULL label/file_name; the list must still load."""
+    db, u, r, client = setup
+    old = models.Resume(user_id=u.id, label=None, resume_text="Old resume text", is_default=None, file_name=None)
+    db.add(old); db.commit()
+    res = client.get("/resumes")
+    assert res.status_code == 200, res.text
+    row = next(x for x in res.json() if x["id"] == old.id)
+    assert row["label"] == "" and row["file_name"] == "" and row["is_default"] is False
