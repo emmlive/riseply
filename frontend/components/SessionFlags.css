@@ -1,0 +1,22 @@
+.sf-intro { margin: 0 0 8px; }
+.sf-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 0 10px; }
+.sf-chip, .sf-fchip { font: inherit; font-size: 0.74rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border, #E2E5EA); background: transparent; color: var(--ink-muted, #5B6678); cursor: pointer; }
+.sf-chip:hover, .sf-fchip:hover { background: var(--paper, #F5F6F8); }
+.sf-continue.is-on { background: #DDF3E6; border-color: #2E8B57; color: #1B5E3A; font-weight: 600; }
+.sf-keep.is-on { background: #DCEAFB; border-color: #3B73C4; color: #1F4A8A; font-weight: 600; }
+.sf-discard.is-on { background: #FBE0E0; border-color: #C24444; color: #8A2222; font-weight: 600; }
+.sf-delete { font: inherit; font-size: 0.74rem; margin-left: auto; padding: 3px 6px; border: 0; background: transparent; color: #8A2222; cursor: pointer; text-decoration: underline; }
+.sf-filter { margin: 0 0 10px; }
+.sf-filter-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.sf-fchip.is-on:not(.sf-continue):not(.sf-keep):not(.sf-discard) { background: var(--accent-soft, #E3F1EE); border-color: var(--accent, #1F7A6C); color: var(--accent-hover, #17594E); font-weight: 600; }
+.sf-bulk { margin-top: 8px; font: inherit; font-size: 0.8rem; padding: 5px 10px; border-radius: 8px; border: 1px solid #C24444; background: #FBE0E0; color: #8A2222; cursor: pointer; }
+.sf-bulk:disabled { opacity: 0.6; cursor: default; }
+
+/* The row around a past session: a color bar on the left shows its mark. */
+.cc-session-wrap { border-left: 4px solid transparent; margin: 0 -12px; padding-left: 8px; border-bottom: 1px solid var(--border, #E2E5EA); border-radius: 6px; }
+.cc-session-wrap:last-child { border-bottom-color: transparent; }
+.cc-session-wrap .cc-session { border-bottom: 0; margin: 0; width: 100%; }
+.cc-session-wrap.sf-continue { border-left-color: #2E8B57; background: #F3FAF6; }
+.cc-session-wrap.sf-keep { border-left-color: #3B73C4; background: #F4F8FD; }
+.cc-session-wrap.sf-discard { border-left-color: #C24444; background: #FDF5F5; opacity: 0.85; }
+.cc-session-wrap .sf-chips { padding-left: 12px; }

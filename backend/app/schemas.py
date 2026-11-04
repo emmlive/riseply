@@ -318,6 +318,10 @@ class CoachingMessageRequest(BaseModel):
 
 # --- Career Coach (individual product) ---
 
+class CareerCoachFlagIn(BaseModel):
+    flag: Literal["", "continue", "keep", "discard"]
+
+
 class CareerCoachSessionOut(BaseModel):
     id: int
     session_type: str
@@ -340,9 +344,15 @@ class CareerCoachSessionOut(BaseModel):
     time_limit_min: int = 0
     active_seconds: int = 0
     timer_state: str = ""
+    flag: str = ""
 
     class Config:
         from_attributes = True
+
+    @field_validator("flag", mode="before")
+    @classmethod
+    def _flag_none(cls, v):
+        return v or ""
 
     @field_validator("recap", mode="before")
     @classmethod

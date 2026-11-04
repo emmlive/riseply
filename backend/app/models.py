@@ -500,6 +500,9 @@ class CareerCoachSession(Base):
     timer_state = Column(String, default="", server_default="")   # "" or running | paused | stopped
     # The diagram drawn in the session's diagram pad (JSON: items, links, note).
     diagram = Column(Text, default="", server_default="")
+    # The person's own mark on this session: "" (none) | continue | keep | discard.
+    # Only for sorting out the list; the coach never reads it.
+    flag = Column(String, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
