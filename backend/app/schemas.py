@@ -1553,6 +1553,17 @@ class SavedResumeCreate(BaseModel):
     resume_text: str = Field(min_length=1, max_length=20000)
 
 
+class ResumeRewriteIn(BaseModel):
+    resume_id: Optional[int] = None          # which saved resume; blank = the default
+    focus: str = Field(min_length=8, max_length=600)
+
+
+class ResumeRewriteOut(BaseModel):
+    label: str
+    base_label: str
+    resume_text: str
+
+
 class SavedResumeUpdate(BaseModel):
     label: Optional[str] = Field(default=None, max_length=200)
     resume_text: Optional[str] = Field(default=None, min_length=1, max_length=20000)
