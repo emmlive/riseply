@@ -1,7 +1,7 @@
 "use client";
 
 import ResumeCheck from "@/components/ResumeCheck";
-import TailorFocus, { FOCUS_EXAMPLE } from "@/components/TailorFocus";
+import TailorFocus from "@/components/TailorFocus";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ResumePreview from "@/components/ResumePreview";
@@ -116,8 +116,7 @@ export default function ApplicationsPage() {
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [addError, setAddError] = useState("");
   const [resumes, setResumes] = useState<SavedResume[]>([]);
-  const [addResumeId, setAddResumeId] = useState("");
-  const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "", focus: "" });
+  const [addForm, setAddForm] = useState({ description: "", url: "", title: "", company: "" });
 
   async function load(status: string) {
     // A failed load must not look like "you have no applications".
@@ -144,9 +143,8 @@ export default function ApplicationsPage() {
     setAddBusy(true);
     setAddError("");
     try {
-      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied, resume_id: addResumeId ? Number(addResumeId) : null }) });
-      setAddResumeId("");
-      setAddForm({ description: "", url: "", title: "", company: "", focus: "" });
+      await api<Application>("/applications/import", { method: "POST", body: JSON.stringify({ ...addForm, already_applied: alreadyApplied }) });
+      setAddForm({ description: "", url: "", title: "", company: "" });
       setAdding(false);
       setFilter("");
       await load("");
@@ -441,30 +439,6 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
-          {(
-            <>
-              <label htmlFor="add-resume" style={{ fontWeight: 600 }}>Build it from which resume?</label>
-              <select id="add-resume" value={addResumeId} onChange={(e) => setAddResumeId(e.target.value)} style={{ width: "100%", marginBottom: 4 }}>
-                <option value="">My default resume</option>
-                {resumes.map((r) => <option key={r.id} value={r.id}>{r.label || "Untitled resume"}{r.is_default ? " (default)" : ""}</option>)}
-              </select>
-              <p className="hint">
-                Pick one of the resumes saved on your Resume page. Riseply scores the job and tailors from the one you pick.
-                {resumes.length < 2 && <> {resumes.length === 1 ? "You have one saved resume." : "No saved resumes found."} <Link href="/dashboard/resume">Add another on the Resume page</Link>, such as a Security Architect version, to choose between them.</>}
-              </p>
-            </>
-          )}
-          <label htmlFor="add-focus" style={{ fontWeight: 600 }}>What should the resume focus on? (optional)</label>
-          <textarea
-            id="add-focus" rows={3} maxLength={600} value={addForm.focus}
-            onChange={(e) => setAddForm({ ...addForm, focus: e.target.value })}
-            placeholder={FOCUS_EXAMPLE}
-            style={{ width: "100%", marginBottom: 4 }}
-          />
-          <p className="hint">
-            Tell Riseply how to point your resume, for example the role you want it built for. It leads with the
-            experience that fits, and never adds experience you don&apos;t have.
-          </p>
           <p className="hint">
             The job doesn&apos;t have to look like your resume. If it&apos;s in a different field, Riseply builds a
             resume around the skills and experience of yours that carry over, and tells you plainly what&apos;s missing.

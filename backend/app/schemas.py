@@ -1571,11 +1571,23 @@ class SavedResumeUpdate(BaseModel):
 
 class SavedResumeOut(BaseModel):
     id: int
-    label: str
-    resume_text: str
-    is_default: bool
-    created_at: datetime
+    label: str = ""
+    resume_text: str = ""
+    is_default: bool = False
+    created_at: Optional[datetime] = None
     file_name: str = ""
+
+    # Older rows can hold NULL in these columns; that must not make the whole
+    # list fail to load.
+    @field_validator("label", "resume_text", "file_name", mode="before")
+    @classmethod
+    def _none_is_empty(cls, v):
+        return "" if v is None else v
+
+    @field_validator("is_default", mode="before")
+    @classmethod
+    def _none_is_false(cls, v):
+        return bool(v)
 
     class Config:
         from_attributes = True
