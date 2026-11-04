@@ -42,7 +42,7 @@ export default function TailorFocus({ saved, resumes, savedResumeId, busy, onRet
         onChange={(e) => setText(e.target.value)}
         placeholder={FOCUS_EXAMPLE}
       />
-      {resumes.length > 1 && (
+      {resumes.length > 0 && (
         <>
           <label htmlFor="tf-resume" className="tf-label" style={{ marginTop: 8 }}>Build it from which resume?</label>
           <select id="tf-resume" value={resumeId} onChange={(e) => setResumeId(e.target.value)} style={{ width: "100%" }}>
