@@ -1,0 +1,12 @@
+.rr-box { margin: 0 0 18px; padding: 14px 16px; border: 1px solid var(--border, #E2E5EA); border-radius: 12px; background: var(--surface, #fff); }
+.rr-box h3 { margin: 0 0 4px; font-size: 16px; }
+.rr-box p { margin: 6px 0; line-height: 1.5; }
+.rr-label { display: block; font-weight: 600; margin: 10px 0 4px; }
+.rr-select, .rr-name { width: 100%; max-width: 420px; padding: 7px 10px; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; font: inherit; }
+.rr-focus { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; font: inherit; }
+.rr-text { width: 100%; box-sizing: border-box; min-height: 340px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; resize: vertical; }
+.rr-warn { background: #FFF6E5; border: 1px solid #F0D9A8; color: #7A5200; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.rr-check { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.rr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.rr-error { color: #B23B3B; font-size: 13px; }
+.rr-ok { color: #1F6F5C; font-weight: 600; }

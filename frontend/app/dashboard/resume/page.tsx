@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, SavedResume } from "@/lib/api";
+import ResumeRewrite from "@/components/ResumeRewrite";
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<SavedResume[]>([]);
@@ -30,6 +31,12 @@ export default function ResumePage() {
       setLoaded(true);
     });
   }, []);
+
+  // After a new resume is saved elsewhere on this page: refresh the list only,
+  // leaving whatever is being edited alone.
+  async function reloadList() {
+    try { setResumes(await api<SavedResume[]>("/resumes")); } catch { /* keep the list as it is */ }
+  }
 
   function selectResume(r: SavedResume) {
     setActiveId(r.id);
@@ -199,6 +206,8 @@ export default function ResumePage() {
           <button className="btn btn-ghost btn-sm" onClick={startNewResume}>+ Add another resume</button>
         </div>
       )}
+
+      <ResumeRewrite resumes={resumes} onSaved={reloadList} />
 
       {activeId !== null && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import get_current_user
 from app import models, schemas
+from app.services import resume_facts, resume_rewrite, usage
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -61,6 +62,38 @@ def create_resume(
     if resume.is_default:
         _sync_default_to_user(db, user)
     return resume
+
+
+@router.post("/rewrite", response_model=schemas.ResumeRewriteOut)
+def rewrite_resume(
+    payload: schemas.ResumeRewriteIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """A rewritten copy of one of the person's resumes, pointed the way they ask.
+    Nothing is saved here: they read it, edit it and save it as a new resume.
+    Costs one use, refunded when no safe version comes back."""
+    if payload.resume_id is not None:
+        base = db.query(models.Resume).filter_by(id=payload.resume_id, user_id=user.id).first()
+        if not base:
+            raise HTTPException(status_code=404, detail="That resume wasn't found. Pick one from your list.")
+    else:
+        base = db.query(models.Resume).filter_by(user_id=user.id, is_default=True).first()
+    base_text = ((base.resume_text if base else user.resume_text) or "").strip()
+    base_label = (base.label if base else "") or "My resume"
+    if len(base_text) < 80:
+        raise HTTPException(status_code=422, detail="Add your resume first, then Riseply can rewrite it.")
+    usage.check_and_increment(db, user, "resume_rewrite", 1)
+    try:
+        label, text = resume_rewrite.rewrite(base_text, payload.focus, resume_facts.for_prompt(db, user.id))
+    except ValueError as e:
+        usage.decrement(db, user.id, "resume_rewrite", 1)
+        raise HTTPException(status_code=502, detail=f"{e} Your resume is unchanged. Try a shorter direction, or try again.")
+    except Exception as e:
+        usage.decrement(db, user.id, "resume_rewrite", 1)
+        print(f"[resume-rewrite] failed for user {user.id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't rewrite your resume just now. Try again shortly.")
+    return schemas.ResumeRewriteOut(label=label, base_label=base_label, resume_text=text)
 
 
 @router.patch("/{resume_id}", response_model=schemas.SavedResumeOut)
