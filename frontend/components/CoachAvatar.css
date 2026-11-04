@@ -1,0 +1,39 @@
+.ca { position: fixed; right: 18px; bottom: 18px; z-index: 40; width: 232px; }
+.ca-card { background: #16233D; color: #E9EEF7; border: 1px solid #2A3A59; border-radius: 14px; padding: 12px 14px 10px; box-shadow: 0 8px 28px rgba(10, 18, 34, 0.28); }
+.ca-top { display: flex; align-items: center; gap: 10px; }
+.ca-mark { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display, serif); font-weight: 600; font-size: 1.05rem; color: #fff; background: #1F7A6C; box-shadow: 0 0 0 0 rgba(63, 185, 160, 0.5); }
+.ca-speaking .ca-mark { animation: caRing 1.6s ease-out infinite; }
+.ca-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.ca-who strong { font-size: 0.84rem; font-weight: 600; }
+.ca-state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #A9B6CC; }
+.ca-dot { width: 6px; height: 6px; border-radius: 50%; background: #5B6B88; }
+.ca-speaking .ca-dot { background: #3FB9A0; }
+.ca-listening .ca-dot { background: #E5A04B; }
+.ca-thinking .ca-dot { background: #8FA6D0; }
+.ca-wave { height: 44px; margin: 10px 0 8px; display: flex; align-items: center; justify-content: center; gap: 3px; }
+.ca-wave > span { flex: 1; max-width: 6px; min-height: 3px; border-radius: 3px; background: #3FB9A0; transition: height 80ms linear; }
+.ca-listening .ca-wave > span { background: #E5A04B; }
+.ca-idle .ca-wave > span { background: #3A4A68; }
+.ca-dots { display: flex; gap: 7px; }
+.ca-dots i { width: 7px; height: 7px; border-radius: 50%; background: #55688C; transition: background 200ms; }
+.ca-dots i.on { background: #8FA6D0; }
+.ca-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.ca-btn { font: inherit; font-size: 0.72rem; padding: 3px 10px; border-radius: 999px; border: 1px solid #3A4A68; background: transparent; color: #C9D3E4; cursor: pointer; }
+.ca-btn:hover { background: #22324F; }
+.ca-btn:focus-visible { outline: 2px solid #3FB9A0; outline-offset: 2px; }
+
+/* When hidden, a small round button brings the coach back. */
+.ca-show { position: fixed; right: 18px; bottom: 18px; z-index: 40; width: 48px; height: 48px; border-radius: 50%; border: 0; background: #16233D; color: #fff; cursor: pointer; padding: 0; box-shadow: 0 4px 14px rgba(10, 18, 34, 0.3); font: inherit; font-family: var(--font-display, serif); font-weight: 600; font-size: 1.05rem; }
+.ca-show:focus-visible { outline: 3px solid #3FB9A0; outline-offset: 2px; }
+
+@keyframes caRing { 0% { box-shadow: 0 0 0 0 rgba(63, 185, 160, 0.5); } 70%, 100% { box-shadow: 0 0 0 10px rgba(63, 185, 160, 0); } }
+
+@media (max-width: 640px) {
+  .ca { width: calc(100% - 20px); right: 10px; bottom: 76px; }
+  .ca-wave { height: 30px; margin: 6px 0; }
+  .ca-show { right: 10px; bottom: 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ca-speaking .ca-mark { animation: none; }
+  .ca-wave > span { transition: none; }
+}

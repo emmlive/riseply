@@ -20,6 +20,7 @@ import SessionClock from "@/components/SessionClock";
 import { minutesText, useSessionClock } from "@/lib/sessionClock";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
+import CoachAvatar from "@/components/CoachAvatar";
 import { FlagChips, FlagFilter, SessionFlag } from "@/components/SessionFlags";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
 import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed } from "@/lib/cues";
@@ -198,6 +199,14 @@ export default function CareerCoachPage() {
   }, [reveal?.count]);
 
   useEffect(() => { if (speakingId === null) setSpokenAt(-1); }, [speakingId]);
+
+  // The coach avatar in the corner. It can be hidden; the choice is remembered.
+  const [avatarHidden, setAvatarHidden] = useState(false);
+  useEffect(() => { try { setAvatarHidden(localStorage.getItem("cc-avatar-hidden") === "1"); } catch { /* ignore */ } }, []);
+  function setAvatarShown(show: boolean) {
+    setAvatarHidden(!show);
+    try { localStorage.setItem("cc-avatar-hidden", show ? "0" : "1"); } catch { /* ignore */ }
+  }
   useEffect(() => {
     refreshCourses();
     if (typeof window === "undefined") return;
@@ -1467,6 +1476,22 @@ export default function CareerCoachPage() {
       </div>
 
       {saveDraft && <SaveToStudy draft={saveDraft} onClose={() => setSaveDraft(null)} />}
+      {active && (avatarHidden ? (
+        <button className="ca-show" onClick={() => setAvatarShown(true)} aria-label="Show your coach" title="Show your coach">C</button>
+      ) : (
+        <CoachAvatar
+          mood={speakingId !== null ? "speaking" : listening || capturing || armed ? "listening" : sending ? "thinking" : "idle"}
+          word={(() => {
+            if (speakingId === null || spokenAt < 0) return null;
+            const m = messages.find((x) => x.id === speakingId);
+            return m ? spokenWordList(m.content)[spokenAt] ?? null : null;
+          })()}
+          voiceOn={readAloud}
+          canSpeak={canSpeak}
+          onToggleVoice={() => toggleReadAloud(!readAloud)}
+          onHide={() => setAvatarShown(false)}
+        />
+      ))}
     </div>
   );
 }
