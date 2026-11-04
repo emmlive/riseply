@@ -441,14 +441,17 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <p className="hint">Leave the title and company blank and Riseply reads them from the text.</p>
-          {resumes.length > 1 && (
+          {resumes.length > 0 && (
             <>
               <label htmlFor="add-resume" style={{ fontWeight: 600 }}>Build it from which resume?</label>
               <select id="add-resume" value={addResumeId} onChange={(e) => setAddResumeId(e.target.value)} style={{ width: "100%", marginBottom: 4 }}>
                 <option value="">My default resume</option>
                 {resumes.map((r) => <option key={r.id} value={r.id}>{r.label || "Untitled resume"}{r.is_default ? " (default)" : ""}</option>)}
               </select>
-              <p className="hint">Pick one of the resumes saved on your Resume page. Riseply scores the job and tailors from the one you pick.</p>
+              <p className="hint">
+                Pick one of the resumes saved on your Resume page. Riseply scores the job and tailors from the one you pick.
+                {resumes.length === 1 && <> You have one saved resume. <Link href="/dashboard/resume">Add another on the Resume page</Link>, such as a Security Architect version, to choose between them.</>}
+              </p>
             </>
           )}
           <label htmlFor="add-focus" style={{ fontWeight: 600 }}>What should the resume focus on? (optional)</label>
