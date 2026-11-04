@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, SavedResume } from "@/lib/api";
 import ResumeRewrite from "@/components/ResumeRewrite";
+import ResumeDownload from "@/components/ResumeDownload";
 
 export default function ResumePage() {
   const [resumes, setResumes] = useState<SavedResume[]>([]);
@@ -289,6 +290,11 @@ export default function ResumePage() {
           onChange={(e) => setResumeText(e.target.value)}
           placeholder="Paste your resume text here, or upload a file above…"
         />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <ResumeDownload text={resumeText} name={label} />
+        <p className="hint" style={{ margin: "6px 0 0" }}>Edit the text above first if you like. Downloads include your edits, saved or not.</p>
       </div>
 
       {saved && <p style={{ color: "var(--accent)" }}>Saved.</p>}

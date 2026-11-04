@@ -325,6 +325,32 @@ _DATE_TAIL = re.compile(
 )
 
 
+_KNOWN_HEADING = re.compile(
+    r"^(professional |executive |career )?(summary|profile|objective)|^(work |professional |relevant |employment )?(experience|history)$|"
+    r"^employment( history)?$|^(technical |core |key )?(skills|competencies)( (and|&) \w+)?$|^education( (and|&) \w+)?$|"
+    r"^(certifications?|licenses?|training|projects?|awards|publications|languages|volunteer\w*|professional development|"
+    r"references|interests)( (and|&) \w+)?$", re.I)
+_ACRONYMS = {"IT", "AI", "GRC", "SOX", "IAM", "PCI", "SOC", "API", "HR", "QA", "UX", "UI", "IS", "ML", "CISA", "NIST"}
+
+
+def _looks_like_heading(line: str) -> bool:
+    t = line.strip().rstrip(":").strip()
+    if not t or len(t) > 50 or line.startswith(("-", "*", "•", "–")):
+        return False
+    if _KNOWN_HEADING.match(t):
+        return True
+    # An all-caps line is a heading only when it reads like one: a few words,
+    # no commas or pipes (a skills list in capitals is not a heading).
+    return t.isupper() and len(t.split()) <= 6 and not re.search(r"[,|;•@]|\d{3}", t)
+
+
+def _heading_case(line: str) -> str:
+    t = line.strip().rstrip(":").strip()
+    if not t.isupper():
+        return t
+    return " ".join(w if w in _ACRONYMS else w.capitalize() if w not in ("&",) else w for w in t.split())
+
+
 def text_to_blocks(text: str) -> list[dict]:
     """Best-effort structure for plain resume text (used when the model
     doesn't return JSON, and by build_docx_bytes)."""
@@ -339,9 +365,11 @@ def text_to_blocks(text: str) -> list[dict]:
             blocks.append({"type": "name", "text": line})
         elif seen_content <= 3 and _CONTACT_HINT.search(line) and blocks and blocks[-1]["type"] in ("name", "contact", "headline"):
             blocks.append({"type": "contact", "text": line})
-        elif line.isupper() and len(line) < 60:
-            blocks.append({"type": "heading", "text": line.title()})
-        elif line.startswith(("- ", "* ", "• ")):
+        elif seen_content == 2 and blocks and blocks[-1]["type"] == "name" and len(line) < 110 and not line.startswith(("-", "*", "•")) and not _looks_like_heading(line):
+            blocks.append({"type": "headline", "text": line})
+        elif _looks_like_heading(line):
+            blocks.append({"type": "heading", "text": _heading_case(line)})
+        elif line.startswith(("- ", "* ", "• ", "– ")):
             blocks.append({"type": "bullet", "text": line[2:].strip()})
         else:
             m = _DATE_TAIL.match(line)

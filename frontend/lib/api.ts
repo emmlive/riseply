@@ -1077,6 +1077,33 @@ export async function downloadFile(path: string, fallbackFilename: string) {
   window.URL.revokeObjectURL(url);
 }
 
+// Download a file the server builds from what we send (for example the resume
+// text exactly as it is on screen, edits included).
+export async function downloadPost(path: string, body: unknown, fallbackFilename: string) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = "Couldn't make that file. Try again.";
+    try { const j = await res.json(); if (typeof j.detail === "string") msg = j.detail; } catch { /* keep the default */ }
+    throw new Error(msg);
+  }
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match ? match[1] : fallbackFilename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // Meeting agenda templates -- a small, fixed set of conversation
 // starters an admin or employee can pull into the notes field before
 // logging a meeting, then edit freely. Shared here (rather than
