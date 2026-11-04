@@ -393,6 +393,62 @@ def save_clock(
     return s
 
 
+def _delete_sessions(db: Session, user_id: int, ids: list[int]) -> int:
+    """Remove sessions with their transcript and notepad. Study notes the person
+    saved from them are separate copies and stay (just unlinked)."""
+    if not ids:
+        return 0
+    db.query(models.CareerCoachMessage).filter(
+        models.CareerCoachMessage.user_id == user_id, models.CareerCoachMessage.session_id.in_(ids)
+    ).delete(synchronize_session=False)
+    db.query(models.CareerCoachNote).filter(
+        models.CareerCoachNote.user_id == user_id, models.CareerCoachNote.session_id.in_(ids)
+    ).delete(synchronize_session=False)
+    db.query(models.StudyNote).filter(
+        models.StudyNote.user_id == user_id, models.StudyNote.session_id.in_(ids)
+    ).update({"session_id": None}, synchronize_session=False)
+    n = db.query(models.CareerCoachSession).filter(
+        models.CareerCoachSession.user_id == user_id, models.CareerCoachSession.id.in_(ids)
+    ).delete(synchronize_session=False)
+    db.commit()
+    return n
+
+
+@router.put("/sessions/{session_id}/flag", response_model=schemas.CareerCoachSessionOut)
+def set_flag(
+    session_id: int,
+    payload: schemas.CareerCoachFlagIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Mark a session: continue (green), keep (blue), discard (red), or clear it."""
+    s = _get_owned_session(db, session_id, user.id)
+    s.flag = payload.flag
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.post("/sessions/delete-discarded")
+def delete_discarded(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Delete every session the person marked as not keeping."""
+    ids = [r[0] for r in db.query(models.CareerCoachSession.id).filter_by(user_id=user.id, flag="discard").all()]
+    return {"deleted": _delete_sessions(db, user.id, ids)}
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    s = _get_owned_session(db, session_id, user.id)
+    _delete_sessions(db, user.id, [s.id])
+
+
 @router.get("/sessions/{session_id}/diagram")
 def get_diagram(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     s = _get_owned_session(db, session_id, user.id)

@@ -20,6 +20,7 @@ import SessionClock from "@/components/SessionClock";
 import { minutesText, useSessionClock } from "@/lib/sessionClock";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
+import { FlagChips, FlagFilter, SessionFlag } from "@/components/SessionFlags";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
 import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed } from "@/lib/cues";
 import {
@@ -709,6 +710,47 @@ export default function CareerCoachPage() {
     }
   }
 
+  const [flagFilter, setFlagFilter] = useState<SessionFlag | "all">("all");
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  async function setFlag(s: CareerCoachSession, flag: SessionFlag) {
+    const before = s.flag ?? "";
+    setSessions((list) => list.map((x) => (x.id === s.id ? { ...x, flag } : x)));
+    try {
+      await api(`/career-coach/sessions/${s.id}/flag`, { method: "PUT", body: JSON.stringify({ flag }) });
+    } catch (e: any) {
+      setSessions((list) => list.map((x) => (x.id === s.id ? { ...x, flag: before as SessionFlag } : x)));
+      setError(e.message || "Couldn't mark that session.");
+    }
+  }
+
+  async function removeSession(s: CareerCoachSession) {
+    if (!window.confirm(`Delete "${s.topic}"? Its conversation is removed. Notes you saved to your study folders stay.`)) return;
+    try {
+      await api(`/career-coach/sessions/${s.id}`, { method: "DELETE" });
+      if (active?.id === s.id) closeSession();
+      setSessions((list) => list.filter((x) => x.id !== s.id));
+    } catch (e: any) {
+      setError(e.message || "Couldn't delete that session.");
+    }
+  }
+
+  async function removeDiscarded() {
+    const n = sessions.filter((x) => x.flag === "discard").length;
+    if (!n || !window.confirm(`Delete the ${n} session${n === 1 ? "" : "s"} marked Not keeping? This can't be undone. Notes you saved to your study folders stay.`)) return;
+    setBulkBusy(true);
+    try {
+      await api("/career-coach/sessions/delete-discarded", { method: "POST" });
+      if (active?.flag === "discard") closeSession();
+      setSessions((list) => list.filter((x) => x.flag !== "discard"));
+      setFlagFilter((f) => (f === "discard" ? "all" : f));
+    } catch (e: any) {
+      setError(e.message || "Couldn't delete those sessions.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function open(s: CareerCoachSession) {
     flushNotes();
     setError("");
@@ -804,6 +846,15 @@ export default function CareerCoachPage() {
   const selectedStyle = LEARNING_STYLES.find((l) => l.value === learningStyle);
   const activeStyleLabel = LEARNING_STYLES.find((l) => l.value === (active?.learning_style ?? "auto"))?.label ?? "Let the coach adapt";
 
+  const flagCounts = {
+    all: sessions.length,
+    "": sessions.filter((x) => !x.flag).length,
+    continue: sessions.filter((x) => x.flag === "continue").length,
+    keep: sessions.filter((x) => x.flag === "keep").length,
+    discard: sessions.filter((x) => x.flag === "discard").length,
+  };
+  const shownSessions = flagFilter === "all" ? sessions : sessions.filter((x) => (x.flag ?? "") === flagFilter);
+
   const sessionList = (
     <Fold id="sessions" title="Past sessions" defaultOpen={!active} note={sessions.length ? `${sessions.length}` : undefined}>
       {!loaded ? (
@@ -811,20 +862,27 @@ export default function CareerCoachPage() {
       ) : sessions.length === 0 ? (
         <p className="cc-empty">No sessions yet. Your first one will show up here with its score.</p>
       ) : (
-        sessions.map((s) => (
-          <button
-            key={s.id} type="button"
-            className={`cc-session ${active?.id === s.id ? "is-active" : ""}`}
-            onClick={() => open(s)}
-          >
-            <span>
-              <span className="cc-session-topic">{s.topic}</span>
-              <span className="cc-session-meta">{typeLabel(s.session_type)} · {s.target_role}</span>
-              <span className="cc-session-meta">{formatWhen(s.created_at)}{s.active_seconds ? ` · ${minutesText(s.active_seconds)}` : ""}</span>
-            </span>
-            {s.status === "completed" ? <ScoreBadge score={s.score} /> : <span className="hint">In progress</span>}
-          </button>
-        ))
+        <>
+          <FlagFilter counts={flagCounts} value={flagFilter} onChange={setFlagFilter} onDeleteDiscarded={removeDiscarded} busy={bulkBusy} />
+          {shownSessions.length === 0 && <p className="cc-empty">Nothing is marked that way yet.</p>}
+          {shownSessions.map((s) => (
+            <div key={s.id} className={`cc-session-wrap ${s.flag ? `sf-${s.flag}` : ""}`}>
+              <button
+                type="button"
+                className={`cc-session ${active?.id === s.id ? "is-active" : ""}`}
+                onClick={() => open(s)}
+              >
+                <span>
+                  <span className="cc-session-topic">{s.topic}</span>
+                  <span className="cc-session-meta">{typeLabel(s.session_type)} · {s.target_role}</span>
+                  <span className="cc-session-meta">{formatWhen(s.created_at)}{s.active_seconds ? ` · ${minutesText(s.active_seconds)}` : ""}</span>
+                </span>
+                {s.status === "completed" ? <ScoreBadge score={s.score} /> : <span className="hint">In progress</span>}
+              </button>
+              <FlagChips flag={(s.flag ?? "") as SessionFlag} onFlag={(f) => setFlag(s, f)} onDelete={() => removeSession(s)} />
+            </div>
+          ))}
+        </>
       )}
     </Fold>
   );
