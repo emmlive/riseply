@@ -1,0 +1,12 @@
+.ss-pick, .ss-mode { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
+.ss-pick-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.ss-pick-tools .hint { margin-right: auto; }
+.ss-list { list-style: none; margin: 0; padding: 4px 8px; max-height: 220px; overflow-y: auto; border: 1px solid var(--border, #E2E5EA); border-radius: 8px; background: var(--paper, #F5F6F8); }
+.ss-list li + li { border-top: 1px solid var(--border, #E2E5EA); }
+.ss-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; font-size: 0.84rem; line-height: 1.4; cursor: pointer; white-space: pre-line; }
+.ss-item input { margin-top: 3px; flex: none; }
+.ss-mode .cc-check { display: flex; margin: 4px 0; }
+.ss-summary { margin-top: 8px; }
+.ss-summary-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ss-summary-row select { width: auto; flex: none; }
+.ss-summary textarea { width: 100%; margin-top: 4px; }

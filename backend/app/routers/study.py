@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import usage, study_summary
 
 # Study folders and saved Career Coach notes. Everything here is the
-# person's own material and never metered. It reaches the model only when the
-# person starts a session with "quiz me first" (services/study_quiz.py), and
-# then just the few notes picked for that session.
+# person's own material. Saving, editing and filing are never metered. Material
+# reaches the model in two cases only: "quiz me first" sessions
+# (services/study_quiz.py, just the few notes picked) and "summarize", which
+# sends the text the person picked once and is counted per summary.
 router = APIRouter(prefix="/career-coach/study", tags=["career-coach"])
 
 MAX_FOLDERS = 50
@@ -195,3 +197,21 @@ def delete_note(
 ):
     db.delete(_note(db, user.id, note_id))
     db.commit()
+
+
+@router.post("/summarize", response_model=schemas.StudySummaryOut)
+def summarize(payload: schemas.StudySummaryIn, db: Session = Depends(get_db),
+              user: models.User = Depends(get_current_user)):
+    """A short summary of the parts of a coach reply the person picked, to review
+    and edit before saving. Counted per summary; given back if the model fails."""
+    usage.check_and_increment(db, user, "study_summary", 1)
+    try:
+        summary = study_summary.summarize(payload.text, payload.style, payload.topic)
+    except Exception as e:
+        usage.decrement(db, user.id, "study_summary", 1)
+        print(f"[study_summary] failed: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't summarize that just now. Try again.")
+    if not summary:
+        usage.decrement(db, user.id, "study_summary", 1)
+        raise HTTPException(status_code=502, detail="Couldn't summarize that just now. Try again.")
+    return schemas.StudySummaryOut(summary=summary)

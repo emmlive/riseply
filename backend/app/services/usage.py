@@ -29,6 +29,7 @@ FREE_LIMITS = {
     "coach_define": settings.free_tier_max_coach_define_per_month,
     "learned_resume": settings.free_tier_max_learned_resume_per_month,
     "resume_rewrite": settings.free_tier_max_resume_rewrite_per_month,
+    "study_summary": settings.free_tier_max_study_summary_per_month,
 }
 
 PRO_LIMITS = {
@@ -55,6 +56,7 @@ PRO_LIMITS = {
     "coach_define": settings.pro_tier_max_coach_define_per_month,
     "learned_resume": settings.pro_tier_max_learned_resume_per_month,
     "resume_rewrite": settings.pro_tier_max_resume_rewrite_per_month,
+    "study_summary": settings.pro_tier_max_study_summary_per_month,
 }
 
 
