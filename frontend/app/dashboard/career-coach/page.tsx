@@ -6,7 +6,7 @@ import { api, CoachCourse, CoachCourseListItem, CoachReplyRating, CareerCoachMes
 import ResourceCard from "@/components/ResourceCard";
 import VisualDiagram from "@/components/VisualDiagram";
 import { focusIndex } from "@/lib/whiteboard";
-import { heardTail, parseInterruption, restAfterWait, sentenceStart } from "@/lib/interrupt";
+import { CONFIRM_MS, heardTail, needsConfirm, parseInterruption, restAfterWait, sentenceStart } from "@/lib/interrupt";
 import CoachVideos from "@/components/CoachVideos";
 import DefineLookup from "@/components/DefineLookup";
 import CoachNotebook from "@/components/CoachNotebook";
@@ -534,23 +534,33 @@ export default function CareerCoachPage() {
       if (speakingRef.current !== m.id || !interruptRef.current) { setArmed(false); return; }
       userStopped.current = false;
       let handled = false;
+      let confirmTimer: ReturnType<typeof setTimeout> | null = null;
       const d = startDictation(
         (text) => {
           if (handled) return;
+          if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
           const r = parseInterruption(text, words, spokenAtRef.current);
           if (r.kind === "none") return;
-          handled = true;
-          userStopped.current = true;
-          d?.stop();
-          setArmed(false);
-          if (r.kind === "back") { replayFromSentence(); return; }
-          pendingInterrupt.current = { heard: heardTail(words, spokenAtRef.current) };
-          stopSpeaking();
-          setSpeakingId(null);
-          // Keep what they said after "wait": the recognizer restarts for the rest.
-          setTimeout(() => beginCapture(r.rest), 300);   // let the first recognizer close
+          const act = () => {
+            confirmTimer = null;
+            if (handled || speakingRef.current !== m.id || !interruptRef.current) return;
+            handled = true;
+            userStopped.current = true;
+            d?.stop();
+            setArmed(false);
+            if (r.kind === "back") { replayFromSentence(); return; }
+            pendingInterrupt.current = { heard: heardTail(words, spokenAtRef.current) };
+            stopSpeaking();
+            setSpeakingId(null);
+            // Keep what they said after "wait": the recognizer restarts for the rest.
+            setTimeout(() => beginCapture(r.kind === "wait" ? r.rest : ""), 300);   // let the first recognizer close
+          };
+          // A bare "wait" could be the coach's own voice misheard: only act once it has stayed the latest thing heard.
+          if (needsConfirm(r)) confirmTimer = setTimeout(act, CONFIRM_MS);
+          else act();
         },
         () => {
+          if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
           if (d && dictation.current === d) { dictation.current = null; interruptListening.current = false; }
           if (!handled && speakingRef.current === m.id && interruptRef.current && tries < 40) {
             tries += 1;
