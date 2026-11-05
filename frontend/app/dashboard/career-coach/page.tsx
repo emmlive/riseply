@@ -21,6 +21,7 @@ import { minutesText, useSessionClock } from "@/lib/sessionClock";
 import { ReadinessCard } from "@/components/Readiness";
 import Fold from "@/components/Fold";
 import CoachAvatar from "@/components/CoachAvatar";
+import LessonMap from "@/components/LessonMap";
 import { FlagChips, FlagFilter, SessionFlag } from "@/components/SessionFlags";
 import MemoryCue, { CueKey } from "@/components/MemoryCue";
 import { CueStyle, cueNoteLine, cuesToNoteText, cuesUsed } from "@/lib/cues";
@@ -199,6 +200,15 @@ export default function CareerCoachPage() {
   }, [reveal?.count]);
 
   useEffect(() => { if (speakingId === null) setSpokenAt(-1); }, [speakingId]);
+
+  // The lesson mind map adds what each new coach reply taught.
+  const [mapReplyId, setMapReplyId] = useState<number | null>(null);
+  function askCoach(text: string) {
+    if (sending || !active) return;
+    inputRef.current = text;
+    setInput(text);
+    send();
+  }
 
   // The coach avatar in the corner. It can be hidden; the choice is remembered.
   const [avatarHidden, setAvatarHidden] = useState(false);
@@ -719,6 +729,7 @@ export default function CareerCoachPage() {
       setSessions((s) => [r.session, ...s]);
       setActive(r.session);
       setMessages([r.opening_message]);
+      setMapReplyId(r.opening_message.id);
       setTopic("");
       if (readAloud) startSpeaking(r.opening_message, voiceModeRef.current && IN_CHARACTER.includes(r.session.session_type));
       else startReveal(r.opening_message);
@@ -775,6 +786,7 @@ export default function CareerCoachPage() {
     setError("");
     setActive(s);
     setMessages([]);
+    setMapReplyId(null);
     setLessonCourse(null);
     if (s.course_id) loadCourse(s.course_id).then((c) => setLessonCourse(c));
     // On a phone the session list sits below the chat; bring the chat into view.
@@ -806,6 +818,7 @@ export default function CareerCoachPage() {
         method: "POST", body: JSON.stringify({ ...(images?.length ? { images } : {}), ...(sessionClock.minutesLeft !== null ? { minutes_left: sessionClock.minutesLeft } : {}), ...(override ? { message: text, style: override.style, voice: readAloud, ...(override.visualKind ? { visual_kind: override.visualKind } : {}) } : { message: text, voice: readAloud, ...(delivery ? { delivery } : {}), ...(interruptedBody ? { interrupted: true, heard_up_to: interruptedBody.heard.slice(-300) } : {}) }) }),
       });
       setMessages((m) => [...m, reply]);
+      setMapReplyId(reply.id);
       if (reply.quiz_result) {
         const quiz_result = reply.quiz_result;
         setActive((a) => (a && a.id === active.id ? { ...a, quiz_result } : a));
@@ -1427,6 +1440,16 @@ export default function CareerCoachPage() {
                 <dt>Learning style</dt><dd>{activeStyleLabel}</dd>
                 <dt>Status</dt><dd>{active.status === "completed" ? "Completed" : "In progress"}</dd>
               </dl>
+            </Fold>
+          )}
+
+          {active && !IN_CHARACTER.includes(active.session_type) && (
+            <Fold id="lessonmap" title="Lesson map" defaultOpen>
+              <LessonMap
+                key={active.id} sessionId={active.id} freshReplyId={mapReplyId} busy={sending}
+                onAsk={askCoach}
+                onSave={(outline, title) => setSaveDraft({ title, content: outline, source: "coach_reply", sourceLabel: noteLabel(active), sessionId: active.id })}
+              />
             </Fold>
           )}
 

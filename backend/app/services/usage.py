@@ -30,6 +30,7 @@ FREE_LIMITS = {
     "learned_resume": settings.free_tier_max_learned_resume_per_month,
     "resume_rewrite": settings.free_tier_max_resume_rewrite_per_month,
     "study_summary": settings.free_tier_max_study_summary_per_month,
+    "lesson_map": settings.free_tier_max_lesson_map_per_month,
 }
 
 PRO_LIMITS = {
@@ -57,6 +58,7 @@ PRO_LIMITS = {
     "learned_resume": settings.pro_tier_max_learned_resume_per_month,
     "resume_rewrite": settings.pro_tier_max_resume_rewrite_per_month,
     "study_summary": settings.pro_tier_max_study_summary_per_month,
+    "lesson_map": settings.pro_tier_max_lesson_map_per_month,
 }
 
 

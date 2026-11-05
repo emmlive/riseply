@@ -1,0 +1,51 @@
+.lm-auto { display: flex; margin: 0 0 8px; font-size: 0.8rem; }
+.lm-status { margin: 4px 0; }
+.lm-empty { margin: 4px 0 8px; }
+.lm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+
+.lm-tree { --line: var(--border-strong, #C7CCD6); font-size: 0.84rem; line-height: 1.35; }
+.lm-center { display: inline-block; max-width: 100%; padding: 6px 14px; border-radius: 999px; background: var(--accent, #1F7A6C); color: #fff; font-weight: 600; overflow-wrap: anywhere; }
+.lm-branches, .lm-items { list-style: none; margin: 0; padding: 0; }
+.lm-label { font: inherit; font-weight: 600; text-align: left; cursor: pointer; padding: 4px 10px; border-radius: 10px; color: var(--ink, #16233D);
+  border: 1.5px solid var(--hue, #1F7A6C); background: color-mix(in srgb, var(--hue, #1F7A6C) 14%, var(--surface, #fff)); }
+.lm-label:hover:not(:disabled) { background: color-mix(in srgb, var(--hue, #1F7A6C) 26%, var(--surface, #fff)); }
+.lm-pt { font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--ink, #16233D); }
+.lm-pt:hover:not(:disabled) { background: color-mix(in srgb, var(--hue, #1F7A6C) 14%, transparent); text-decoration: underline; }
+.lm-label:disabled, .lm-pt:disabled { cursor: default; opacity: 0.7; }
+.lm-label:focus-visible, .lm-pt:focus-visible { outline: 2px solid var(--hue, #1F7A6C); outline-offset: 1px; }
+.lm-new { box-shadow: 0 0 0 2px color-mix(in srgb, var(--hue, #C97A2B) 55%, transparent); background-color: color-mix(in srgb, var(--hue, #C97A2B) 24%, var(--surface, #fff)); }
+
+/* In the side panel: a tree that reads top to bottom. */
+.lm-v .lm-branches { margin: 6px 0 0 14px; padding-left: 14px; border-left: 2px solid var(--line); }
+.lm-v .lm-branch { position: relative; padding: 5px 0; }
+.lm-v .lm-branch::before { content: ""; position: absolute; left: -14px; top: 17px; width: 12px; border-top: 2px solid var(--line); }
+.lm-v .lm-items { margin: 4px 0 0 12px; padding-left: 12px; border-left: 2px dotted var(--line); }
+.lm-v .lm-item { position: relative; padding: 1px 0; }
+.lm-v .lm-item::before { content: ""; position: absolute; left: -12px; top: 11px; width: 9px; border-top: 2px dotted var(--line); }
+
+/* Expanded: a map that reads left to right. */
+.lm-dialog { width: min(980px, 100%); max-height: 92vh; display: flex; flex-direction: column; }
+.lm-scroll { overflow: auto; padding: 12px 4px 4px; }
+.lm-h { display: flex; align-items: center; min-width: max-content; }
+.lm-h .lm-center { position: relative; margin-right: 30px; padding: 10px 18px; font-size: 0.95rem; flex: none; }
+.lm-h .lm-center::after { content: ""; position: absolute; left: 100%; top: 50%; width: 30px; border-top: 2px solid var(--line); }
+.lm-h .lm-branch { position: relative; display: flex; align-items: center; padding: 8px 0 8px 30px; }
+.lm-h .lm-branch::before { content: ""; position: absolute; left: 0; top: 50%; width: 30px; border-top: 2px solid var(--line); }
+.lm-h .lm-branch::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--line); }
+.lm-h .lm-branch:first-child::after { top: 50%; }
+.lm-h .lm-branch:last-child::after { bottom: 50%; }
+.lm-h .lm-branch:only-child::after { display: none; }
+.lm-h .lm-label { position: relative; flex: none; max-width: 240px; font-size: 0.9rem; }
+.lm-h .lm-items { position: relative; margin-left: 24px; }
+.lm-h .lm-items::before { content: ""; position: absolute; right: 100%; top: 50%; width: 24px; border-top: 2px solid var(--line); }
+.lm-h .lm-item { position: relative; padding: 2px 0 2px 20px; }
+.lm-h .lm-item::before { content: ""; position: absolute; left: 0; top: 50%; width: 20px; border-top: 2px solid var(--line); }
+.lm-h .lm-item::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--line); }
+.lm-h .lm-item:first-child::after { top: 50%; }
+.lm-h .lm-item:last-child::after { bottom: 50%; }
+.lm-h .lm-item:only-child::after { display: none; }
+.lm-h .lm-pt { max-width: 300px; }
+
+@media (max-width: 640px) {
+  .lm-dialog { max-height: 96vh; }
+}
