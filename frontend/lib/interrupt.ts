@@ -49,6 +49,32 @@ function inReply(spoken: string[], phrase: string[]): boolean {
   return false;
 }
 
+// What follows a command is the person's own question, so it should NOT be the
+// coach's words. A recognizer often mishears the coach ("what happens when" ->
+// "wait happens when"); when the words after the "command" are a run of the
+// reply, it was the coach.
+function echoesReply(words: string[], spoken: string[]): boolean {
+  if (words.length < 3) return false;
+  for (let i = 0; i + 3 <= words.length; i++) {
+    if (inReply(spoken, words.slice(i, i + 3))) return true;
+  }
+  return false;
+}
+
+/** How long a bare or short command must stay the latest thing heard before it counts. */
+export const CONFIRM_MS = 700;
+
+/**
+ * A command that is just "wait" (or has under three words after it), or any
+ * "go back", could still be a mishearing of the coach, so it is only acted on
+ * once nothing more has been heard for CONFIRM_MS. A longer question goes
+ * straight through.
+ */
+export function needsConfirm(r: Interruption): boolean {
+  if (r.kind === "back") return true;
+  return r.kind === "wait" && r.rest.split(/\s+/).filter(Boolean).length < 3;
+}
+
 /**
  * What the person said (`transcript` = everything heard since listening
  * started), judged against the words being read aloud.
@@ -66,9 +92,12 @@ export function parseInterruption(transcript: string, spoken: string[], at: numb
     const phrase = words.slice(i).join(" ");
     const heardCommand = (m: RegExpMatchArray) => inReply(spoken, norm(m[0]));
     const back = phrase.match(BACK);
-    if (back && !heardCommand(back)) return { kind: "back" };
+    if (back && !heardCommand(back) && !echoesReply(norm(phrase.slice(back[0].length)), spoken)) return { kind: "back" };
     const wait = phrase.match(WAIT);
-    if (wait && !heardCommand(wait)) return { kind: "wait", rest: phrase.slice(wait[0].length).trim() };
+    if (wait && !heardCommand(wait)) {
+      const rest = phrase.slice(wait[0].length).trim();
+      if (!echoesReply(norm(rest), spoken)) return { kind: "wait", rest };
+    }
   }
   // Only the person's own voice (headphones), no command: nothing to do.
   return { kind: "none" };

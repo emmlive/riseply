@@ -8,7 +8,7 @@ const src = fs.readFileSync(path.join(__dirname, "..", "lib", "interrupt.ts"), "
 const out = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const mod = { exports: {} };
 new Function("module", "exports", out)(mod, mod.exports);
-const { parseInterruption, isEcho } = mod.exports;
+const { parseInterruption, isEcho, needsConfirm } = mod.exports;
 
 const coach = "After you put your controls in place some risk always remains. You can never reduce risk to zero. The risk that's left over after your controls are applied is called residual risk".split(" ");
 const at = 14;   // the coach is around "the risk that's left over"
@@ -62,4 +62,20 @@ assert.deepEqual(parseInterruption("here is the fundamental shift wait", plain, 
 assert.deepEqual(parseInterruption("hold on what does fundamental mean", plain, -1), { kind: "wait", rest: "what does fundamental mean" });
 assert.deepEqual(parseInterruption("here is the shift go back", plain, 4), { kind: "back" });
 assert.equal(mod.exports.restAfterWait("sorry what does that mean"), "what does that mean");
+
+// Mishearing: the recognizer turns the coach's "what happens when an attacker
+// gets in" into "wait happens when an attacker gets in". The words after the
+// "command" are the coach's, so it is not a command.
+const reply2 = 'Instead of thinking "how do I keep attackers out?" you think "what happens when an attacker gets in?" Because they will eventually.'.split(" ");
+assert.deepEqual(parseInterruption("wait happens when an attacker gets in", reply2, 5), { kind: "none" });
+assert.deepEqual(parseInterruption("you think wait happens when an attacker", reply2, 5), { kind: "none" });
+assert.deepEqual(parseInterruption("stop what happens when", reply2, -1), { kind: "none" });
+// ...while a real question after "wait" still goes through, even quoting a word of the reply
+assert.deepEqual(parseInterruption("wait what does attacker mean here", reply2, 5), { kind: "wait", rest: "what does attacker mean here" });
+// a bare command, or a short one, waits to be confirmed; a real question does not
+assert.equal(needsConfirm({ kind: "wait", rest: "" }), true);
+assert.equal(needsConfirm({ kind: "wait", rest: "what now" }), true);
+assert.equal(needsConfirm({ kind: "back" }), true);
+assert.equal(needsConfirm({ kind: "wait", rest: "what does residual risk mean" }), false);
+assert.equal(needsConfirm({ kind: "none" }), false);
 console.log("ok: voice interrupt hears wait and go back, on headphones and on speakers");
