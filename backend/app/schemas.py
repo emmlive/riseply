@@ -2172,6 +2172,27 @@ class CoachDefineOut(BaseModel):
     related: list[str] = []
 
 
+class LessonMapBranch(BaseModel):
+    label: str
+    icon: str = ""
+    items: list[str] = []
+
+
+class LessonMapOut(BaseModel):
+    title: str = ""
+    branches: list[LessonMapBranch] = []
+
+
+class LessonMapUpdateIn(BaseModel):
+    # The coach reply to add to the map. Left out, the whole lesson so far is read.
+    message_id: int | None = None
+
+
+class LessonMapUpdateOut(BaseModel):
+    map: LessonMapOut
+    added: int = 0
+
+
 class StudySummaryIn(BaseModel):
     text: str = Field(min_length=20, max_length=12000)
     style: Literal["points", "steps"] = "points"

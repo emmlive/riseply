@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -15,6 +15,7 @@ from app.services import discord_notify
 from app.services import videos as videos_service
 from app.services import define as define_service
 from app.services import coach_notebook, lesson as lesson_service, study_quiz, syllabus
+from app.services import lesson_map as lesson_map_service
 from app.routers import coach_courses
 
 # The individual-product AI Career Coach. Mirrors the Enterprise Job
@@ -447,6 +448,78 @@ def delete_session(
 ):
     s = _get_owned_session(db, session_id, user.id)
     _delete_sessions(db, user.id, [s.id])
+
+
+# --- The lesson mind map (see services/lesson_map.py) ---------------------
+ROLE_PLAY = ("interview", "negotiation")
+
+
+def _map_of(session: models.CareerCoachSession) -> dict:
+    return lesson_map_service.load(session.lesson_map, session.topic or session.target_role)
+
+
+@router.get("/sessions/{session_id}/map", response_model=schemas.LessonMapOut)
+def get_lesson_map(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    return _map_of(_get_owned_session(db, session_id, user.id))
+
+
+@router.post("/sessions/{session_id}/map", response_model=schemas.LessonMapUpdateOut)
+def update_lesson_map(
+    session_id: int,
+    payload: schemas.LessonMapUpdateIn | None = Body(default=None),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Adds what the coach just taught (or, with no message_id, the whole lesson
+    so far) to the map. Only additions: nothing already on the map changes.
+    Counted per update; given back if the model fails."""
+    session = _get_owned_session(db, session_id, user.id)
+    if session.session_type in ROLE_PLAY:
+        raise HTTPException(status_code=400, detail="Mind maps are for learning sessions, not role-plays.")
+    rows = _history(db, session_id, user.id)
+    message_id = payload.message_id if payload else None
+    if message_id is not None:
+        rows = [m for m in rows if m.id == message_id and m.role == "assistant"]
+        if not rows:
+            raise HTTPException(status_code=404, detail="Message not found")
+    else:
+        rows = [m for m in rows if m.role == "assistant"]
+    texts = [t for t in (lesson_map_service.strip_markers(m.content) for m in rows) if len(t) >= 40]
+    current = _map_of(session)
+    if not texts:
+        return schemas.LessonMapUpdateOut(map=current, added=0)
+
+    # A long lesson is read in a few pieces, newest last; the most recent ones if there are many.
+    pieces, buf = [], ""
+    for t in texts:
+        if buf and len(buf) + len(t) > lesson_map_service.MAX_REPLY:
+            pieces.append(buf)
+            buf = ""
+        buf = f"{buf}\n\n{t}".strip()
+    pieces.append(buf)
+    pieces = [p[:lesson_map_service.MAX_REPLY] for p in pieces[-4:]]
+
+    usage.check_and_increment(db, user, "lesson_map", 1)
+    added = 0
+    try:
+        for piece in pieces:
+            current, n = lesson_map_service.merge(current, lesson_map_service.ask_model(current, piece, session.topic or session.target_role))
+            added += n
+    except Exception as e:
+        usage.decrement(db, user.id, "lesson_map", 1)
+        print(f"[lesson-map] update failed for session {session_id}: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't update the map just now. Try again.")
+    session.lesson_map = lesson_map_service.dump(current)
+    db.commit()
+    return schemas.LessonMapUpdateOut(map=current, added=added)
+
+
+@router.delete("/sessions/{session_id}/map", response_model=schemas.LessonMapOut)
+def clear_lesson_map(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    session = _get_owned_session(db, session_id, user.id)
+    session.lesson_map = ""
+    db.commit()
+    return _map_of(session)
 
 
 @router.get("/sessions/{session_id}/diagram")

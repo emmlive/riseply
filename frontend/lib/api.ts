@@ -1391,3 +1391,9 @@ export interface AutofillProfile {
   answers: Record<string, string>; eeo: Record<string, string>; contact: Record<string, string>;
   saved_answers: { question: string; answer: string }[];
 }
+
+// The lesson mind map: what the coach has taught in a session, built up reply by reply.
+export interface LessonMapData {
+  title: string;
+  branches: { label: string; icon?: string; items: string[] }[];
+}

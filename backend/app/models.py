@@ -503,6 +503,8 @@ class CareerCoachSession(Base):
     # The person's own mark on this session: "" (none) | continue | keep | discard.
     # Only for sorting out the list; the coach never reads it.
     flag = Column(String, default="", server_default="")
+    # The lesson mind map that grows as the coach teaches (JSON; see services/lesson_map.py).
+    lesson_map = Column(Text, default="", server_default="")
 
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
