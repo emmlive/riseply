@@ -292,6 +292,7 @@ class Settings(BaseSettings):
     free_tier_max_coach_define_per_month: int = 40
     free_tier_max_learned_resume_per_month: int = 3
     free_tier_max_resume_rewrite_per_month: int = 3
+    free_tier_max_study_summary_per_month: int = 20
 
     # --- Pro tier limits ---
     pro_tier_max_matches_per_month: int = 300
@@ -318,6 +319,7 @@ class Settings(BaseSettings):
     pro_tier_max_coach_define_per_month: int = 400
     pro_tier_max_learned_resume_per_month: int = 30
     pro_tier_max_resume_rewrite_per_month: int = 30
+    pro_tier_max_study_summary_per_month: int = 200
 
     # --- Culture Bot (spaced-repetition onboarding lessons) ---
     # Reuses cron_secret (above) -- both scheduled jobs are triggered the

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, StudyFolder, StudyNote, StudyNoteSource } from "@/lib/api";
+import { joinParts, splitParts } from "@/components/studyParts";
+import "./SaveToStudy.css";
 
 export interface StudyDraft {
   title: string;
@@ -29,6 +31,38 @@ export default function SaveToStudy({ draft, onClose, onSaved }: {
   const [error, setError] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Choose what to keep: tick the pieces, then save them as they are or as a
+  // short summary the person can edit.
+  const parts = useMemo(() => splitParts(draft.content), [draft.content]);
+  const canPick = parts.length >= 2;
+  const [picked, setPicked] = useState<Set<number>>(() => new Set(parts.map((p) => p.id)));
+  const [mode, setMode] = useState<"text" | "summary">("text");
+  const [style, setStyle] = useState<"points" | "steps">("points");
+  const [summary, setSummary] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
+  const pickedText = canPick ? joinParts(parts, picked) : draft.content;
+  const finalText = mode === "summary" ? summary.trim() : pickedText.trim();
+
+  function toggle(id: number) {
+    setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    setSummary("");
+  }
+  async function makeSummary() {
+    if (pickedText.trim().length < 20) { setError("Pick at least a sentence to summarize."); return; }
+    setSummarizing(true);
+    setError("");
+    try {
+      const r = await api<{ summary: string }>("/career-coach/study/summarize", {
+        method: "POST", body: JSON.stringify({ text: pickedText.slice(0, 12000), style, topic: draft.title }),
+      });
+      setSummary(r.summary);
+    } catch (e: any) {
+      setError(e?.message || "We couldn't summarize that. Please try again.");
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
   useEffect(() => {
     api<StudyFolder[]>("/career-coach/study/folders")
       .then((f) => { setFolders(f); if (f.length === 0) setChoice(NEW_FOLDER); })
@@ -43,6 +77,7 @@ export default function SaveToStudy({ draft, onClose, onSaved }: {
   }, [onClose]);
 
   async function save() {
+    if (!finalText) { setError(mode === "summary" ? "Summarize first, or switch to the parts you picked." : "Pick at least one part to save."); return; }
     setSaving(true);
     setError("");
     try {
@@ -57,7 +92,7 @@ export default function SaveToStudy({ draft, onClose, onSaved }: {
       const note = await api<StudyNote>("/career-coach/study/notes", {
         method: "POST",
         body: JSON.stringify({
-          title: title.trim(), content: draft.content, folder_id: folderId, session_id: draft.sessionId,
+          title: title.trim(), content: finalText.slice(0, 20000), folder_id: folderId, session_id: draft.sessionId,
           source: draft.source, source_label: draft.sourceLabel,
         }),
       });
@@ -105,10 +140,67 @@ export default function SaveToStudy({ draft, onClose, onSaved }: {
                        onChange={(e) => setNewName(e.target.value)} />
               )}
 
-              <p className="sf-preview" aria-label="What will be saved">{draft.content.slice(0, 260)}{draft.content.length > 260 ? "…" : ""}</p>
+              {canPick && (
+                <fieldset className="ss-pick">
+                  <legend className="cc-label">What to save</legend>
+                  <div className="ss-pick-tools">
+                    <span className="hint">{picked.size} of {parts.length} picked</span>
+                    <button type="button" className="sg-link" onClick={() => { setPicked(new Set(parts.map((p) => p.id))); setSummary(""); }}>All</button>
+                    <button type="button" className="sg-link" onClick={() => { setPicked(new Set()); setSummary(""); }}>None</button>
+                  </div>
+                  <ul className="ss-list">
+                    {parts.map((p) => (
+                      <li key={p.id}>
+                        <label className="ss-item">
+                          <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
+                          <span>{p.text}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </fieldset>
+              )}
+
+              {canPick && (
+                <fieldset className="ss-mode">
+                  <legend className="cc-label">Save it as</legend>
+                  <label className="cc-check">
+                    <input type="radio" name="ss-mode" checked={mode === "text"} onChange={() => setMode("text")} />
+                    The parts I picked, as written
+                  </label>
+                  <label className="cc-check">
+                    <input type="radio" name="ss-mode" checked={mode === "summary"} onChange={() => setMode("summary")} />
+                    A short summary of them
+                  </label>
+                  {mode === "summary" && (
+                    <div className="ss-summary">
+                      <div className="ss-summary-row">
+                        <select className="cc-input" aria-label="Summary style" value={style}
+                                onChange={(e) => { setStyle(e.target.value as "points" | "steps"); setSummary(""); }}>
+                          <option value="points">Key points</option>
+                          <option value="steps">Practical steps</option>
+                        </select>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={makeSummary}
+                                disabled={summarizing || picked.size === 0}>
+                          {summarizing ? "Summarizing…" : summary ? "Summarize again" : "Summarize"}
+                        </button>
+                      </div>
+                      {summary && (
+                        <>
+                          <label className="hint" htmlFor="ss-text">Edit it before you save</label>
+                          <textarea id="ss-text" className="cc-input" rows={7} value={summary} maxLength={3000}
+                                    onChange={(e) => setSummary(e.target.value)} />
+                        </>
+                      )}
+                    </div>
+                  )}
+                </fieldset>
+              )}
+
+              {!canPick && <p className="sf-preview" aria-label="What will be saved">{draft.content.slice(0, 260)}{draft.content.length > 260 ? "…" : ""}</p>}
 
               <div className="sf-actions">
-                <button className="btn btn-primary btn-sm" onClick={save} disabled={saving || folders === null}>
+                <button className="btn btn-primary btn-sm" onClick={save} disabled={saving || folders === null || !finalText}>
                   {saving ? "Saving…" : "Save"}
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Cancel</button>

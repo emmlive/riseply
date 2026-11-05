@@ -2172,6 +2172,16 @@ class CoachDefineOut(BaseModel):
     related: list[str] = []
 
 
+class StudySummaryIn(BaseModel):
+    text: str = Field(min_length=20, max_length=12000)
+    style: Literal["points", "steps"] = "points"
+    topic: str = Field(default="", max_length=200)
+
+
+class StudySummaryOut(BaseModel):
+    summary: str
+
+
 class CoachVideosOut(BaseModel):
     query: str
     videos: list[CoachVideo] = []
