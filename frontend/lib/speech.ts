@@ -79,6 +79,8 @@ export function cleanForSpeech(text: string): string {
   t = t.replace(/\s*(?:\u2192|\u21D2|\u279C|\u2794|\u27A1\uFE0F?|->|=>|\u2190|<-)\s*/g, ", ");
   t = t.replace(/\s*\|\s*/g, ", ");
   t = t.replace(/\s*[\u2014\u2013]\s*/g, ", ");
+  t = t.replace(/\be\.g\./gi, "for example").replace(/\bi\.e\./gi, "that is").replace(/\betc\.(?=\s+[A-Z]|\s*$)/g, "and so on.").replace(/\betc\./gi, "and so on")
+       .replace(/\bvs\.?(?=\s)/gi, "versus").replace(/\bapprox\./gi, "approximately");
   t = t.replace(/&/g, " and ").replace(/%/g, " percent").replace(/~/g, "");
   t = t.replace(/([A-Za-z0-9])\/(?=[A-Za-z0-9])/g, "$1 ");
   t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{FE0F}\u{200D}\u{2B00}-\u{2BFF}]/gu, "");
@@ -185,36 +187,96 @@ export function listVoices(): Promise<VoiceInfo[]> {
 // can never end or restart a newer one.
 let speakRun = 0;
 
+// Packs a line into pieces of whole sentences, each at most maxLen long.
+function chunkSentences(para: string, maxLen: number): string[] {
+  const pieces: string[] = [];
+  // A closing quote or bracket belongs to the sentence it closes.
+  const sentences = para.match(/[^.!?;:]+[.!?;:]*["\u201D')\]]*\s*/g) || [para];
+  let buf = "";
+  for (const raw of sentences) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    if (buf && (buf + " " + sentence).length > maxLen) { pieces.push(buf); buf = ""; }
+    if (sentence.length > maxLen) {
+      // A very long sentence with no punctuation: cut it at spaces.
+      const words = sentence.split(/\s+/);
+      let part = "";
+      for (const w of words) {
+        if (part && (part + " " + w).length > maxLen) { pieces.push(part); part = ""; }
+        part = part ? part + " " + w : w;
+      }
+      buf = part;
+    } else {
+      buf = buf ? buf + " " + sentence : sentence;
+    }
+  }
+  if (buf) pieces.push(buf);
+  return pieces;
+}
+
 export function splitForSpeech(text: string, maxLen = 180): string[] {
   const pieces: string[] = [];
-  for (const para of (text || "").split(/\n+/)) {
-    const sentences = para.match(/[^.!?;:]+[.!?;:]*\s*/g) || [para];
-    let buf = "";
-    for (const raw of sentences) {
-      const sentence = raw.trim();
-      if (!sentence) continue;
-      if (buf && (buf + " " + sentence).length > maxLen) { pieces.push(buf); buf = ""; }
-      if (sentence.length > maxLen) {
-        // A very long sentence with no punctuation: cut it at spaces.
-        const words = sentence.split(/\s+/);
-        let part = "";
-        for (const w of words) {
-          if (part && (part + " " + w).length > maxLen) { pieces.push(part); part = ""; }
-          part = part ? part + " " + w : w;
-        }
-        buf = part;
-      } else {
-        buf = buf ? buf + " " + sentence : sentence;
-      }
-    }
-    if (buf) pieces.push(buf);
-  }
+  for (const para of (text || "").split(/\n+/)) pieces.push(...chunkSentences(para, maxLen));
   return pieces;
+}
+
+// ---- Speaking like a person ---------------------------------------------
+// A person doesn't read a page in one breath. They pause at the end of a
+// paragraph and between list lines, take a beat before and after a quotation,
+// and say a quotation in a slightly different voice. The browser voice can't
+// be told any of that, so the text is cut into pieces at those places and the
+// pauses and the small change of voice are added between and on the pieces.
+
+export interface SpeechPiece {
+  text: string;
+  quoted: boolean;     // a quotation: said a touch higher and slower
+  gapBefore: number;   // silence before this piece, in milliseconds
+}
+
+export const PAUSE = { paragraph: 520, line: 300, quoteIn: 240, quoteOut: 260 };
+
+const QUOTE = /(["\u201C])([^"\u201C\u201D\n]{2,}?)(["\u201D])/g;
+
+export function planSpeech(text: string, maxLen = 180): SpeechPiece[] {
+  const plan: SpeechPiece[] = [];
+  let lineGap = 0;        // pending gap from the break before the next line
+  let started = false;
+  for (const raw of (text || "").split("\n")) {
+    const line = raw.trim();
+    if (!line) { lineGap = PAUSE.paragraph; continue; }
+    // The line, cut into narration and quotations (quote marks stay in the text).
+    const segs: { text: string; quoted: boolean }[] = [];
+    let last = 0;
+    for (const m of line.matchAll(QUOTE)) {
+      const at = m.index ?? 0;
+      if (at > last) segs.push({ text: line.slice(last, at), quoted: false });
+      segs.push({ text: m[0], quoted: true });
+      last = at + m[0].length;
+    }
+    if (last < line.length) segs.push({ text: line.slice(last), quoted: false });
+    let first = true;
+    let afterQuote = false;
+    for (const seg of segs) {
+      const chunks = chunkSentences(seg.text.trim(), maxLen);
+      chunks.forEach((c, ci) => {
+        let gap = 0;
+        if (ci === 0) {
+          if (first) gap = started ? (lineGap || PAUSE.line) : 0;
+          else if (seg.quoted) gap = PAUSE.quoteIn;
+          else if (afterQuote) gap = PAUSE.quoteOut;
+        }
+        plan.push({ text: c, quoted: seg.quoted, gapBefore: gap });
+      });
+      if (chunks.length) { first = false; afterQuote = seg.quoted; started = true; }
+    }
+    lineGap = 0;
+  }
+  return plan;
 }
 
 // The words the voice will say, in order -- what speak() reports positions in.
 export function spokenWordList(text: string): string[] {
-  return splitForSpeech(cleanForSpeech(text)).join(" ").split(/\s+/).filter(Boolean);
+  return planSpeech(cleanForSpeech(text)).map((p) => p.text).join(" ").split(/\s+/).filter(Boolean);
 }
 
 // onEnd fires once, when everything has been read or reading stopped.
@@ -231,7 +293,8 @@ export function speak(
   const run = ++speakRun;
   synth.cancel();
 
-  const pieces = splitForSpeech(cleanForSpeech(text));
+  const plan = planSpeech(cleanForSpeech(text));
+  const pieces = plan.map((p) => p.text);
   if (pieces.length === 0) { onEnd?.(); return; }
   const prefs = getVoicePrefs();
   const counts = pieces.map((p) => p.split(/\s+/).filter(Boolean).length);
@@ -241,11 +304,20 @@ export function speak(
   let started = false;
   const done = () => { if (!finished) { finished = true; onEnd?.(); } };
 
+  // Start piece i after the pause a person would take there.
   const speakPiece = (i: number) => {
     if (run !== speakRun) return;               // a newer speak() or a stop took over
     if (i >= pieces.length) { done(); return; }
+    const gap = i > 0 ? plan[i].gapBefore : 0;
+    if (gap > 0) setTimeout(() => playPiece(i), gap);
+    else playPiece(i);
+  };
+
+  const playPiece = (i: number) => {
+    if (run !== speakRun) return;
     const u = new SpeechSynthesisUtterance(pieces[i]);
-    u.rate = prefs.rate;
+    u.rate = prefs.rate * (plan[i].quoted ? 0.96 : 1);
+    if (plan[i].quoted) u.pitch = 1.1;           // best effort: not every voice honours pitch
     if (prefs.uri) {
       const voice = synth.getVoices().find((v) => v.voiceURI === prefs.uri);
       if (voice) { u.voice = voice; u.lang = voice.lang; }
