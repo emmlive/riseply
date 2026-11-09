@@ -86,7 +86,7 @@ def test_brief_teaches_from_basics_and_names_position():
 def test_recap_parse_and_note():
     r = syllabus.parse_recap(json.dumps(RECAP_OK))
     title, text = syllabus.recap_note(_syl(), "m1", r)
-    assert title.startswith("Module 1:") and "Key points" in text and "- A: x" in text
+    assert title.startswith("Module 1:") and "## Key points" in text and "- **A**: x" in text and text.startswith("# Module 1:")
     with pytest.raises(ValueError):
         syllabus.parse_recap(json.dumps({"summary": "x", "key_points": ["one"]}))
 
@@ -276,3 +276,61 @@ def test_course_reports_time_spent_per_module(db=None):
         fastapp.dependency_overrides.clear()
     spent = {m["id"]: m["spent_seconds"] for m in r["modules"]}
     assert spent == {"m1": 900, "m2": 0}
+
+
+FULL = dict(RECAP_OK, walkthrough=["Name the asset", "List what could go wrong"], story="A bank vault with layers.",
+            watch_out=["Jumping to controls first"], check_yourself=[{"q": "What comes first?", "a": "The asset."}, {"q": "Why layers?", "a": "One control can fail."}])
+
+
+def test_recap_parse_keeps_new_sections_and_old_recaps_still_work():
+    r = syllabus.parse_recap(json.dumps(FULL))
+    assert r["walkthrough"] == ["Name the asset", "List what could go wrong"] and r["story"].startswith("A bank")
+    assert r["check_yourself"][0] == {"q": "What comes first?", "a": "The asset."}
+    old = syllabus.parse_recap(json.dumps(RECAP_OK))   # a recap with none of the new fields
+    assert old["walkthrough"] == [] and old["check_yourself"] == [] and old["story"] == ""
+    bad = syllabus.parse_recap(json.dumps(dict(FULL, check_yourself=["no", {"q": ""}, {"q": "ok?"}], watch_out="nope")))
+    assert bad["check_yourself"] == [{"q": "ok?", "a": ""}] and bad["watch_out"] == []
+
+
+def test_recap_note_is_laid_out_in_sections_with_the_lesson_map():
+    r = syllabus.parse_recap(json.dumps(FULL))
+    lmap = {"title": "T", "branches": [{"label": "Assume breach", "icon": "", "items": ["Plan for attackers"]}]}
+    title, text = syllabus.recap_note(_syl(), "m1", r, lmap, "Nov 8, 2026")
+    lines = text.split("\n")
+    assert lines[0].startswith("# Module 1:") and lines[1].endswith("Studied Nov 8, 2026")
+    heads = [l for l in lines if l.startswith("## ")]
+    assert heads == ["## Summary", "## Key points", "## Terms to know", "## How to think about it", "## Example",
+                     "## Story to remember", "## Watch out for", "## Check yourself", "## Map of the lesson",
+                     "## Before the next module", "## Next"]
+    assert "1. Name the asset" in lines and "Answer: The asset." in lines and "### Assume breach" in lines
+    # an old recap has no empty sections
+    _, old = syllabus.recap_note(_syl(), "m1", syllabus.parse_recap(json.dumps(RECAP_OK)))
+    assert "## Story to remember" not in old and "## Check yourself" not in old and "## Map of the lesson" not in old
+
+
+def test_notes_are_filed_automatically_when_the_module_finishes(db):
+    u = _user(db)
+    cid = _course().json()["id"]
+    sid = _start_module(cid)[0].json()["session"]["id"]
+    assert client.get("/career-coach/study/folders").json() == []
+    with patch(f"{CC}.reply", return_value="[[covered:1]][[covered:2]][[covered:3]]"), patch(RECAP, return_value=FULL):
+        r = _msg(sid)
+    assert r.json()["recap"]["filed"] is True
+    folders = client.get("/career-coach/study/folders").json()
+    assert [f["name"] for f in folders] == ["Course: Cloud Security Basics"] and folders[0]["note_count"] == 1
+    notes = client.get("/career-coach/study/notes").json()
+    assert notes[0]["source"] == "recap" and "## Check yourself" in notes[0]["content"]
+    # pressing Save afterwards refreshes the same note instead of adding another
+    assert client.post(f"/career-coach/courses/sessions/{sid}/save-recap").status_code == 201
+    assert client.get("/career-coach/study/folders").json()[0]["note_count"] == 1
+
+
+def test_a_filing_failure_does_not_break_the_lesson(db):
+    _user(db)
+    cid = _course().json()["id"]
+    sid = _start_module(cid)[0].json()["session"]["id"]
+    with patch(f"{CC}.reply", return_value="[[covered:1]][[covered:2]][[covered:3]]"), patch(RECAP, return_value=FULL), \
+         patch("app.routers.coach_courses.file_recap_note", side_effect=RuntimeError("disk")):
+        r = _msg(sid)
+    assert r.status_code == 200 and r.json()["recap"]["summary"] == "You covered A."
+    assert "filed" not in r.json()["recap"]

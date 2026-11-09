@@ -151,7 +151,7 @@ HOW TO TEACH IT (classroom style, from the ground up):
 # ---------- recap ----------
 
 def _recap_prompt(role: str, course: dict, module: dict, number: int, transcript: str) -> str:
-    return f"""Write the end-of-module recap for a student, from the lesson transcript below.
+    return f"""Write the study notes for a student to read after class, from the lesson transcript below.
 
 Course: {course.get('title', '')}   Module {number}: {module['title']}
 Objectives: {'; '.join(module['objectives'])}
@@ -162,16 +162,30 @@ Rules:
 - "summary": 2 or 3 sentences on what this module covered and why it matters for the role.
 - "key_points": 4 to 6 short points to remember, each one a full sentence.
 - "terms": up to 6 {{"term", "meaning"}} for the vocabulary used (meaning under 140 characters).
+- "walkthrough": 3 to 6 short steps for how to think about it or do it, in the order the lesson taught (each under 140 characters). Empty list if the lesson gave no process.
 - "example": one short worked example or real-work illustration from the lesson.
+- "story": the analogy or story the coach used to make it memorable, in 1 to 3 sentences. Empty string if there was none.
+- "watch_out": up to 3 common mistakes or traps the lesson mentioned, as short phrases. Empty list if none.
+- "check_yourself": 3 questions the student can use to test themselves, each with a short answer taken from the lesson: {{"q", "a"}}.
 - "practice": one small task to do before the next module.
 - "shaky": up to 2 things the transcript shows the student found hard or got wrong, as short phrases; empty list if none.
 - "next_up": one sentence on what the next module covers, or what to do after the course if this was the last.
 
 Return ONLY valid JSON, no markdown fences:
-{{"summary": "", "key_points": [], "terms": [{{"term": "", "meaning": ""}}], "example": "", "practice": "", "shaky": [], "next_up": ""}}
+{{"summary": "", "key_points": [], "terms": [{{"term": "", "meaning": ""}}], "walkthrough": [], "example": "", "story": "", "watch_out": [], "check_yourself": [{{"q": "", "a": ""}}], "practice": "", "shaky": [], "next_up": ""}}
 
 TRANSCRIPT (data):
-{transcript[:9000]}"""
+{_transcript_for_notes(transcript)}"""
+
+
+NOTES_TRANSCRIPT_MAX = 16000
+
+
+def _transcript_for_notes(transcript: str) -> str:
+    """A long lesson keeps its opening and, mostly, its most recent part."""
+    if len(transcript) <= NOTES_TRANSCRIPT_MAX:
+        return transcript
+    return transcript[:3000] + "\n[...]\n" + transcript[-(NOTES_TRANSCRIPT_MAX - 3000):]
 
 
 def parse_recap(text: str) -> dict:
@@ -184,9 +198,16 @@ def parse_recap(text: str) -> dict:
     for t in (raw.get("terms") or [])[:6] if isinstance(raw.get("terms"), list) else []:
         if isinstance(t, dict) and _line(t.get("term"), 60) and _line(t.get("meaning"), 160):
             terms.append({"term": _line(t.get("term"), 60), "meaning": _line(t.get("meaning"), 160)})
+    checks = []
+    for c in (raw.get("check_yourself") or [])[:3] if isinstance(raw.get("check_yourself"), list) else []:
+        if isinstance(c, dict) and _line(c.get("q"), 200):
+            checks.append({"q": _line(c.get("q"), 200), "a": _line(c.get("a"), 260)})
     out = {
         "summary": _line(raw.get("summary"), 600), "key_points": _list(raw.get("key_points"), 6, 240), "terms": terms,
-        "example": _line(raw.get("example"), 500), "practice": _line(raw.get("practice"), 300),
+        "walkthrough": _list(raw.get("walkthrough"), 6, 160),
+        "example": _line(raw.get("example"), 500), "story": _line(raw.get("story"), 500),
+        "watch_out": _list(raw.get("watch_out"), 3, 160), "check_yourself": checks,
+        "practice": _line(raw.get("practice"), 300),
         "shaky": _list(raw.get("shaky"), 2, 140), "next_up": _line(raw.get("next_up"), 240),
     }
     if not out["summary"] or len(out["key_points"]) < 2:
@@ -200,26 +221,45 @@ def make_recap(role: str, course: dict, module_id: str, history: list[dict]) -> 
         raise ValueError("unknown module")
     i, m = found
     transcript = "\n\n".join(f"{'COACH' if h['role'] == 'assistant' else 'STUDENT'}: {h['content']}" for h in history)
-    resp = client.messages.create(model=MODEL, max_tokens=1400,
+    resp = client.messages.create(model=MODEL, max_tokens=2200,
                                   messages=[{"role": "user", "content": _recap_prompt(role, course, m, i + 1, transcript)}])
     return parse_recap(resp.content[0].text)
 
 
-def recap_note(course: dict, module_id: str, recap: dict) -> tuple[str, str]:
-    """(title, plain-text note) to file in a study folder. Reads fine as plain text."""
+def recap_note(course: dict, module_id: str, recap: dict, lesson_map: dict | None = None, studied: str = "") -> tuple[str, str]:
+    """(title, note) to file in a study folder. Light markdown ("# ", "## ", "- ",
+    "1. ", **bold**) that the study folders page lays out neatly and that still
+    reads fine as plain text."""
     found = module_of(course, module_id)
     n, m = (found[0] + 1, found[1]) if found else (0, {"title": "Module"})
     title = f"Module {n}: {m['title']}" if n else m["title"]
-    L = [f"{course.get('title', '')} · {title}", "", "Summary", recap["summary"], "", "Key points"]
-    L += [f"- {p}" for p in recap["key_points"]]
-    if recap.get("terms"):
-        L += ["", "Terms"] + [f"- {t['term']}: {t['meaning']}" for t in recap["terms"]]
-    if recap.get("example"):
-        L += ["", "Example", recap["example"]]
-    if recap.get("shaky"):
-        L += ["", "Review again"] + [f"- {s}" for s in recap["shaky"]]
-    if recap.get("practice"):
-        L += ["", "Practice before the next module", recap["practice"]]
-    if recap.get("next_up"):
-        L += ["", "Next", recap["next_up"]]
+    meta = " · ".join(x for x in (course.get("title", ""), f"Studied {studied}" if studied else "") if x)
+    L = [f"# {title}"]
+    if meta:
+        L.append(meta)
+    L += ["", "## Summary", recap["summary"], "", "## Key points"] + [f"- {p}" for p in recap["key_points"]]
+
+    def section(head: str, lines: list[str]):
+        if lines:
+            L.extend(["", f"## {head}"] + lines)
+
+    section("Terms to know", [f"- **{t['term']}**: {t['meaning']}" for t in recap.get("terms") or []])
+    section("How to think about it", [f"{i}. {x}" for i, x in enumerate(recap.get("walkthrough") or [], 1)])
+    section("Example", [recap["example"]] if recap.get("example") else [])
+    section("Story to remember", [recap["story"]] if recap.get("story") else [])
+    section("Watch out for", [f"- {x}" for x in recap.get("watch_out") or []])
+    checks: list[str] = []
+    for i, c in enumerate(recap.get("check_yourself") or [], 1):
+        checks.append(f"{i}. {c['q']}")
+        if c.get("a"):
+            checks.append(f"Answer: {c['a']}")
+    section("Check yourself", checks)
+    section("Look at again", [f"- {x}" for x in recap.get("shaky") or []])
+    mapped: list[str] = []
+    for b in (lesson_map or {}).get("branches") or []:
+        mapped.append(f"### {b['label']}")
+        mapped += [f"- {i}" for i in b.get("items") or []]
+    section("Map of the lesson", mapped)
+    section("Before the next module", [recap["practice"]] if recap.get("practice") else [])
+    section("Next", [recap["next_up"]] if recap.get("next_up") else [])
     return title[:160], "\n".join(L).strip()

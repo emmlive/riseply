@@ -1498,3 +1498,5 @@ textarea.cc-input { resize: vertical; }
 .sidebar-group[aria-expanded="false"] .chev { transform: rotate(-45deg); }
 .sidebar-link.sidebar-sub { padding-left: 26px; }
 @media (prefers-reduced-motion: reduce) { .sidebar-group .chev { transition: none; } }
+
+.mr-body { margin-top: 10px; padding: 14px 16px; background: var(--surface, #fff); border-radius: 8px; }

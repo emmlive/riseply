@@ -654,6 +654,12 @@ export interface CoachRecap {
   practice: string;
   shaky: string[];
   next_up: string;
+  // Fuller class notes (older recaps do not have these).
+  walkthrough?: string[];
+  story?: string;
+  watch_out?: string[];
+  check_yourself?: { q: string; a: string }[];
+  filed?: boolean;      // already filed in the course's study folder
 }
 
 export interface CoachModule {

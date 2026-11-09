@@ -9,6 +9,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import syllabus, usage, coach_resume
+from app.services import lesson_map as lesson_map_service
 
 # Career Coach courses: a syllabus the coach teaches module by module, one
 # coach session per module (CareerCoachSession.course_id/module_id), with an
@@ -68,6 +69,15 @@ def ensure_recap(db: Session, session: models.CareerCoachSession, user: models.U
     session.recap = json.dumps(recap)
     db.commit()
     mark_done(db, course, session.module_id)
+    # The notes are ready to study after class: file them in the course's study folder now.
+    try:
+        file_recap_note(db, session, user)
+        recap = dict(recap, filed=True)
+        session.recap = json.dumps(recap)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[coach-course] Filing notes failed for session {session.id}: {e}")
     return recap
 
 
@@ -233,17 +243,17 @@ def rebuild_recap(session_id: int, db: Session = Depends(get_db), user: models.U
     return recap
 
 
-@router.post("/sessions/{session_id}/save-recap", response_model=schemas.StudyNoteOut, status_code=201)
-def save_recap(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """File the module recap in a study folder named after the course (created
-    on first use). Saving twice replaces the earlier copy instead of duplicating it."""
-    s = db.query(models.CareerCoachSession).filter_by(id=session_id, user_id=user.id).first()
+def file_recap_note(db: Session, s: models.CareerCoachSession, user: models.User) -> models.StudyNote:
+    """File the module notes in a study folder named after the course (created
+    on first use). Filing twice replaces the earlier copy instead of duplicating it."""
     recap = _loads(s.recap, {}) if s else {}
     if not s or not s.course_id or not recap:
         raise HTTPException(status_code=404, detail="No recap to save yet.")
     course = get_owned(db, s.course_id, user.id)
     data = course_data(course)
-    title, content = syllabus.recap_note(data, s.module_id, recap)
+    when = s.completed_at or datetime.utcnow()
+    studied = f"{when:%b} {when.day}, {when.year}"
+    title, content = syllabus.recap_note(data, s.module_id, recap, lesson_map_service.load(s.lesson_map), studied)
     folder = db.get(models.StudyFolder, course.folder_id) if course.folder_id else None
     if not folder or folder.user_id != user.id:
         name = f"Course: {data.get('title') or course.title}"[:80]
@@ -266,3 +276,10 @@ def save_recap(session_id: int, db: Session = Depends(get_db), user: models.User
     db.commit()
     db.refresh(note)
     return note
+
+
+@router.post("/sessions/{session_id}/save-recap", response_model=schemas.StudyNoteOut, status_code=201)
+def save_recap(session_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """File (or refresh) the module notes in the course's study folder."""
+    s = db.query(models.CareerCoachSession).filter_by(id=session_id, user_id=user.id).first()
+    return file_recap_note(db, s, user)
