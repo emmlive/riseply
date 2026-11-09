@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { api, CoachRecap, StudyNote } from "@/lib/api";
+import StudyNoteBody from "@/components/StudyNoteBody";
+import { printNote, recapToMarkdown } from "@/lib/noteFormat";
 
 // The end-of-module recap: what the module covered, what to remember, the
 // vocabulary, one practice task. One press files it in a study folder named
@@ -15,7 +17,7 @@ export default function ModuleRecap({ recap, sessionId, moduleLabel, onNext, nex
   nextLabel?: string;
 }) {
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState(!!recap.filed);
   const [error, setError] = useState("");
 
   async function save() {
@@ -38,30 +40,14 @@ export default function ModuleRecap({ recap, sessionId, moduleLabel, onNext, nex
         <h3>Recap</h3>
         <span className="muted">{moduleLabel}</span>
       </header>
-      <p className="mr-summary">{recap.summary}</p>
-
-      <h4>Remember</h4>
-      <ul className="mr-points">{recap.key_points.map((p) => <li key={p}>{p}</li>)}</ul>
-
-      {recap.terms.length > 0 && (
-        <>
-          <h4>Terms</h4>
-          <dl className="mr-terms">
-            {recap.terms.map((t) => (<div key={t.term}><dt>{t.term}</dt><dd>{t.meaning}</dd></div>))}
-          </dl>
-        </>
-      )}
-
-      {recap.example && (<><h4>Example</h4><p>{recap.example}</p></>)}
-      {recap.shaky.length > 0 && (<><h4>Look at again</h4><ul className="mr-points">{recap.shaky.map((p) => <li key={p}>{p}</li>)}</ul></>)}
-      {recap.practice && (<p className="mr-practice"><strong>Before the next module:</strong> {recap.practice}</p>)}
-      {recap.next_up && <p className="muted mr-next">{recap.next_up}</p>}
+      <div className="mr-body"><StudyNoteBody text={recapToMarkdown(recap)} /></div>
 
       <div className="mr-actions">
         <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
-          {saving ? "Saving…" : saved ? "Saved. Save again to update" : "Save recap to study folder"}
+          {saving ? "Saving…" : saved ? "Saved to your study folder. Update" : "Save notes to study folder"}
         </button>
         {onNext && <button className="btn btn-ghost btn-sm" onClick={onNext}>{nextLabel || "Next module"}</button>}
+        <button className="btn btn-ghost btn-sm" onClick={() => printNote(`${moduleLabel} notes`, recapToMarkdown(recap))}>Print or save as PDF</button>
         {saved && <Link href="/dashboard/career-coach/study" className="mr-link">Open study folders</Link>}
       </div>
       {error && <p className="cc-error" role="alert" style={{ marginTop: 8 }}>{error}</p>}

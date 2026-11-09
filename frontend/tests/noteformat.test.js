@@ -1,0 +1,13 @@
+const ts=require("typescript"),fs=require("fs"),assert=require("assert");
+const src=fs.readFileSync(__dirname+"/../lib/noteFormat.ts","utf8");
+const m={exports:{}};new Function("module","exports",ts.transpileModule(src,{compilerOptions:{module:"commonjs"}}).outputText)(m,m.exports);
+const {parseNote,recapToMarkdown,noteToPrintHtml}=m.exports;
+const b=parseNote("# Module 1: X\nCourse · Studied Nov 8\n\n## Key points\n- a **b**\n- c\n\n## Check yourself\n1. Q?\nAnswer: yes\n2. Q2\n\nplain\nline");
+assert.deepStrictEqual(b.map(x=>x.t),["h1","meta","h2","ul","h2","ol","p"]);
+assert.strictEqual(b[5].items[0].answer,"yes");assert.strictEqual(b[5].items.length,2);
+assert.strictEqual(b[6].text,"plain\nline");
+assert.deepStrictEqual(parseNote("Just text\n- one\n- two").map(x=>x.t),["p","ul"]);
+const md=recapToMarkdown({summary:"S",key_points:["a","b"],terms:[{term:"T",meaning:"m"}],check_yourself:[{q:"Q",a:"A"}]});
+assert(md.includes("- **T**: m")&&md.includes("Answer: A"));
+assert(!noteToPrintHtml("t","<script>").includes("<script>"));
+console.log("ok");

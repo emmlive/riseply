@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, formatWhen, StudyFolder, StudyNote } from "@/lib/api";
+import StudyNoteBody from "@/components/StudyNoteBody";
+import { printNote } from "@/lib/noteFormat";
 
 type Selection = "all" | "unfiled" | number;
 
@@ -280,7 +282,7 @@ export default function StudyFoldersPage() {
                       </p>
                     </div>
                   </header>
-                  <p className={`st-note-body ${expanded[n.id] ? "" : "is-clamped"}`}>{n.content}</p>
+                  <StudyNoteBody text={n.content} skipTitle collapsed={!expanded[n.id] && (n.content.length > 320 || n.content.split("\n").length > 6)} />
                   {(n.content.length > 320 || n.content.split("\n").length > 6) && (
                     <button className="st-more" onClick={() => setExpanded((e) => ({ ...e, [n.id]: !e[n.id] }))}>
                       {expanded[n.id] ? "Show less" : "Show more"}
@@ -289,6 +291,7 @@ export default function StudyFoldersPage() {
                   <div className="st-actions">
                     <button className="btn btn-ghost btn-sm" onClick={() => startEdit(n)} disabled={editingId !== null}>Edit</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => copyNote(n)}>{copiedId === n.id ? "Copied" : "Copy"}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => printNote(n.title || "Study note", n.content)}>Print or save as PDF</button>
                     <label className="st-move">
                       <span className="hint">Move to</span>
                       <select className="cc-input" value={n.folder_id === null ? "" : String(n.folder_id)}
