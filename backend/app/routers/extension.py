@@ -247,6 +247,24 @@ CANDIDATE'S RESUME:
 MAX_ATTACH_BYTES = 5 * 1024 * 1024
 
 
+@router.get("/candidate")
+def candidate_for_forms(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The details Autofill types into an application or a new account. Email and
+    phone come from the default resume (what the recruiter sees), falling back to
+    the profile. Not metered (no AI involved)."""
+    from app.services import resume_contact
+    r = db.query(models.Resume).filter_by(user_id=user.id, is_default=True).first()
+    found = resume_contact.extract((r.resume_text if r else "") or user.resume_text or "")
+    return {
+        "full_name": user.full_name or "",
+        "email": found["email"] or user.email or "",
+        "email_source": "resume" if found["email"] else "profile",
+        "phone": found["phone"] or user.phone or "",
+        "location": user.location or "", "linkedin_url": user.linkedin_url or "",
+        "portfolio_url": user.portfolio_url or "",
+    }
+
+
 @router.get("/resume-file")
 def resume_file_for_attach(application_id: int | None = None, db: Session = Depends(get_db),
                            user: models.User = Depends(get_current_user)):
