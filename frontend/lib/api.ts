@@ -135,6 +135,7 @@ export interface Application {
   matched_profile: string;
   match_score: number;
   match_reason: string;
+  fit_note?: string;
   tailored_resume_path: string;
   notes: string;
   created_at: string;

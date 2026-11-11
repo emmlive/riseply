@@ -68,7 +68,9 @@ def test_estimate_grows_with_content():
 
 def test_ats_checks_flag_real_problems_and_pass_a_clean_resume():
     clean = rc.ats_checks(make_blocks(3, 18, 3))
-    assert all(c["ok"] for c in clean["checks"]), clean
+    # The fixture's bullets are generated from one template, so the voice check
+    # (tested in test_resume_quality) rightly objects; the format checks must pass.
+    assert all(c["ok"] for c in clean["checks"] if c["label"] != "Sounds like a person"), clean
 
     broken = make_blocks(3, 18, 3)
     broken[1] = {"type": "contact", "text": "Chicago, IL"}

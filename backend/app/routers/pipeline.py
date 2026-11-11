@@ -11,6 +11,7 @@ from sqlalchemy import and_, not_, exists, func
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
+from app.services import apply_guard
 from app.services import cover_letter as cover_letter_service
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, submitter, pipeline_runner, posting_check, search_terms, match_feedback, interview_auto, resume_facts
 from app.services.sources import greenhouse, lever, rss_boards
@@ -338,6 +339,7 @@ def _to_out(app: models.Application, job: models.Job,
         salary_currency=job.salary_currency or "", salary_is_predicted=bool(job.salary_is_predicted),
         is_archived=bool(app.is_archived), archived_at=app.archived_at,
         job_open=_job_still_open(job),
+        fit_note=apply_guard.fit_note(app.match_score or 0, app.status or "pending_approval"),
     )
 
 

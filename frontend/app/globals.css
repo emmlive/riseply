@@ -1500,3 +1500,5 @@ textarea.cc-input { resize: vertical; }
 @media (prefers-reduced-motion: reduce) { .sidebar-group .chev { transition: none; } }
 
 .mr-body { margin-top: 10px; padding: 14px 16px; background: var(--surface, #fff); border-radius: 8px; }
+
+.fit-note { max-width: 260px; padding: 6px 10px; text-align: left; border-left: 3px solid var(--warn, #B7791F); background: var(--surface-2, #F7F3E8); border-radius: 4px; font-size: 0.8rem; }
