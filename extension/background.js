@@ -184,13 +184,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
 
         case "GET_CANDIDATE": {
-          const me = await apiFetch("/me");
+          // Email and phone come from the default resume (what the recruiter sees);
+          // the profile is the fallback, and also covers an older server without this route.
+          let c = null;
+          try { c = await apiFetch("/extension/candidate"); } catch (e) { /* fall back below */ }
+          if (!c || !c.email) {
+            const me = await apiFetch("/me");
+            c = { ...(c || {}), full_name: me.full_name || "", email: me.email || "", email_source: "profile",
+              phone: (c && c.phone) || me.phone || "", location: me.location || "",
+              linkedin_url: me.linkedin_url || "", portfolio_url: me.portfolio_url || "" };
+          }
           sendResponse({
             success: true,
             candidate: {
-              full_name: me.full_name || "", email: me.email || "",
-              phone: me.phone || "", location: me.location || "",
-              linkedin_url: me.linkedin_url || "", portfolio_url: me.portfolio_url || "",
+              full_name: c.full_name || "", email: c.email || "", email_source: c.email_source || "",
+              phone: c.phone || "", location: c.location || "",
+              linkedin_url: c.linkedin_url || "", portfolio_url: c.portfolio_url || "",
             },
           });
           break;

@@ -27,10 +27,11 @@ Riseply Autofill adds a small sidebar to job postings and application forms so y
 
 When you open a job posting, the sidebar shows:
 - Score my resume: how well your resume matches this job, with a one-sentence reason.
-- Autofill this page: fills your name, email, phone, location and profile links, plus your address, work history, education and common answers from your Riseply Autofill profile. It also works on pick-from-a-list questions and checkboxes, and lists what it left for you. It only fills answers you chose yourself, never overwrites a field you already filled, and leaves anything you left blank for you. Filling never submits the form; you review it, and a separate Submit button in the sidebar asks you to confirm before it clicks the site's own submit button.
+- Autofill this page: fills your name, email, phone, location and profile links (the email and phone are the ones printed on your resume, so an employer sees the same contact details on the form and on the file), plus your address, work history, education and common answers from your Riseply Autofill profile. It also works on pick-from-a-list questions and checkboxes, and lists what it left for you. It only fills answers you chose yourself, never overwrites a field you already filled, and leaves anything you left blank for you. Filling never submits the form; you review it, and a separate Submit button in the sidebar asks you to confirm before it clicks the site's own submit button.
 - Generate ATS resume: tailors your resume to the job on the page (plain one-column layout, only what is already in your resume), saves the job in your Riseply list, and attaches the tailored resume to the form's upload field. When you tell it you applied, it marks the job as applied in Riseply.
 - Review what was filled: after Autofill, a list shows each question and the answer that went in, with one button to undo it.
 - Next page and Log in: the sidebar can click a site's own Next, Continue or Log in button, only after you confirm. If you choose, it saves your username and password for a job site in your browser only (never sent to Riseply) and fills them on that site's sign-in form when you ask.
+- Create account: on a site's create-account step, the sidebar can fill your email (the one on your resume) and a strong password it generates, only when you click. The pair is saved in your browser only, never sent to Riseply, and shown to you so you can keep it.
 - Generate cover letter: a first draft from your resume and the posting, ready to edit.
 - Suggested answers: help with custom application questions, based on your resume.
 
@@ -50,7 +51,7 @@ Help a job seeker evaluate a job posting against their Riseply resume and fill i
 ## Permission justifications (dashboard fields)
 
 **storage**
-Stores the user's Riseply sign-in token in the browser so they stay logged in (removed on logout), and any job-site usernames and passwords the user chose to save, which stay on the device, are never sent to Riseply, and can be removed with Forget.
+Stores the user's Riseply sign-in token in the browser so they stay logged in (removed on logout), and any job-site usernames and passwords the user chose to save or had the extension generate for a new account, which stay on the device, are never sent to Riseply, and can be removed with Forget.
 
 **Host permission: https://riseply.onrender.com/\***
 The extension's only server. All requests (sign-in, resume scoring, cover letters, answers, profile fetch) go to the Riseply API at this address, made from the extension's background service worker.
@@ -63,8 +64,8 @@ Job postings and application forms live on thousands of different company career
 ## Privacy practices (dashboard "Data usage" tab)
 
 Collected data types to tick:
-- **Personally identifiable information**: the user's name, email, phone, location, work history, education, their resume file, and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms and attach their resume.
-- **Authentication information**: the sign-in token (stored locally) and the email/password typed into the extension popup, sent to Riseply to log in. Job-site logins the user chooses to save are stored only in their browser and never transmitted to us; say so in the justification.
+- **Personally identifiable information**: the user's name, email, phone, location, work history, education, their resume file (the email and phone printed on it are read from their account to fill forms), and the answers they saved in their Riseply Autofill profile (including optional self-identification answers they chose) are fetched from their own account to fill forms and attach their resume.
+- **Authentication information**: the sign-in token (stored locally) and the email/password typed into the extension popup, sent to Riseply to log in. Job-site logins the user chooses to save, and passwords the extension generates for a new account at the user's click, are stored only in their browser and never transmitted to us; say so in the justification.
 - **Website content**: text of the job posting the user is viewing, sent only when they click Score my resume, Generate ATS resume, Generate cover letter or a suggested answer.
 
 Do not tick: financial, location (geolocation), web history, user activity, personal communications. If Google's form asks about health or race/ethnicity data, tick it only for the optional self-identification answers the user chooses to save and has the extension fill; say so in the justification.
@@ -73,7 +74,7 @@ Certify all three: not sold to third parties; not used or transferred for purpos
 
 ## Reviewer instructions ("Test instructions" box)
 
-> The extension needs a Riseply account. Test login: [create a test account at riseply.com, add a resume under Resume, and put its email and password here]. Open the popup, log in, then visit any job posting, for example any listing on boards.greenhouse.io. A sidebar appears at the top right. Click "Score my resume" to see a score, or "Autofill this page" on an application form to see fields fill and the resume attach (if the form has an upload field). Nothing is submitted automatically.
+> The extension needs a Riseply account. Test login: [create a test account at riseply.com, add a resume under Resume, and put its email and password here]. The server can take up to a minute to wake the first time, so if the first request is slow, wait and try again. Open the popup, log in, then visit any job posting, for example any listing on boards.greenhouse.io. A sidebar appears at the top right. Click "Score my resume" to see a score, or "Autofill this page" on an application form to see fields fill and the resume attach (if the form has an upload field). Nothing is submitted automatically.
 
 ## Things the reviewers are likely to look at
 
