@@ -662,6 +662,7 @@ export default function ApplicationsPage() {
                   match <span className="score">{app.match_score}%</span>
                 </span>
                 <span className="hint" style={{ fontSize: "0.8rem" }}>Found {formatWhen(app.created_at)}</span>
+                {app.fit_note && <span className="hint fit-note" role="note">{app.fit_note}</span>}
 
                 {app.status === "pending_approval" && app.job_open === false && (
                   <span className="hint">This posting has closed.</span>

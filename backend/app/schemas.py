@@ -207,6 +207,8 @@ class ApplicationOut(BaseModel):
     job_open: bool = True
     is_archived: bool = False
     archived_at: Optional[datetime] = None
+    # A plain warning when the match is weak or a stretch (empty for good matches).
+    fit_note: str = ""
 
 
 class KeywordGapsOut(BaseModel):

@@ -30,7 +30,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from app.config import settings
-from app.services import job_terms, resume_fit
+from app.services import job_terms, resume_fit, resume_voice
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
@@ -164,6 +164,9 @@ Rules:
   contain (Architect, Engineer, Director, Manager, Principal, Lead, Head, Senior and so on).
   Use their real function, then the posting's skills after it: "IT Audit and Cybersecurity
   Compliance | AI Governance, NIST, SOX", not "Senior AI Security Architect".
+- Headline: a title plus two or three skills at most, never a list of six or more keywords.
+- Write so it does not read as machine-made: vary how bullets open and how long they are, and
+  avoid stock phrases ("results-driven", "spearheaded", "leveraged", "proven track record").
 - A role at the candidate's own company, or self-employed or consulting work, stays exactly as
   the original states it. Do not rename it, raise its level or make it sound like a bigger employer.
   Lead the summary with the longest or most senior employed history when that is the stronger proof.
@@ -743,6 +746,11 @@ def ats_checks(blocks: list[dict]) -> dict:
     checks.append({"label": "Headline matches your history", "ok": not bad,
                    "detail": "The headline uses titles your work history supports." if not bad
                    else "The headline says " + ", ".join(f'"{w}"' for w in bad) + ", which no job title below shows. Recruiters compare the two, so use a title you have held."})
+
+    voice = resume_voice.voice_flags(blocks)
+    checks.append({"label": "Sounds like a person", "ok": not voice,
+                   "detail": "The wording varies and avoids stock phrases." if not voice
+                   else " ".join(voice[:2]) + " Use \"Make it sound more human\"."})
 
     checks.append({"label": "Plain layout", "ok": True,
                    "detail": "One column, standard font (Calibri 10 to 10.5 pt), no tables, text boxes, images or header and footer text."})
