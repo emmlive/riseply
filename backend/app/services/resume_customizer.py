@@ -635,26 +635,33 @@ def build_pdf_from_blocks(blocks: list[dict]) -> bytes:
         "sub": st("sub", 9.5, font="Helvetica-Oblique", color=muted, spaceAfter=1, keepWithNext=1),
         "text": st("text", 10, spaceAfter=3, leading=13),
         "skills": st("skills", 9.5, spaceAfter=2, leading=12.5),
-        "bullet": st("bullet", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5),
+        "bullet": st("bullet", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, allowWidows=0, allowOrphans=0),
+        # The first bullet under a job stays with the next one, so a job title is never
+        # left at the bottom of a page with a single line under it.
+        "bullet_first": st("bullet_first", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, keepWithNext=1, allowWidows=0, allowOrphans=0),
     }
     esc = lambda t: escape(str(t or ""))
 
     story = []
+    prev = ""
     for b in blocks:
         t = b.get("type")
         if t in ("name", "headline", "contact", "sub", "text"):
             story.append(Paragraph(esc(b.get("text")), S[t]))
         elif t == "heading":
             story.append(Paragraph(esc(b.get("text", "")).upper(), S["heading"]))
-            story.append(HRFlowable(width="100%", thickness=0.6, color=accent, spaceBefore=0, spaceAfter=3))
+            rule = HRFlowable(width="100%", thickness=0.6, color=accent, spaceBefore=0, spaceAfter=3)
+            rule.keepWithNext = 1
+            story.append(rule)
         elif t == "entry":
             right = f' <font name="Helvetica" size="9" color="#5B6472">  |  {esc(b.get("right"))}</font>' if b.get("right") else ""
             story.append(Paragraph(esc(b.get("left")) + right, S["entry"]))
         elif t == "bullet":
-            story.append(Paragraph(esc(b.get("text")), S["bullet"], bulletText="\u2022"))
+            story.append(Paragraph(esc(b.get("text")), S["bullet_first" if prev == "sub" else "bullet"], bulletText="\u2022"))
         elif t == "skills":
             label = f"<b>{esc(b.get('label'))}:</b> " if b.get("label") else ""
             story.append(Paragraph(label + esc(b.get("text")), S["skills"]))
+        prev = t
 
     buf = io.BytesIO()
     name = next((b.get("text", "") for b in blocks if b.get("type") == "name"), "")
@@ -1023,6 +1030,44 @@ def fit_to_pages(blocks: list[dict], job: dict, max_pages: float = 2.0, use_ai: 
     return result
 
 
+MAX_DELIVERY_PAGES = 2
+
+
+def pdf_page_count(pdf: bytes) -> int:
+    import pdfplumber
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        return len(doc.pages)
+
+
+def fit_for_delivery(blocks: list[dict], job: dict) -> tuple[list[dict], str]:
+    """A resume that runs onto a third page is cut off or rejected by many
+    employers (USAJOBS refuses it), so every tailored resume is brought to two
+    pages before it is stored. Checked against the real PDF, which is the file
+    that gets attached: it uses a wider font than the Word estimate assumes.
+    Returns (blocks, a sentence for the person if anything was shortened)."""
+    notes: list[str] = []
+    res = fit_to_pages(blocks, job, MAX_DELIVERY_PAGES)
+    out = res["blocks"]
+    if out is not blocks and res.get("note") and res["note"] != "It already fits.":
+        notes.append(res["note"].split(" It is still about")[0].strip())
+    job_text = f"{job.get('title', '')} {job.get('description', '')}"
+    for _ in range(4):
+        try:
+            pages = pdf_page_count(build_pdf_from_blocks(out))
+        except Exception as e:
+            print(f"[resume_customizer] page check failed: {e}")
+            break
+        if pages <= MAX_DELIVERY_PAGES:
+            break
+        out, dropped = _trim_least_relevant(out, job_text, max(0.8, estimate_pages(out) - 0.15))
+        if not dropped:
+            break
+        notes.append("Dropped one more low-relevance bullet so the PDF stays at two pages.")
+    if out is blocks or not notes:
+        return out, ""
+    return out, "Shortened to fit two pages: " + " ".join(dict.fromkeys(notes))
+
+
 def build_docx_bytes(resume_text: str) -> bytes:
     """Plain text in, formatted .docx out."""
     return build_docx_from_blocks(text_to_blocks(resume_text))
@@ -1092,6 +1137,9 @@ def customize_for_job(user_id: int, base_resume_text: str, job: dict, applicatio
     responsible for storing docx_bytes and rationale on the Application
     row -- this function doesn't touch the filesystem or database."""
     rationale, blocks = tailor_resume(base_resume_text, job, facts, focus)
+    blocks, fit_note = fit_for_delivery(blocks, job)
+    if fit_note:
+        rationale = f"{rationale} {fit_note}".strip()
 
     safe_company = re.sub(r"[^A-Za-z0-9]+", "_", job.get("company") or "resume")[:40]
     filename = f"{safe_company or 'resume'}.docx"
