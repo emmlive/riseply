@@ -160,6 +160,14 @@ Rules:
   or in the skills list, never as hidden or repeated text.
 - Headline: when the candidate's real titles are equivalent to the posting's title, use the
   posting's wording (e.g. "Senior IT Auditor | SOX, ITGC, CISA"); otherwise keep it honest.
+  Never put a role word or level in the headline that none of the candidate's real job titles
+  contain (Architect, Engineer, Director, Manager, Principal, Lead, Head, Senior and so on).
+  Use their real function, then the posting's skills after it: "IT Audit and Cybersecurity
+  Compliance | AI Governance, NIST, SOX", not "Senior AI Security Architect".
+- A role at the candidate's own company, or self-employed or consulting work, stays exactly as
+  the original states it. Do not rename it, raise its level or make it sound like a bigger employer.
+  Lead the summary with the longest or most senior employed history when that is the stronger proof.
+- Keep education and certification years exactly as in the original; never drop a date that is there.
 - Summary (3 lines at most): who they are for this role, how many years if the dates show it,
   the 2 to 3 strongest matches to the posting, and one proof point with a real number if the
   resume has one. No "results-driven", "passionate", "dynamic" or "team player".
@@ -244,6 +252,9 @@ def tailor_resume(base_resume: str, job: dict, facts: list[dict] | None = None, 
             label = {"career_change": "Career-change resume.", "transferable": "Stretch role."}.get(str(data.get("approach") or "").strip())
             if label and not rationale.startswith(label):
                 rationale = f"{label} {rationale}".strip()
+            blocks, note = ground_headline(blocks)
+            if note:
+                rationale = f"{rationale} {note}".strip()
             return rationale, blocks
 
     # The model didn't return usable JSON -- keep the tailoring anyway by
@@ -425,6 +436,58 @@ def _bottom_border(style, color_hex="1F7A6C"):
     bottom.set(qn("w:color"), color_hex)
     borders.append(bottom)
     ppr.append(borders)
+
+
+# --------------------------------------------------------------------------
+# Headline honesty
+# --------------------------------------------------------------------------
+
+_CLAIM_WORDS = {"architect", "engineer", "director", "manager", "principal", "head", "chief", "vp",
+                "president", "developer", "scientist", "lead", "staff", "senior"}
+
+
+def _words(text: str) -> set[str]:
+    t = re.sub(r"\bsr\.?(?=\s|$)", "senior", (text or "").lower())
+    return set(re.findall(r"[a-z]+", t))
+
+
+def _experience_titles(blocks: list[dict]) -> list[str]:
+    titles, section = [], ""
+    for b in blocks:
+        if b.get("type") == "heading":
+            section = b.get("text", "").lower()
+        elif b.get("type") == "entry" and any(w in section for w in ("experience", "employment", "history")):
+            titles.append(b.get("left", ""))
+    return titles
+
+
+def unsupported_headline_words(blocks: list[dict]) -> list[str]:
+    """Role or level words the headline's title claims that none of the real job titles contain."""
+    head = next((b.get("text", "") for b in blocks if b.get("type") == "headline"), "")
+    titles = _experience_titles(blocks)
+    if not head or not titles:
+        return []
+    claimed = _words(re.split(r"[|,;]", head)[0]) & _CLAIM_WORDS
+    have = set().union(*(_words(t) for t in titles))
+    return sorted(claimed - have)
+
+
+def ground_headline(blocks: list[dict]) -> tuple[list[dict], str]:
+    """If the headline claims a role or level the history does not show, put the
+    most recent real title there instead, keeping the skills after it."""
+    bad = unsupported_headline_words(blocks)
+    if not bad:
+        return blocks, ""
+    titles = _experience_titles(blocks)
+    real = re.split(r"\t", titles[0])[0].strip()
+    out = []
+    for b in blocks:
+        if b.get("type") == "headline":
+            parts = re.split(r"\s*\|\s*", b["text"], maxsplit=1)
+            rest = f" | {parts[1]}" if len(parts) > 1 else ""
+            b = dict(b, text=f"{real}{rest}")
+        out.append(b)
+    return out, f"Headline now uses your real title ({real}); \"{', '.join(bad)}\" is not in your job history."
 
 
 def _clean_properties(doc: Document, name: str = "") -> None:
@@ -675,6 +738,11 @@ def ats_checks(blocks: list[dict]) -> dict:
     checks.append({"label": "Dates on every job", "ok": not undated_roles,
                    "detail": "Every role has dates." if not undated_roles
                    else "No dates on: " + "; ".join(undated_roles[:3]) + "."})
+
+    bad = unsupported_headline_words(blocks)
+    checks.append({"label": "Headline matches your history", "ok": not bad,
+                   "detail": "The headline uses titles your work history supports." if not bad
+                   else "The headline says " + ", ".join(f'"{w}"' for w in bad) + ", which no job title below shows. Recruiters compare the two, so use a title you have held."})
 
     checks.append({"label": "Plain layout", "ok": True,
                    "detail": "One column, standard font (Calibri 10 to 10.5 pt), no tables, text boxes, images or header and footer text."})
