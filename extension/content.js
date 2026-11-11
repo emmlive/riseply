@@ -782,6 +782,29 @@
       const btn = root.getElementById("riseply-fill-btn");
       try { await runFillClick(root, btn); } finally { btn.disabled = false; btn.textContent = "Autofill this page"; }
     });
+    // After the person opens the application from a landing step, wait for the
+    // form to show up (these sites load it a moment later) and then fill it.
+    // A sign-in or create-account step is left to the person and the sign-in helpers.
+    function fillWhenFormAppears(root, btn, slot) {
+      const started = Date.now();
+      const visible = (e) => e.offsetWidth || e.offsetHeight || e.getClientRects().length;
+      const tick = () => {
+        const boxes = Array.from(document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"], textarea')).filter(visible);
+        const passwords = Array.from(document.querySelectorAll('input[type="password"]')).filter(visible);
+        if (passwords.length) {
+          slot.innerHTML = `<p class="filled-list">This step asks you to sign in or create an account.</p><p class="hint" style="margin-top:4px;">Do that first. When the application form opens, press Autofill this page.</p>`;
+          return;
+        }
+        if (boxes.length >= 3) { runFillClick(root, btn); return; }
+        if (Date.now() - started > 20000) {
+          slot.innerHTML = `<p class="hint">The form hasn't opened yet. When it does, press Autofill this page.</p>`;
+          return;
+        }
+        setTimeout(tick, 500);
+      };
+      setTimeout(tick, 700);
+    }
+
     async function runFillClick(root, btn) {
       btn.disabled = true;
       btn.textContent = "Filling…";
@@ -877,16 +900,17 @@
         const gateBtn = findApplicationGateButton();
         if (gateBtn) {
           slot.innerHTML = `
-            <p class="filled-list">This is a landing or sign-in step, not the application form yet.</p>
-            <button class="action secondary" id="riseply-gate-btn" style="margin-top:6px;">${escapeHtml((gateBtn.textContent || "").trim())} →</button>
+            <p class="filled-list">There is no form on this step yet.</p>
+            <p class="hint" style="margin-top:4px;">Press the button below to open it. Autofill then runs by itself when the form appears.</p>
+            <button class="action" id="riseply-gate-btn" style="margin-top:6px;">${escapeHtml((gateBtn.textContent || "").trim())} →</button>
           `;
           root.getElementById("riseply-gate-btn").addEventListener("click", () => {
-            // Human-initiated either way: the person clicked THIS
-            // button first, deliberately, to reach the real form --
-            // this just saves them hunting for the page's own button
-            // rather than silently clicking anything on their behalf
-            // without them choosing to.
+            // The person pressed Autofill and then this button, so both clicks
+            // are theirs; this only saves them hunting for the page's own
+            // button and pressing Autofill a second time.
             gateBtn.click();
+            slot.innerHTML = `<p class="hint">Opening the form…</p>`;
+            fillWhenFormAppears(root, btn, slot);
           });
         } else {
           slot.innerHTML = `<p class="filled-list">Couldn't find matching fields on this page.</p>${leftHtml}`;
