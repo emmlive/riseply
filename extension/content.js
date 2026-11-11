@@ -214,14 +214,23 @@
     return done;
   }
 
+  // A box Autofill can type into or choose from. A label can point at a button
+  // (Workday's "Phone Device Type"); typing into that fills nothing and still
+  // counts as done, so those are never returned.
+  function fillable(el) {
+    if (!el) return false;
+    if (el.tagName === "SELECT" || el.tagName === "TEXTAREA") return true;
+    return el.tagName === "INPUT" && !/^(checkbox|radio|file|button|submit|reset|image|hidden|password|color|range)$/i.test(el.type || "text");
+  }
+
   function findByLabelText(text) {
     const labels = document.querySelectorAll("label");
     for (const l of labels) {
       if ((l.textContent || "").toLowerCase().includes(text)) {
         const forId = l.getAttribute("for");
-        if (forId) { const el = document.getElementById(forId); if (el) return el; }
+        if (forId) { const el = document.getElementById(forId); if (fillable(el)) return el; }
         const inner = l.querySelector("input, textarea, select");
-        if (inner) return inner;
+        if (fillable(inner)) return inner;
       }
     }
     return null;
@@ -239,7 +248,7 @@
         (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("placeholder") || "") +
         " " + (el.name || "") + " " + (el.id || "") + " " + (el.getAttribute("autocomplete") || "")
       );
-      if (hay.includes(want)) return el;
+      if (hay.includes(want) && fillable(el)) return el;
     }
     return null;
   }
@@ -279,6 +288,46 @@
       if (squash(nearbyLabelText(el)).includes(want)) return el;
     }
     return null;
+  }
+
+  // The phone NUMBER box, not the device type, country code or extension that
+  // sit beside it on forms like Workday.
+  function findPhoneField() {
+    const els = document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=password]):not([type=submit]):not([type=button])');
+    let loose = null;
+    for (const el of els) {
+      if (!SHOWN(el) || el.disabled || el.readOnly) continue;
+      const desc = squash(nearbyLabelText(el) + " " + (el.name || "") + " " + (el.id || "") + " " + (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("data-automation-id") || ""));
+      if (/(type|code|extension|ext|country|device)/.test(desc.replace("telephone", "tel"))) continue;
+      if (desc.includes("phonenumber") || desc.includes("mobilenumber") || el.type === "tel") return el;
+      if (!loose && /phone|mobile|cell/.test(desc)) loose = el;
+    }
+    return loose;
+  }
+
+  // "Full name" only when a box is labeled as the person's name, never a box
+  // whose code name merely contains "name" (companyName, schoolName).
+  function findFullNameField() {
+    const els = document.querySelectorAll('input:not([type]), input[type="text"]');
+    for (const el of els) {
+      if (!SHOWN(el) || el.disabled || el.readOnly) continue;
+      const lab = squash(nearbyLabelText(el).replace(/required/gi, ""));
+      if (/^(your|full|legal|candidate|applicant)?name$/.test(lab)) return el;
+    }
+    return null;
+  }
+
+  // Fields that belong to a past job or school, not to the person's contact
+  // details: their "location" is the employer's, not where the person lives.
+  const HISTORY_WORDS = /work[-_ ]?experience|employment|education|school|experience/i;
+  function inHistoryBlock(el) {
+    if (HISTORY_WORDS.test((el.name || "") + " " + (el.id || ""))) return true;
+    let n = el;
+    for (let i = 0; n && i < 8; i++, n = n.parentElement) {
+      const t = [n.id, n.getAttribute && n.getAttribute("data-automation-id"), n.getAttribute && n.getAttribute("aria-label")].join(" ");
+      if (HISTORY_WORDS.test(t)) return true;
+    }
+    return false;
   }
 
   function findField(text) {
@@ -404,7 +453,7 @@
     if (firstEl && first && fillElement(firstEl, first)) filled.push("first name");
     if (lastEl && last && fillElement(lastEl, last)) filled.push("last name");
     if (!firstEl && !lastEl && candidate.full_name) {
-      const fullEl = findField("full name") || findField("name");
+      const fullEl = findField("full name") || findFullNameField();
       if (fullEl && fillElement(fullEl, candidate.full_name)) filled.push("name");
     }
 
@@ -415,8 +464,9 @@
     ];
     for (const [label, value] of pairs) {
       if (!value) continue;
-      const el = findField(label);
+      const el = label === "phone" ? findPhoneField() : findField(label);
       if (!el) continue;
+      if (label === "location" && inHistoryBlock(el)) continue;
       // A field labeled "location" is ambiguous in a way none of the
       // other pairs above are: on a text input it's almost always
       // "your current city" (safe to fill with the candidate's home

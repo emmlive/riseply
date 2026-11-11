@@ -546,6 +546,20 @@
     return { month: 0, year: Number(m[5]) };
   }
 
+  // Workday-style dates are separate month / day / year boxes that look like one
+  // "MM/DD/YYYY" field. Finds them from any box in the group.
+  function dateSegments(el) {
+    let n = el;
+    for (let i = 0; n && i < 6; i++, n = n.parentElement) {
+      const seg = Array.from(n.querySelectorAll('input[data-automation-id*="dateSection"]'));
+      if (seg.length >= 2) {
+        const by = (w) => seg.find((x) => (x.getAttribute("data-automation-id") || "").toLowerCase().includes(w));
+        return { month: by("month"), day: by("day"), year: by("year") };
+      }
+    }
+    return null;
+  }
+
   function dateFor(el, str) {
     const d = monthYear(str);
     if (!d) return str || "";
@@ -562,7 +576,15 @@
     pairs.forEach(([re, value, isDate]) => {
       if (!value) return;
       const el = byLabel(re, block).find((x) => x.tagName !== "SELECT" && isEmpty(x));
-      if (el && fillText(el, isDate ? dateFor(el, value) : value)) any = true;
+      if (!el) return;
+      const seg = isDate ? dateSegments(el) : null;
+      const d = seg && monthYear(value);
+      if (d && seg.year && (seg.month || !d.month)) {
+        if (seg.month && d.month && isEmpty(seg.month)) { setValue(seg.month, String(d.month).padStart(2, "0")); any = true; }
+        if (isEmpty(seg.year)) { setValue(seg.year, String(d.year)); any = true; }
+        return;
+      }
+      if (fillText(el, isDate ? dateFor(el, value) : value)) any = true;
     });
     if (any) out.push(label);
   }
@@ -993,15 +1015,13 @@
     const d = new Date();
     const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0"), yyyy = String(d.getFullYear());
     const plain = (e) => norm(labelText(e)).replace(/\brequired\b/g, "").trim();
+    const SIGN_DATE = /^(today'?s |signature |signed )?date( signed)?( \(?mm ?\/ ?dd ?\/ ?yyyy\)?)?$/;
     for (const el of controls("input")) {
-      if (el.disabled || el.readOnly || !isEmpty(el) || plain(el) !== "date") continue;
+      if (el.disabled || el.readOnly || !isEmpty(el) || !SIGN_DATE.test(plain(el))) continue;
       if (el.type === "date") { setValue(el, `${yyyy}-${mm}-${dd}`); out.push("date"); return; }
-      const wrap = el.closest('[data-automation-id="dateInputWrapper"], [data-automation-id^="formField"]') || el.parentElement;
-      const seg = wrap ? Array.from(wrap.querySelectorAll('input[data-automation-id*="dateSection"]')) : [];
-      if (seg.length >= 3) {
-        const by = (w) => seg.find((x) => (x.getAttribute("data-automation-id") || "").toLowerCase().includes(w));
-        const [m, da, y] = [by("month"), by("day"), by("year")];
-        if (m && da && y) { setValue(m, mm); setValue(da, dd); setValue(y, yyyy); out.push("date"); return; }
+      const seg = dateSegments(el);
+      if (seg && seg.month && seg.day && seg.year) {
+        setValue(seg.month, mm); setValue(seg.day, dd); setValue(seg.year, yyyy); out.push("date"); return;
       }
       const hint = norm(el.getAttribute("placeholder") || "");
       const val = /dd\s*[\/-]\s*mm/.test(hint) ? `${dd}/${mm}/${yyyy}` : /yyyy\s*[-\/]\s*mm/.test(hint) ? `${yyyy}-${mm}-${dd}` : `${mm}/${dd}/${yyyy}`;
