@@ -227,20 +227,62 @@
     return null;
   }
 
+  // Lower-case letters and digits only, so "legalFirstName", "first_name" and
+  // "First Name *" all contain "firstname".
+  const squash = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
   function findByAttr(text) {
+    const want = squash(text);
     const els = document.querySelectorAll("input, textarea, select");
     for (const el of els) {
-      const hay = (
+      const hay = squash(
         (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("placeholder") || "") +
-        " " + (el.name || "") + " " + (el.id || "")
-      ).toLowerCase();
-      if (hay.includes(text)) return el;
+        " " + (el.name || "") + " " + (el.id || "") + " " + (el.getAttribute("autocomplete") || "")
+      );
+      if (hay.includes(want)) return el;
+    }
+    return null;
+  }
+
+  const SHOWN = (e) => e.offsetWidth || e.offsetHeight || e.getClientRects().length;
+
+  // The words a person sees next to a box, for forms whose label is not tied to
+  // it with for=/id (a <div> or <span> above the input, a label beside it).
+  function nearbyLabelText(el) {
+    const ids = (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean);
+    const byId = ids.map((i) => document.getElementById(i)?.textContent || "").join(" ").trim();
+    if (byId) return byId;
+    if (el.id) {
+      const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (l) return (l.textContent || "").trim();
+    }
+    const wrap = el.closest("label");
+    if (wrap) return (wrap.textContent || "").trim();
+    let node = el;
+    for (let up = 0; up < 3 && node && node.parentElement; up++, node = node.parentElement) {
+      const own = Array.from(node.parentElement.children).find((c) => c !== node && (c.tagName === "LABEL" || c.tagName === "LEGEND") && !c.querySelector("input, select, textarea"));
+      if (own && (own.textContent || "").trim()) return own.textContent.trim();
+      let sib = node.previousElementSibling;
+      for (let hops = 0; sib && hops < 2; hops++, sib = sib.previousElementSibling) {
+        const t = (sib.textContent || "").trim();
+        if (t && t.length <= 80 && !sib.querySelector("input, select, textarea")) return t;
+      }
+    }
+    return el.getAttribute("aria-label") || el.getAttribute("placeholder") || "";
+  }
+
+  function findByNearby(text) {
+    const want = squash(text);
+    const els = document.querySelectorAll('input:not([type=hidden]):not([type=file]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]), textarea');
+    for (const el of els) {
+      if (!SHOWN(el)) continue;
+      if (squash(nearbyLabelText(el)).includes(want)) return el;
     }
     return null;
   }
 
   function findField(text) {
-    return findByLabelText(text) || findByAttr(text);
+    return findByLabelText(text) || findByAttr(text) || findByNearby(text);
   }
 
   function getLabelForElement(el) {
