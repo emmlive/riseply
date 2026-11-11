@@ -550,12 +550,19 @@ def download_tailored_resume(
     if not app_row.tailored_resume_data:
         raise HTTPException(status_code=404, detail="No tailored resume available for this application yet.")
 
-    filename = app_row.tailored_resume_path or "tailored_resume.docx"
+    filename = f"{_resume_stem(db, app_row, user)}.docx"
     return Response(
         content=app_row.tailored_resume_data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _resume_stem(db, app_row, user) -> str:
+    """Jane_Doe_Acme: the person's name and the employer, so the file is named for the job."""
+    from app.services import resume_pdf
+    job = db.get(models.Job, app_row.job_id)
+    return resume_pdf.resume_stem(user.full_name, job.company if job else "")
 
 
 @router.get("/applications/{application_id}/tailored-resume.pdf")
@@ -578,7 +585,7 @@ def download_tailored_resume_pdf(
     except Exception as e:
         print(f"[resume_customizer] PDF build failed for application {application_id}: {e}")
         raise HTTPException(status_code=422, detail="This resume couldn't be turned into a PDF. Download the Word file instead.")
-    stem = (app_row.tailored_resume_path or "tailored_resume.docx").rsplit(".", 1)[0]
+    stem = _resume_stem(db, app_row, user)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
 

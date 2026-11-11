@@ -263,7 +263,8 @@ def resume_file_for_attach(application_id: int | None = None, db: Session = Depe
         if a and a.tailored_resume_data:
             try:
                 pdf = resume_customizer.build_pdf_from_blocks(resume_customizer.docx_to_blocks(a.tailored_resume_data))
-                stem = (a.tailored_resume_path or "tailored_resume.docx").rsplit(".", 1)[0]
+                job = db.get(models.Job, a.job_id)
+                stem = resume_pdf.resume_stem(user.full_name, job.company if job else "")
                 return {"filename": f"{stem}.pdf", "content_type": "application/pdf", "source": "tailored",
                         "data": base64.b64encode(pdf).decode()}
             except Exception as e:

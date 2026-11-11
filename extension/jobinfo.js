@@ -29,9 +29,19 @@
     return [a.addressLocality, a.addressRegion, a.addressCountry && (a.addressCountry.name || a.addressCountry)].filter(Boolean).join(", ");
   }
 
+  // Subdomains that name a function, not the employer: apply.acme.com is Acme.
+  const GENERIC = new Set(["www", "apply", "jobs", "job", "careers", "career", "boards", "board", "recruiting",
+    "recruit", "hire", "hiring", "talent", "external", "ext", "work", "workat", "join", "app", "secure"]);
+
+  function hostCompany(host) {
+    const labels = String(host || "").toLowerCase().split(".").filter(Boolean);
+    const pick = labels.slice(0, -1).find((l) => !GENERIC.has(l) && !/^wd\d+$/.test(l));
+    return pick || labels[0] || "";
+  }
+
   function siteName() {
     const og = document.querySelector('meta[property="og:site_name"]')?.content;
-    return clean(og || location.hostname.replace(/^(www|jobs|careers|boards)\./, "").split(".")[0], 200);
+    return clean(og || hostCompany(location.hostname), 200);
   }
 
   // The job heading is rarely the first <h1>: logos and site banners are
@@ -63,5 +73,5 @@
     return { title, company: typeof company === "string" ? company : "", location };
   }
 
-  window.RisePlyJob = { read };
+  window.RisePlyJob = { read, hostCompany };
 })();
