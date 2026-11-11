@@ -1142,7 +1142,7 @@
     const [cand, saved] = await Promise.all([sendMessage({ type: "GET_CANDIDATE" }), sendMessage({ type: "GET_SITE_LOGIN", host })]);
     const email = (saved && saved.login && saved.login.username) || (cand && cand.success && cand.candidate && cand.candidate.email) || "";
     slot.innerHTML = `
-      <p class="hint" style="margin-top:12px;"><strong>Create your account on ${escapeHtml((saved && saved.site) || host)}</strong>${email ? ` with ${escapeHtml(email)}` : ""}. Riseply ${saved && saved.login ? "reuses your saved password" : "makes a strong password"} and keeps it in this browser only, never sent to Riseply.</p>
+      <p class="hint" style="margin-top:12px;"><strong>Create your account on ${escapeHtml((saved && saved.site) || host)}</strong>${email ? ` with ${escapeHtml(email)}${!(saved && saved.login) && cand && cand.candidate && cand.candidate.email_source === "resume" ? " (the email on your resume)" : ""}` : ""}. Riseply ${saved && saved.login ? "reuses your saved password" : "makes a strong password"} and keeps it in this browser only, never sent to Riseply.</p>
       <button class="action secondary" id="riseply-signup-fill" style="margin-top:6px;">Fill the sign-up form</button>
       <div id="riseply-signup-msg"></div>
     `;
