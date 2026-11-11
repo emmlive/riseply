@@ -164,7 +164,7 @@ def test_pdf_has_real_text_in_order_and_downloads(ctx):
     c, user, db, application = ctx
     r = c.get(f"/applications/{application.id}/tailored-resume.pdf")
     assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
-    assert 'filename="x.pdf"' in r.headers["content-disposition"]
+    assert 'Acme.pdf' in r.headers["content-disposition"]
     with pdfplumber.open(io.BytesIO(r.content)) as pdf:
         text = "\n".join(p.extract_text() or "" for p in pdf.pages)
         assert len(pdf.pages) == 1

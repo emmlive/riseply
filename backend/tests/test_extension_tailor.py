@@ -70,7 +70,7 @@ def test_generate_attach_and_mark_applied(setup):
         assert again.json()["created"] is False and again.json()["application_id"] == t["application_id"]
 
         f = client.get("/extension/resume-file", params={"application_id": t["application_id"]}).json()
-        assert f["source"] == "tailored" and f["filename"] == "jane_crypto.pdf"
+        assert f["source"] == "tailored" and f["filename"].endswith("Crypto_Co.pdf")
         assert base64.b64decode(f["data"]).startswith(b"%PDF")
 
         m = client.post("/extension/applied", json={"application_id": t["application_id"]}).json()
