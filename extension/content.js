@@ -150,6 +150,9 @@
   // simpler and more reliable since there's no URI-encoding round trip) ---
 
   function setNativeValue(el, value) {
+    // Same typing-like write as the rest of Autofill (see profilefill.js), so
+    // sites that ignore a bare value change still register the name, email and phone.
+    if (window.RisePlyFill && window.RisePlyFill.setText) { window.RisePlyFill.setText(el, value); return; }
     const proto = Object.getPrototypeOf(el);
     const desc = Object.getOwnPropertyDescriptor(proto, "value");
     if (desc && desc.set) desc.set.call(el, value); else el.value = value;

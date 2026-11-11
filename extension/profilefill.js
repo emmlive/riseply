@@ -49,12 +49,36 @@
     return !String(el.value || "").trim();
   }
 
+  // Types a value the way a person would, because many application sites
+  // (React, Angular, Vue and custom components) only notice a change that looks
+  // like typing: focus, an "insert text" edit, then leaving the field so it is
+  // marked as visited and its "required" message clears. Setting .value and
+  // firing a bare event only works on the simplest forms.
   function setValue(el, value) {
+    value = String(value);
+    const text = el.tagName === "INPUT" || el.tagName === "TEXTAREA";
+    if (text && value !== "" && !el.readOnly && !el.disabled) {
+      try {
+        el.focus();
+        el.select();
+        // execCommand fires the same events as real typing, so framework state updates.
+        if (document.execCommand("insertText", false, value) && el.value === value) {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.blur();
+          return;
+        }
+      } catch (e) { /* fall through to the direct write below */ }
+    }
     const proto = Object.getPrototypeOf(el);
     const desc = Object.getOwnPropertyDescriptor(proto, "value");
     if (desc && desc.set) desc.set.call(el, value); else el.value = value;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    try {
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: value ? "insertText" : "deleteContentBackward", data: value || null }));
+    } catch (e) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     el.dispatchEvent(new Event("change", { bubbles: true }));
+    if (text) { try { el.dispatchEvent(new FocusEvent("blur")); el.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); } catch (e) {} }
   }
 
   // Typeahead boxes (pick-from-a-list widgets) are not plain text.
@@ -1083,5 +1107,6 @@
     return !(a || e || c || (p.work || []).length || (p.education || []).length || (p.languages || []).length || (p.saved_answers || []).length);
   };
 
+  RF.setText = setValue;
   window.RisePlyFill = RF;
 })();

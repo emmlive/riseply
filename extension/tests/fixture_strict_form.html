@@ -1,0 +1,11 @@
+<!doctype html><html><body>
+<label for="fn">Legal First Name *</label><input id="fn"><span id="fn-err">This field is required.</span>
+<script>
+// A component that only believes real typing: it reads state from "input" events
+// that carry an inputType and marks the field visited on blur.
+window.state = {}; window.touched = {};
+for (const el of document.querySelectorAll("input")) {
+  el.addEventListener("input", (e) => { if (e.inputType) window.state[el.id] = el.value; });
+  el.addEventListener("blur", () => { window.touched[el.id] = true; if (window.state[el.id]) document.getElementById(el.id + "-err").textContent = ""; });
+}
+</script></body></html>
