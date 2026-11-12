@@ -1,0 +1,34 @@
+name: Autopilot
+
+# Every hour, lets Autopilot apply to each opted-in person's strongest matches on
+# the supported application systems (Greenhouse, Lever, Ashby, Workable). It does
+# nothing unless AUTO_SUBMIT_ENABLED=true on the Render backend. Uses the same
+# CRON_SECRET and BACKEND_URL secrets as the other scheduled workflows.
+
+on:
+  schedule:
+    - cron: "35 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-autopilot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start an Autopilot pass
+        run: |
+          # Render may be asleep or restarting: 000/502/503/504 mean the request
+          # never reached the app, so waiting and retrying is safe. The pass itself
+          # runs in the background on the server and answers 202 straight away.
+          for attempt in $(seq 1 10); do
+            response=$(curl -s --max-time 60 -w "\n%{http_code}" -X POST \
+              "${{ secrets.BACKEND_URL }}/internal/run-autopilot" \
+              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+            code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+            case "$code" in
+              000|502|503|504) echo "Attempt $attempt: server not ready ($code), waiting 30s"; sleep 30 ;;
+              200|202) echo "$body"; exit 0 ;;
+              *) echo "Unexpected answer $code: $body"; exit 1 ;;
+            esac
+          done
+          echo "Server never woke up"; exit 1

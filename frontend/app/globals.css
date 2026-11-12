@@ -1522,3 +1522,10 @@ textarea.cc-input { resize: vertical; }
 .pv-check input { margin-top: 4px; }
 .pv-url { width: 100%; max-width: 520px; margin-top: 6px; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .pv-cert { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+
+/* Apply queue */
+.aq-week { margin: 0 0 14px; }
+.aq-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.aq-head h3 { margin: 0 0 2px; }
+.aq-tags { margin: 8px 0; }
+.aq-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

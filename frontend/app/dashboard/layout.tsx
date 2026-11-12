@@ -47,6 +47,7 @@ const INDIVIDUAL_GROUPS: { label: string; items: { href: string; label: string }
     { href: "/dashboard/rise-index", label: "Rise Index" },
   ] },
   { label: "Apply", items: [
+    { href: "/dashboard/apply-queue", label: "Apply queue" },
     { href: "/dashboard/applications", label: "Applications" },
   ] },
   { label: "Win", items: [

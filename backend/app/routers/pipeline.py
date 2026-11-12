@@ -343,6 +343,41 @@ def _to_out(app: models.Application, job: models.Job,
     )
 
 
+APPLY_QUEUE_MIN_SCORE = apply_guard.STRETCH
+APPLY_QUEUE_MAX = 30
+
+
+@router.get("/applications/apply-queue", response_model=schemas.ApplyQueueOut)
+def apply_queue(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """The person's strongest open matches still waiting to be applied to,
+    best first, each with its tailored resume already made. Declared before
+    /applications/{application_id} so the path isn't read as an id."""
+    rows = db.query(models.Application, models.Job).join(models.Job, models.Application.job_id == models.Job.id).filter(
+        models.Application.user_id == user.id,
+        models.Application.status.in_(("pending_approval", "approved")),
+        models.Application.is_archived.isnot(True),
+        models.Application.match_score >= APPLY_QUEUE_MIN_SCORE,
+    ).order_by(models.Application.match_score.desc(), models.Application.id.desc()).limit(APPLY_QUEUE_MAX * 2).all()
+    items = []
+    for a, j in rows:
+        if not _job_still_open(j) or not (j.url or "").strip():
+            continue
+        items.append(schemas.ApplyQueueItem(
+            id=a.id, title=j.title, company=j.company, location=j.location or "", url=j.url,
+            match_score=a.match_score or 0, match_reason=a.match_reason or "", status=a.status,
+            has_resume=bool(a.tailored_resume_data), autopilot_ok=submitter.is_supported_ats(j.url)[0],
+            note=(a.notes or "") if (a.notes or "").startswith("Autopilot") else "",
+        ))
+        if len(items) >= APPLY_QUEUE_MAX:
+            break
+    week = datetime.utcnow() - timedelta(days=7)
+    applied = db.query(models.Application).filter(
+        models.Application.user_id == user.id, models.Application.submitted_at.isnot(None), models.Application.submitted_at > week).count()
+    auto = db.query(models.Application).filter(
+        models.Application.user_id == user.id, models.Application.auto_applied_at.isnot(None), models.Application.auto_applied_at > week).count()
+    return schemas.ApplyQueueOut(items=items, applied_this_week=applied, autopilot_applied_this_week=auto)
+
+
 @router.get("/applications", response_model=list[schemas.ApplicationOut])
 def list_applications(
     status: str | None = None,

@@ -68,6 +68,10 @@ class UserOut(BaseModel):
     alert_instant_min_score: int = 85
     alert_digest_hour: int = 8
     alert_timezone: str = ""
+    autopilot_enabled: bool = False
+    autopilot_min_score: int = 85
+    autopilot_daily_cap: int = 5
+    autopilot_available: bool = False   # the server's auto-submit switch is on
     notification_channel: str = "email"
     sms_consent: bool = False
     resume_text: str
@@ -97,6 +101,11 @@ class UserUpdate(BaseModel):
     alert_instant_min_score: Optional[int] = Field(default=None, ge=50, le=100)
     alert_digest_hour: Optional[int] = Field(default=None, ge=0, le=23)
     alert_timezone: Optional[str] = None
+    autopilot_enabled: Optional[bool] = None
+    autopilot_min_score: Optional[int] = Field(None, ge=75, le=100)
+    autopilot_daily_cap: Optional[int] = Field(None, ge=1, le=10)
+    # Must be true in the request that first turns Autopilot on.
+    autopilot_consent: Optional[bool] = None
     notification_channel: Optional[str] = None
     sms_consent: Optional[bool] = None
 
@@ -2470,3 +2479,25 @@ class ProgramOut(BaseModel):
     next_step: dict | None = None
     week_plan: dict = {}
     created_at: datetime
+
+
+# --- Ready-to-apply queue ---
+
+class ApplyQueueItem(BaseModel):
+    id: int
+    title: str
+    company: str
+    location: str = ""
+    url: str
+    match_score: int
+    match_reason: str = ""
+    status: str
+    has_resume: bool = False
+    autopilot_ok: bool = False         # on a system Autopilot can apply to
+    note: str = ""                     # e.g. why Autopilot handed it back
+
+
+class ApplyQueueOut(BaseModel):
+    items: list[ApplyQueueItem] = []
+    applied_this_week: int = 0
+    autopilot_applied_this_week: int = 0

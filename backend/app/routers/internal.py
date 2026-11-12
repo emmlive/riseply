@@ -161,3 +161,22 @@ def send_alerts(
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
     return pipeline_runner.send_smart_alerts(db)
+
+
+@router.post("/run-autopilot", status_code=202)
+def run_autopilot(
+    background_tasks: BackgroundTasks,
+    x_cron_secret: str = Header(default=""),
+):
+    """Hourly: lets Autopilot apply to each opted-in person's strongest matches
+    on the supported application systems. Runs in the background (a browser is
+    slow) and does nothing unless the server's auto-submit switch is on."""
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Autopilot isn't configured (CRON_SECRET unset).")
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    if not settings.auto_submit_enabled:
+        return JSONResponse(status_code=200, content={"started": False, "reason": "auto-submit is switched off on this server"})
+    from app.services import autopilot
+    background_tasks.add_task(autopilot.run_background)
+    return {"started": True}

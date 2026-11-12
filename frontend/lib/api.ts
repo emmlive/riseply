@@ -96,6 +96,10 @@ export interface User {
   alert_instant_min_score: number;
   alert_digest_hour: number;
   alert_timezone: string;
+  autopilot_enabled: boolean;
+  autopilot_min_score: number;
+  autopilot_daily_cap: number;
+  autopilot_available: boolean;
   notification_channel: string;
   sms_consent: boolean;
   resume_text: string;
@@ -1429,3 +1433,9 @@ export interface Program {
   created_at: string;
 }
 export interface ProgramListItem { id: number; title: string; target_role: string; progress: number; created_at: string }
+
+export interface ApplyQueueItem {
+  id: number; title: string; company: string; location: string; url: string; match_score: number; match_reason: string;
+  status: string; has_resume: boolean; autopilot_ok: boolean; note: string;
+}
+export interface ApplyQueue { items: ApplyQueueItem[]; applied_this_week: number; autopilot_applied_this_week: number }
