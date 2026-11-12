@@ -104,6 +104,17 @@ class Settings(BaseSettings):
     # more specific pool than a general commercial job board's.
     usajobs_results_per_page: int = 50
 
+    # --- Job discovery: web-wide search (JSearch and Jooble) ---
+    # Empty by default; each source does nothing until its key is set.
+    # JSearch (RapidAPI) gathers Google for Jobs: LinkedIn, Indeed,
+    # Glassdoor, ZipRecruiter and company career pages. Jooble is a
+    # worldwide job search engine with a free key. One query = one call, so
+    # the caps below bound each discovery run.
+    jsearch_api_key: str = ""
+    jsearch_max_queries_per_run: int = 10
+    jooble_api_key: str = ""
+    jooble_max_queries_per_run: int = 15
+
     # --- Email (Resend) ---
     # Empty by default -- same kill-switch pattern as every other
     # optional integration (Stripe, Twilio, CRON_SECRET). Until
