@@ -51,6 +51,7 @@ const INDIVIDUAL_GROUPS: { label: string; items: { href: string; label: string }
   ] },
   { label: "Win", items: [
     { href: "/dashboard/career-coach", label: "Career Coach" },
+    { href: "/dashboard/pivot", label: "Pivot program" },
   ] },
   { label: "Grow", items: [
     { href: "/dashboard/skill-gap", label: "Skill gaps" },
@@ -73,7 +74,7 @@ const INDIVIDUAL_ACCOUNT_NAV = [
 const WIDE_ROUTES = ["/dashboard/career-coach"];
 // Data-heavy pages (stat cards, lists, tables) use more of the screen; forms
 // and text pages keep the narrower default width.
-const MID_ROUTES = ["/dashboard/rise-index", "/dashboard/applications", "/dashboard/progress", "/dashboard/job-buddy", "/dashboard/skill-gap", "/dashboard/career-path", "/dashboard/task-guide", "/dashboard/exam-prep", "/dashboard/autofill-profile", "/dashboard/admin"];
+const MID_ROUTES = ["/dashboard/rise-index", "/dashboard/applications", "/dashboard/progress", "/dashboard/job-buddy", "/dashboard/skill-gap", "/dashboard/career-path", "/dashboard/pivot", "/dashboard/task-guide", "/dashboard/exam-prep", "/dashboard/autofill-profile", "/dashboard/admin"];
 
 function widthClass(pathname: string): string {
   const p = pathname.replace(/\/+$/, "");

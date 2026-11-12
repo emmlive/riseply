@@ -88,6 +88,8 @@ export default function CareerPathPage() {
         you are today, with something to build at each stage and a way to practice every skill with the Career Coach.
       </p>
 
+      <p className="muted">Changing fields and starting from zero? <Link href="/dashboard/pivot">The Pivot program</Link> teaches you step by step, all the way to your job search.</p>
+
       <div className="card sg-form">
         <label className="cc-label" htmlFor="cp-role">Role you&apos;re aiming for</label>
         <div className="sg-row">

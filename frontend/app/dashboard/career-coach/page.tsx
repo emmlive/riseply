@@ -684,14 +684,14 @@ export default function CareerCoachPage() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function startModule(moduleId: string) {
+  async function startModule(moduleId: string, testOut = false) {
     if (!course || busyModule) return;
     setBusyModule(moduleId);
     setError("");
     try {
       const r = await api<{ session: CareerCoachSession; opening_message: CareerCoachMessage }>(
         "/career-coach/sessions",
-        { method: "POST", body: JSON.stringify({ session_type: "upskill", target_role: course.target_role, course_id: course.id, module_id: moduleId, learning_style: learningStyle, voice: readAloud }) }
+        { method: "POST", body: JSON.stringify({ session_type: "upskill", target_role: course.target_role, course_id: course.id, module_id: moduleId, learning_style: learningStyle, voice: readAloud, ...(testOut ? { test_out: true } : {}) }) }
       );
       setSessions((s) => [r.session, ...s]);
       setLessonCourse(course);

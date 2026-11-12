@@ -9,7 +9,7 @@ import LearnedResume from "@/components/LearnedResume";
 export default function CoursePanel({ course, busyModule, onStart, onOpen, onClose, onDelete, onArchive }: {
   course: CoachCourse;
   busyModule: string;
-  onStart: (moduleId: string) => void;
+  onStart: (moduleId: string, testOut?: boolean) => void;
   onOpen: (sessionId: number) => void;
   onClose: () => void;
   onDelete: () => void;
@@ -68,6 +68,12 @@ export default function CoursePanel({ course, busyModule, onStart, onOpen, onClo
                 <button className={m.id === nextId ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"}
                         onClick={() => onStart(m.id)} disabled={busyModule !== ""}>
                   {busyModule === m.id ? "Starting…" : `Start module · ${m.minutes} min timer`}
+                </button>
+              )}
+              {!m.done && (!m.session_id || m.session_status === "completed") && (
+                <button className="btn btn-ghost btn-sm" onClick={() => onStart(m.id, true)} disabled={busyModule !== ""}
+                        title="The coach asks one question per objective instead of teaching it. Answer them well and the module is marked done.">
+                  I know this — test me
                 </button>
               )}
               {m.done && m.session_id && (

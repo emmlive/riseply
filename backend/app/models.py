@@ -487,6 +487,9 @@ class CareerCoachSession(Base):
     learning_style = Column(String, default="auto", server_default="auto")
 
     status = Column(String, default="in_progress", server_default="in_progress")  # in_progress | completed
+    # True when the person says they already know this course module and asks to be
+    # tested instead of taught (see services/syllabus.brief).
+    test_out = Column(Boolean, default=False, server_default="false")
     score = Column(Integer, nullable=True)
     feedback = Column(Text, default="", server_default="")
     # JSON {"goals": [...], "covered": [1-based numbers]} for a learning session's
@@ -1866,6 +1869,24 @@ class CoachCourse(Base):
     done = Column(Text, default="[]")  # JSON list of finished module ids
     folder_id = Column(Integer, nullable=True)  # study folder the recaps are filed in
     archived_at = Column(DateTime, nullable=True)  # set when the person archives the course
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class CareerProgram(Base):
+    """A pivot program (services/program.py): a bootcamp-style roadmap from zero
+    to a job in a new field. `data` is the roadmap (phases); `state` is what the
+    person has done outside the courses (projects, certifications, the job-ready
+    checklist, job-search status). Each learning phase's course is a CoachCourse,
+    recorded in state["courses"] once built."""
+    __tablename__ = "career_programs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    target_role = Column(String, nullable=False)
+    background = Column(String, default="", server_default="")
+    hours_per_week = Column(Integer, default=6, server_default="6")
+    data = Column(Text, default="{}")
+    state = Column(Text, default="{}")
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 
