@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isPreviewingAsIndividual } from "@/lib/previewMode";
 import { api, User, API_URL, CalendarConnection, Organization, Application } from "@/lib/api";
 import DiscordSettings from "@/components/DiscordSettings";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
@@ -104,7 +105,9 @@ export default function ProfilePage() {
       api<Organization[]>("/orgs/mine").catch(() => []),
       api<Application[]>("/applications").catch(() => []),
     ]).then(([orgs, apps]) => {
-      setIsOrgAffiliated(orgs.length > 0 || apps.some((a) => a.organization_id !== null));
+      // Super-admin QA preview ("Previewing as an individual user") shows the personal settings too.
+      const preview = isPreviewingAsIndividual();
+      setIsOrgAffiliated(preview ? false : (orgs.length > 0 || apps.some((a) => a.organization_id !== null)));
     });
   }, []);
 
