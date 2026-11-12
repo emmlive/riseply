@@ -25,6 +25,10 @@ After any code change, press the refresh icon on the extension's card.
   notice period), optional self-identification answers, and your saved
   answers. Saved answers fill text boxes, dropdowns and radio buttons, but
   only when they point at exactly one option.
+- **Apply queue**: click the toolbar icon, then "Apply to my best matches".
+  Your strongest open matches open one at a time in a tab, with a bar to
+  autofill, mark it applied and move on or skip. It works on every site,
+  LinkedIn included, because you click each Submit yourself.
 - **Works inside iframes** (iCIMS, embedded Greenhouse) and on Workday-style
   pick-from-a-list questions.
 - **Attaches your resume** to the upload field (the tailored one if you made
