@@ -38,6 +38,7 @@ def _run_discovery(db, **fakes):
         "greenhouse.fetch_all": [], "lever.fetch_all": [], "rss_boards.fetch_all": [],
         "remoteok.fetch_jobs": [], "arbeitnow.fetch_jobs": [], "adzuna.fetch_by_keywords": [],
         "adzuna.fetch_by_keyword_location_pairs": [], "usajobs.fetch_by_keywords": [],
+        "jsearch.fetch_by_queries": [], "jooble.fetch_by_queries": [],
     }
     base.update(fakes)
     patches = []
@@ -72,7 +73,7 @@ def test_each_source_reports_what_it_did_and_why_it_returned_nothing(db):
     assert by_name["rss"]["status"] == "failed" and "403" in by_name["rss"]["notes"][0]
     assert by_name["adzuna"]["status"] == "not_configured" and "ADZUNA_APP_ID" in by_name["adzuna"]["notes"][0]
     assert by_name["remoteok"]["status"] == "empty" and by_name["remoteok"]["notes"] == []
-    assert set(by_name) == {"greenhouse", "lever", "rss", "remoteok", "arbeitnow", "adzuna", "usajobs", "adzuna_location"}
+    assert set(by_name) == {"greenhouse", "lever", "rss", "remoteok", "arbeitnow", "adzuna", "usajobs", "adzuna_location", "jsearch", "jooble"}
     assert result["discovered"] == 3 and result["new"] == 3
 
 

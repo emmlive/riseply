@@ -48,7 +48,7 @@ def _job(source, external_id, title="Engineer", company="Acme", location="Remote
 
 
 def _patch_all_sources(gh=None, lever_jobs=None, rss=None, remoteok_jobs=None, arbeitnow_jobs=None, adzuna_kw=None, usajobs_jobs=None, adzuna_loc=None):
-    """All 8 source fetchers mocked to empty lists by default -- each
+    """All 10 source fetchers mocked to empty lists by default -- each
     test overrides only the ones it cares about."""
     return [
         patch.object(pipeline_runner.greenhouse, "fetch_all", return_value=gh or []),
@@ -59,6 +59,8 @@ def _patch_all_sources(gh=None, lever_jobs=None, rss=None, remoteok_jobs=None, a
         patch.object(pipeline_runner.adzuna, "fetch_by_keywords", return_value=adzuna_kw or []),
         patch.object(pipeline_runner.usajobs, "fetch_by_keywords", return_value=usajobs_jobs or []),
         patch.object(pipeline_runner.adzuna, "fetch_by_keyword_location_pairs", return_value=adzuna_loc or []),
+        patch.object(pipeline_runner.jsearch, "fetch_by_queries", return_value=[]),
+        patch.object(pipeline_runner.jooble, "fetch_by_queries", return_value=[]),
     ]
 
 
@@ -73,7 +75,7 @@ def test_jobs_from_every_source_get_written(db):
         usajobs_jobs=[_job("usajobs", "us1")],
         adzuna_loc=[_job("adzuna", "az2")],
     )
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7]:
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
         result = pipeline_runner.run_discovery(db)
 
     assert result["discovered"] == 8
@@ -106,7 +108,7 @@ def test_duplicate_jobs_across_the_same_source_still_deduplicated(db):
     incremental commits -- running discovery twice with the same job
     shouldn't create a duplicate row."""
     patches = _patch_all_sources(gh=[_job("greenhouse", "gh_dup")])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7]:
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
         pipeline_runner.run_discovery(db)
         result_second = pipeline_runner.run_discovery(db)
 
@@ -117,7 +119,7 @@ def test_duplicate_jobs_across_the_same_source_still_deduplicated(db):
 
 def test_no_jobs_from_any_source_returns_zero_counts(db):
     patches = _patch_all_sources()
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7]:
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
         result = pipeline_runner.run_discovery(db)
 
     assert (result["discovered"], result["new"]) == (0, 0)

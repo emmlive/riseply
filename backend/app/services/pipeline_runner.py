@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 from app import models
 from app.services import matcher, resume_customizer, notifier, usage, rise_index, sms, discord_notify, posting_check, search_terms, match_feedback, resume_facts
-from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, report as source_report
+from app.services.sources import greenhouse, lever, rss_boards, adzuna, remoteok, arbeitnow, usajobs, jsearch, jooble, report as source_report
 from app.services import discovery_sources
 from app.config import settings
 from app.services import resume_fit
@@ -661,6 +661,25 @@ def run_discovery(db: Session) -> dict:
     _record("adzuna_location", len(adzuna_location_jobs), _n, f"{len(location_pairs_this_run)} title + place pair(s) searched")
     print(f"[discovery] adzuna (location-paired): {len(adzuna_location_jobs)} raw postings, written and committed")
     del adzuna_location_jobs
+
+    # Web-wide search (JSearch / Jooble): the same titles and places people
+    # put in their search profiles, sent to search engines that cover
+    # LinkedIn, Indeed, Glassdoor and company career pages. Each does
+    # nothing until its key is set.
+    def _title_place_pairs(limit: int) -> list[tuple[str, str]]:
+        titles = _select_keyword_rotation(search_titles, limit)
+        return [(t, location_hints[i % len(location_hints)] if location_hints else "") for i, t in enumerate(titles)]
+
+    for _name, _mod, _cap in (("jsearch", jsearch, settings.jsearch_max_queries_per_run),
+                              ("jooble", jooble, settings.jooble_max_queries_per_run)):
+        _pairs = _title_place_pairs(_cap)
+        _jobs = _mod.fetch_by_queries(_pairs)
+        total_discovered += len(_jobs)
+        _n = _write_and_commit(_jobs)
+        total_new += _n
+        _record(_name, len(_jobs), _n, f"{len(_pairs)} search(es) sent")
+        print(f"[discovery] {_name}: {len(_jobs)} raw postings, written and committed")
+        del _jobs
 
     print(f"[discovery] total this run -- discovered: {total_discovered}, new: {total_new}")
     closed_apps = close_applications_for_closed_jobs(db)
