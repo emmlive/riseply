@@ -139,6 +139,20 @@ def test_module_session_uses_objectives_as_plan_and_forces_upskill(db):
     assert m.call_args.args[0] == "upskill" and "COURSE MODULE" in m.call_args.kwargs["module"]
 
 
+def test_test_out_session_gets_the_test_brief_and_keeps_it_for_later_messages(db):
+    u = _user(db)
+    cid = _course().json()["id"]
+    with patch(f"{CC}.start_session", return_value={"topic": "x", "opening_message": "Let's check.", "goals": None}) as m:
+        r = client.post("/career-coach/sessions", json={"session_type": "drill", "target_role": "Cloud Role",
+                                                        "course_id": cid, "module_id": "m1", "test_out": True})
+    assert r.status_code == 200 and "TEST-OUT" in m.call_args.kwargs["module"]
+    sid = r.json()["session"]["id"]
+    db.expire_all()
+    assert db.get(models.CareerCoachSession, sid).test_out is True
+    plain, pm = _start_module(cid, "m2")
+    assert "TEST-OUT" not in pm.call_args.kwargs["module"]
+
+
 def test_module_session_unknown_module_is_404_and_not_charged(db):
     u = _user(db)
     cid = _course().json()["id"]

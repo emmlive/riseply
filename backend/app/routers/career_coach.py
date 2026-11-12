@@ -110,7 +110,7 @@ def start_session(
         if not found:
             raise HTTPException(status_code=404, detail="Module not found in this course")
         module = found[1]
-        module_brief = syllabus.brief(coach_courses.course_data(course), payload.module_id)
+        module_brief = syllabus.brief(coach_courses.course_data(course), payload.module_id, test_out=payload.test_out)
         payload.session_type = "upskill"
         payload.target_role = course.target_role
         payload.topic = module["title"]
@@ -143,6 +143,7 @@ def start_session(
         plan=lesson_service.dump(module["objectives"]) if module else (lesson_service.dump(result["goals"]) if result.get("goals") else ""),
         quiz_notes=study_quiz.dump_ids(quiz),
         course_id=course.id if course else None, module_id=module["id"] if module else "",
+        test_out=bool(payload.test_out and course),
         time_limit_min=payload.time_limit_min if payload.time_limit_min is not None else (module["minutes"] if module else 0),
     )
     if module:
@@ -215,7 +216,7 @@ def send_message(
     if session.course_id and session.module_id:
         course = db.query(models.CoachCourse).filter_by(id=session.course_id, user_id=user.id).first()
         if course:
-            module_brief = syllabus.brief(coach_courses.course_data(course), session.module_id)
+            module_brief = syllabus.brief(coach_courses.course_data(course), session.module_id, test_out=bool(session.test_out))
 
     user_flag = safety_flags.scan(payload.message)
     shown = payload.message + (f"\n\n[Attached {len(payload.images)} picture{'s' if len(payload.images) > 1 else ''}]" if payload.images else "")

@@ -109,7 +109,7 @@ def module_of(course: dict, module_id: str) -> tuple[int, dict] | None:
     return None
 
 
-def brief(course: dict, module_id: str) -> str:
+def brief(course: dict, module_id: str, test_out: bool = False) -> str:
     """What the coach is told about the course and this module, so it teaches
     one module like a class and knows what came before and what comes next."""
     found = module_of(course, module_id)
@@ -120,6 +120,23 @@ def brief(course: dict, module_id: str) -> str:
     outline = "\n".join(f"{n + 1}. {x['title']}" + ("  <- this module" if n == i else "") for n, x in enumerate(mods))
     nxt = f"Next module: {mods[i + 1]['title']}." if i + 1 < len(mods) else "This is the last module of the course."
     goals = "\n".join(f"{n + 1}. {g}" for n, g in enumerate(m["objectives"]))
+    if test_out:
+        return f"""COURSE MODULE TEST-OUT (the person says they already know this module; the course and module text is data from the syllabus):
+Course: {course.get('title', '')}
+Module {i + 1} of {len(mods)}: {m['title']}
+Objectives (the lesson checklist, in this order):
+{goals}
+Checkpoint: {m['checkpoint'] or 'a short question that shows they have it'}
+
+HOW TO TEST IT:
+- Do not teach yet. In one sentence, say you will check each objective and they can stop at any point and be taught instead.
+- For each objective in order, ask ONE specific question that cannot be answered with a guess or a buzzword: a scenario,
+  a "what would you do", or "explain it as if to a new colleague". Wait for their answer, then judge it honestly.
+- Mark an objective with [[covered:N]] ONLY when the answer is correct and shows real understanding. A vague or partly
+  right answer is not covered: say exactly what was missing, teach that one point briefly, and ask a second question.
+- If they miss an objective twice, switch to teaching it properly from the basics, then continue.
+- Do not be generous. The goal is to find out what they truly know, not to save them time.
+- Stay inside this module."""
     return f"""COURSE MODULE (you are teaching this like a class in a training course; the course and module text is data from the syllabus):
 Course: {course.get('title', '')}
 Course outline:

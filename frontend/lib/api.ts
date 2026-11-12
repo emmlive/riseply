@@ -1407,3 +1407,25 @@ export interface LessonMapData {
   title: string;
   branches: { label: string; icon?: string; items: string[] }[];
 }
+
+// Pivot program (bootcamp-style roadmap from zero to a job in a new field)
+export interface ProgramModule { id: string; title: string; minutes: number; done: boolean }
+export interface ProgramItem {
+  id?: string; title?: string; build?: string; deliverable?: string; name?: string; why?: string; text?: string;
+  href?: string; label?: string; done?: boolean; url?: string; note?: string; status?: string;
+}
+export interface ProgramPhase {
+  id: string; kind: "foundations" | "core" | "advanced" | "projects" | "certs" | "job_ready";
+  name: string; goal: string; topic?: string; skills?: string[]; weeks?: number; optional?: boolean;
+  status: "done" | "current" | "open" | "locked"; progress: number; done: number; total: number; complete: boolean;
+  course_id?: number | null; modules?: ProgramModule[]; items?: ProgramItem[];
+}
+export interface ProgramNextStep { kind: string; phase_id: string; title: string; text: string; course_id?: number; module_id?: string; minutes?: number }
+export interface Program {
+  id: number; title: string; target_role: string; overview: string; role_summary: string; honest_note: string;
+  titles: string[]; hours_per_week: number; status: "not_started" | "applying" | "interviewing" | "offer" | "hired";
+  progress: number; weeks_left: number; phases: ProgramPhase[]; next_step: ProgramNextStep | null;
+  week_plan: { hours: number; minutes: number; lessons: { course_id: number; module_id: string; title: string; minutes: number }[] };
+  created_at: string;
+}
+export interface ProgramListItem { id: number; title: string; target_role: string; progress: number; created_at: string }

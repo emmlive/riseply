@@ -391,6 +391,8 @@ class CareerCoachStartRequest(BaseModel):
     # Teach one module of a course (the course sets the role, topic and lesson checklist).
     course_id: int | None = None
     module_id: str = Field(default="", max_length=8)
+    # "I already know this, test me": the coach checks each objective instead of teaching it.
+    test_out: bool = False
     # Minutes the person wants to spend (0 = no limit). Left out: a course
     # module uses its own length, anything else has no limit.
     time_limit_min: int | None = Field(default=None, ge=0, le=240)
@@ -2415,3 +2417,56 @@ class ExamAnswerIn(BaseModel):
 
 class ExamFinishRequest(BaseModel):
     answers: list[ExamAnswerIn] = Field(default_factory=list, max_length=60)
+
+
+# --- Pivot program ---
+
+class ProgramCreate(BaseModel):
+    target_role: str = Field(..., min_length=2, max_length=120)
+    hours_per_week: int = Field(6, ge=1, le=40)
+    background: str = Field("", max_length=200)
+
+
+class ProgramPatch(BaseModel):
+    status: str | None = Field(None, pattern="^(not_started|applying|interviewing|offer|hired)$")
+    hours_per_week: int | None = Field(None, ge=1, le=40)
+
+
+class ProgramProjectIn(BaseModel):
+    done: bool
+    url: str = Field("", max_length=300)
+    note: str = Field("", max_length=500)
+
+
+class ProgramCertIn(BaseModel):
+    status: str = Field(..., pattern="^(planning|studying|earned|skip|)$")
+
+
+class ProgramCheckIn(BaseModel):
+    done: bool
+
+
+class ProgramListItem(BaseModel):
+    id: int
+    title: str
+    target_role: str
+    progress: int = 0
+    created_at: datetime
+
+
+class ProgramOut(BaseModel):
+    id: int
+    title: str
+    target_role: str
+    overview: str = ""
+    role_summary: str = ""
+    honest_note: str = ""
+    titles: list[str] = []
+    hours_per_week: int = 6
+    status: str = "not_started"
+    progress: int = 0
+    weeks_left: int = 0
+    phases: list[dict] = []
+    next_step: dict | None = None
+    week_plan: dict = {}
+    created_at: datetime
