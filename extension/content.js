@@ -1423,11 +1423,17 @@
     `;
   }
 
-  function init() {
+  async function init() {
     log("init() running, readyState:", document.readyState);
     const verdict = looksLikeJobPage();
     log("job page?", verdict.job, "-", verdict.why);
-    if (!verdict.job) return;
+    if (!verdict.job) {
+      // In the Apply queue's tab the sidebar always shows, even where the page
+      // doesn't look like a job to the detector (a LinkedIn listing, an odd careers page).
+      const q = await sendMessage({ type: "QUEUE_STATE" }, 4000);
+      if (!(q && q.active)) return;
+      log("not a detected job page, but this tab is in the Apply queue -- showing the sidebar");
+    }
     const root = injectSidebar();
     log("injectSidebar() returned:", root ? "a shadow root" : "null (already existed?)");
     if (!root) return;

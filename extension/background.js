@@ -69,6 +69,52 @@ async function apiFetch(path, options = {}) {
   return body;
 }
 
+
+// ---- Apply queue ("next job") ----
+// The person's best matches, opened one at a time in a tab. A floating bar on
+// each page (queuebar.js) offers Autofill, "I applied, next" and Skip. The
+// person always clicks the employer's own Submit; nothing here submits. State
+// lives in session storage so it survives the service worker sleeping.
+const QUEUE_KEY = "riseply_queue";
+async function getQueue() { return (await chrome.storage.session.get(QUEUE_KEY))[QUEUE_KEY] || null; }
+async function setQueue(q) {
+  if (q) await chrome.storage.session.set({ [QUEUE_KEY]: q });
+  else await chrome.storage.session.remove(QUEUE_KEY);
+}
+function safeUrl(u) { return /^https?:\/\//i.test(String(u || "")) ? String(u) : ""; }
+async function openInQueueTab(q, url) {
+  const target = safeUrl(url);
+  if (!target) throw new Error("This job has no usable link.");
+  try {
+    await chrome.tabs.update(q.tabs[0], { url: target });
+  } catch (e) {
+    const tab = await chrome.tabs.create({ url: target });
+    q.tabs = [tab.id];
+  }
+  q.tabs = [q.tabs[0]];   // pages the person opened from the job lose the bar once we move on
+}
+function queueView(q, tabId) {
+  const item = q.items[q.index] || null;
+  return { success: true, active: !!(item && q.tabs.includes(tabId)), index: q.index, total: q.items.length,
+           item, applied: q.applied, skipped: q.skipped };
+}
+chrome.tabs.onCreated.addListener(async (tab) => {
+  // An Apply link that opens the employer's page in a new tab keeps the bar.
+  try {
+    const q = await getQueue();
+    if (q && tab.openerTabId && q.tabs.includes(tab.openerTabId) && !q.tabs.includes(tab.id)) {
+      q.tabs.push(tab.id);
+      await setQueue(q);
+    }
+  } catch (e) { /* the queue is a convenience; never throw from here */ }
+});
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    const q = await getQueue();
+    if (q && q.tabs.includes(tabId)) { q.tabs = q.tabs.filter((t) => t !== tabId); await setQueue(q); }
+  } catch (e) { /* ignore */ }
+});
+
 // ---- Forms inside iframes ----
 // Some application systems (iCIMS, embedded Greenhouse) put the whole form in
 // an iframe. The content script runs in every frame; each sub-frame announces
@@ -264,6 +310,64 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             }),
           });
           sendResponse({ success: true, ...r });
+          break;
+        }
+
+        case "QUEUE_PEEK": {
+          const q = await getQueue();
+          const r = await apiFetch("/applications/apply-queue");
+          sendResponse({ success: true, count: (r.items || []).length, appliedThisWeek: r.applied_this_week || 0,
+            running: q ? { index: q.index, total: q.items.length } : null });
+          break;
+        }
+
+        case "QUEUE_START": {
+          const r = await apiFetch("/applications/apply-queue");
+          const items = (r.items || []).filter((i) => safeUrl(i.url)).map((i) => ({
+            id: i.id, title: i.title, company: i.company, url: i.url, score: i.match_score }));
+          if (!items.length) { sendResponse({ success: true, count: 0 }); break; }
+          const tab = await chrome.tabs.create({ url: items[0].url });
+          await setQueue({ items, index: 0, tabs: [tab.id], applied: 0, skipped: 0 });
+          sendResponse({ success: true, count: items.length });
+          break;
+        }
+
+        case "QUEUE_RESUME": {
+          const q = await getQueue();
+          if (!q || !q.items[q.index]) { sendResponse({ success: false, error: "No queue is running." }); break; }
+          const tab = await chrome.tabs.create({ url: safeUrl(q.items[q.index].url) });
+          q.tabs = [tab.id];
+          await setQueue(q);
+          sendResponse({ success: true });
+          break;
+        }
+
+        case "QUEUE_STATE": {
+          const q = await getQueue();
+          sendResponse(q ? queueView(q, _sender.tab && _sender.tab.id) : { success: true, active: false });
+          break;
+        }
+
+        case "QUEUE_NEXT": {
+          const q = await getQueue();
+          const tabId = _sender.tab && _sender.tab.id;
+          if (!q || !q.tabs.includes(tabId)) { sendResponse({ success: false, error: "No queue is running in this tab." }); break; }
+          if (message.applied) q.applied += 1; else q.skipped += 1;
+          q.index += 1;
+          if (q.index >= q.items.length) {
+            await setQueue(null);
+            sendResponse({ success: true, done: true, applied: q.applied, skipped: q.skipped });
+            break;
+          }
+          await openInQueueTab(q, q.items[q.index].url);
+          await setQueue(q);
+          sendResponse({ success: true, done: false });
+          break;
+        }
+
+        case "QUEUE_STOP": {
+          await setQueue(null);
+          sendResponse({ success: true });
           break;
         }
 
