@@ -186,7 +186,7 @@ Return ONLY one JSON object, no markdown fences, in this shape:
 
 {{
   "approach": "standard | transferable | career_change",
-  "rationale": "2-3 sentences to the candidate ('you'): what you moved up or emphasized and which parts of the posting that responds to. Concrete, not generic. If the resume already fit well, say so plainly. For transferable, begin with 'Stretch role.' For career_change, begin with 'Career-change resume.' and use up to 5 sentences: what carries over, the real gaps a resume cannot honestly close (say so plainly if the job needs a licence or credential they lack), and one or two concrete things to do next (a course, certification or small project).",
+  "rationale": "2-3 sentences to the candidate ('you'): what you moved up or emphasized and which parts of the posting that responds to. Concrete, not generic. If the resume already fit well, say so plainly. For transferable, begin with 'Related-field resume.' For career_change, begin with 'Career-change resume.' and use up to 5 sentences: what carries over, the real gaps a resume cannot honestly close (say so plainly if the job needs a licence or credential they lack), and one or two concrete things to do next (a course, certification or small project).",
   "resume": {{
     "name": "Full name",
     "headline": "One-line professional title/specialty built from the candidate's real titles (or empty string)",
@@ -252,7 +252,7 @@ def tailor_resume(base_resume: str, job: dict, facts: list[dict] | None = None, 
         if blocks:
             rationale = str(data.get("rationale") or "").strip()
             # The label is what tells the person this resume was repositioned.
-            label = {"career_change": "Career-change resume.", "transferable": "Stretch role."}.get(str(data.get("approach") or "").strip())
+            label = {"career_change": "Career-change resume.", "transferable": "Related-field resume."}.get(str(data.get("approach") or "").strip())
             if label and not rationale.startswith(label):
                 rationale = f"{label} {rationale}".strip()
             blocks, note = ground_headline(blocks)
@@ -1019,7 +1019,7 @@ def fit_to_pages(blocks: list[dict], job: dict, max_pages: float = 2.0, use_ai: 
     if estimate_pages(current_blocks) > limit:
         current_blocks, dropped = _trim_least_relevant(current_blocks, f"{job.get('title', '')} {job.get('description', '')}", limit)
         if dropped:
-            extra = f"Then removed the {dropped} least relevant bullet{'s' if dropped != 1 else ''}, from your oldest roles first."
+            extra = f"Removed the {dropped} least relevant bullet{'s' if dropped != 1 else ''}, starting with your oldest roles."
             note = f"{note} {extra}".strip()
 
     after = estimate_pages(current_blocks)
@@ -1062,10 +1062,11 @@ def fit_for_delivery(blocks: list[dict], job: dict) -> tuple[list[dict], str]:
         out, dropped = _trim_least_relevant(out, job_text, max(0.8, estimate_pages(out) - 0.15))
         if not dropped:
             break
-        notes.append("Dropped one more low-relevance bullet so the PDF stays at two pages.")
+        notes.append("Removed one more low-relevance bullet so the PDF stays at two pages.")
     if out is blocks or not notes:
         return out, ""
-    return out, "Shortened to fit two pages: " + " ".join(dict.fromkeys(notes))
+    parts = [n.strip() if n.strip()[-1:] in ".!?" else n.strip() + "." for n in dict.fromkeys(notes) if n.strip()]
+    return out, "Shortened to fit two pages. " + " ".join(parts)
 
 
 def build_docx_bytes(resume_text: str) -> bytes:

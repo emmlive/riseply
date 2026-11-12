@@ -167,7 +167,7 @@ def test_prompt_tells_the_model_how_close_the_job_is_and_how_to_pivot():
 def test_career_change_and_stretch_get_labelled_even_if_the_model_forgets():
     import json as _json
     resume_json = {"name": "A B", "headline": "x", "contact": [], "sections": [{"heading": "Professional Summary", "kind": "text", "text": "Auditor moving into operations."}]}
-    for approach, label in (("career_change", "Career-change resume."), ("transferable", "Stretch role."), ("standard", None)):
+    for approach, label in (("career_change", "Career-change resume."), ("transferable", "Related-field resume."), ("standard", None)):
         reply = _json.dumps({"approach": approach, "rationale": "Moved controls testing up.", "resume": resume_json})
         fake = type("R", (), {"content": [type("C", (), {"text": reply})()]})()
         with patch.object(resume_customizer.client.messages, "create", return_value=fake):
