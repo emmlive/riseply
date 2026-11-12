@@ -1,0 +1,33 @@
+name: Smart alerts
+
+# Every hour, emails each person on "Smart alerts" whose chosen send hour
+# (in their own time zone) has just arrived. Uses the same CRON_SECRET and
+# BACKEND_URL secrets as the daily matching workflow. Nothing is sent to
+# anyone whose hour hasn't come, and nobody gets two digests in a day.
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  send-alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send due alert emails
+        run: |
+          # Render may be asleep or restarting: 000/502/503/504 mean the
+          # request never reached the app, so waiting and retrying is safe.
+          for attempt in $(seq 1 10); do
+            response=$(curl -s --max-time 60 -w "\n%{http_code}" -X POST \
+              "${{ secrets.BACKEND_URL }}/internal/send-alerts" \
+              -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+            code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+            case "$code" in
+              000|502|503|504) echo "Attempt $attempt: server not ready ($code), waiting 30s"; sleep 30 ;;
+              200) echo "$body"; exit 0 ;;
+              *) echo "Unexpected answer $code: $body"; exit 1 ;;
+            esac
+          done
+          echo "Server never woke up"; exit 1
