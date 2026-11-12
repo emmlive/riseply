@@ -93,6 +93,9 @@ export interface User {
   auto_submit: boolean;
   notification_preference: string;
   notification_min_score: number;
+  alert_instant_min_score: number;
+  alert_digest_hour: number;
+  alert_timezone: string;
   notification_channel: string;
   sms_consent: boolean;
   resume_text: string;

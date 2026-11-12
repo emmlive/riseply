@@ -2,7 +2,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app import models, schemas
@@ -53,6 +53,9 @@ def _to_out(user: models.User, db: Session | None = None) -> schemas.UserOut:
         auto_submit=bool(user.auto_submit),
         notification_preference=user.notification_preference or "every_match",
         notification_min_score=user.notification_min_score or 0,
+        alert_instant_min_score=user.alert_instant_min_score or 85,
+        alert_digest_hour=8 if user.alert_digest_hour is None else user.alert_digest_hour,
+        alert_timezone=user.alert_timezone or "",
         notification_channel=user.notification_channel or "email",
         sms_consent=bool(user.sms_consent),
         resume_text=user.resume_text or "",
@@ -78,8 +81,12 @@ def update_me(
     db: Session = Depends(get_db),
 ):
     updates = payload.model_dump(exclude_unset=True)
-    if "notification_preference" in updates and updates["notification_preference"] not in ("off", "every_match", "daily_digest"):
-        raise HTTPException(status_code=400, detail="notification_preference must be off, every_match, or daily_digest.")
+    if "notification_preference" in updates and updates["notification_preference"] not in ("off", "every_match", "daily_digest", "smart"):
+        raise HTTPException(status_code=400, detail="notification_preference must be off, every_match, daily_digest, or smart.")
+    if updates.get("alert_timezone"):
+        from app.services import job_alerts
+        if not job_alerts.valid_timezone(updates["alert_timezone"]):
+            raise HTTPException(status_code=400, detail="That time zone isn't recognized.")
     if "notification_channel" in updates and updates["notification_channel"] not in ("email", "sms", "both"):
         raise HTTPException(status_code=400, detail="notification_channel must be email, sms, or both.")
 
@@ -157,3 +164,32 @@ def regenerate_bookmarklet_token(
     db.commit()
     db.refresh(user)
     return _to_out(user, db)
+
+
+@router.post("/alerts/preview")
+def preview_alert(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Sends the person a sample of the email smart alerts produce, built from
+    their own latest matches (or two made-up ones if they have none yet), so
+    they can see what they are choosing before they choose it."""
+    from app.services import job_alerts, notifier
+    now = datetime.utcnow()
+    rows = db.query(models.Application, models.Job).join(models.Job, models.Application.job_id == models.Job.id).filter(
+        models.Application.user_id == user.id).order_by(models.Application.created_at.desc()).limit(5).all()
+    matches = [{"title": j.title, "company": j.company, "location": j.location, "match_score": a.match_score,
+                "match_reason": a.match_reason, "url": j.url, "posted_at": j.posted_at, "salary_min": j.salary_min,
+                "salary_max": j.salary_max, "salary_currency": j.salary_currency, "salary_is_predicted": j.salary_is_predicted}
+               for a, j in rows]
+    sample = not matches
+    if sample:
+        matches = [
+            {"title": "Senior IT Auditor", "company": "Example Corp", "location": "Chicago, IL", "match_score": 91,
+             "match_reason": "Your SOX and ITGC experience lines up with their top requirements.", "url": "", "posted_at": now},
+            {"title": "GRC Analyst", "company": "Sample Bank", "location": "Remote", "match_score": 72,
+             "match_reason": "Strong control testing background; they also want a CISA, which you hold.", "url": "", "posted_at": now - timedelta(days=2)},
+        ]
+    chosen = job_alerts.choose(matches, user.alert_instant_min_score or 85)
+    subject = "Preview: " + job_alerts.subject_for(chosen)
+    text = ("This is a preview of your Riseply alerts" + (" (sample jobs, since you have no matches yet)" if sample else " using your latest matches") + ".\n\n"
+            + job_alerts.digest_text(chosen, now))
+    notifier.send_alert_digest(user.notify_email or user.email, subject, text, job_alerts.digest_html(chosen, now), kind="test")
+    return {"sent_to": user.notify_email or user.email, "sample": sample}

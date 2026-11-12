@@ -51,7 +51,7 @@ def _is_rate_limited(exc: Exception) -> bool:
 
 
 def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None,
-               attachment_filename: str = "attachment.docx", kind: str = "other") -> str:
+               attachment_filename: str = "attachment.docx", kind: str = "other", html_body: str | None = None) -> str:
     """Sends through Resend. Returns "sent", or "skipped" when email isn't
     configured on the server. Raises when Resend refuses the message. Every
     attempt is recorded in email_log. A burst of messages can hit Resend's
@@ -71,6 +71,8 @@ def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | N
         "subject": subject,
         "text": body,
     }
+    if html_body:
+        params["html"] = html_body
     if attachment_data:
         # Python SDK specifically wants content as a list of ints (raw
         # bytes), NOT a base64 string -- that's the JS SDK's format.
@@ -182,3 +184,8 @@ def notify_password_reset(to_addr: str, reset_url: str, expire_minutes: int):
         ),
         kind="password_reset",
     )
+
+
+def send_alert_digest(to_addr: str, subject: str, text: str, html_body: str, kind: str = "digest"):
+    """The smart-alert digest: HTML for reading, plain text for everything else."""
+    return send_email(to_addr, subject, text, kind=kind, html_body=html_body)

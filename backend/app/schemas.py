@@ -65,6 +65,9 @@ class UserOut(BaseModel):
     auto_submit: bool
     notification_preference: str = "every_match"
     notification_min_score: int = 0
+    alert_instant_min_score: int = 85
+    alert_digest_hour: int = 8
+    alert_timezone: str = ""
     notification_channel: str = "email"
     sms_consent: bool = False
     resume_text: str
@@ -91,6 +94,9 @@ class UserUpdate(BaseModel):
     auto_submit: Optional[bool] = None
     notification_preference: Optional[str] = None
     notification_min_score: Optional[int] = Field(default=None, ge=0, le=100)
+    alert_instant_min_score: Optional[int] = Field(default=None, ge=50, le=100)
+    alert_digest_hour: Optional[int] = Field(default=None, ge=0, le=23)
+    alert_timezone: Optional[str] = None
     notification_channel: Optional[str] = None
     sms_consent: Optional[bool] = None
 

@@ -146,3 +146,18 @@ def send_digests(
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
 
     return pipeline_runner.send_daily_digests(db)
+
+
+@router.post("/send-alerts")
+def send_alerts(
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Hourly: sends each smart-alert user's digest in the hour they chose,
+    in their own time zone. Same secret-gated, externally triggered pattern
+    as the other /internal/* jobs."""
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Alerts aren't configured (CRON_SECRET unset).")
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    return pipeline_runner.send_smart_alerts(db)

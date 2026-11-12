@@ -83,6 +83,12 @@ class User(Base):
     # Only matches scoring at or above this get emailed at all, on top
     # of whatever notification_preference says. 0 = no floor.
     notification_min_score = Column(Integer, default=0, server_default="0")
+    # Smart alerts (notification_preference = "smart"): matches at or above
+    # alert_instant_min_score email right away; the rest wait for one digest
+    # sent at alert_digest_hour in the person's own timezone.
+    alert_instant_min_score = Column(Integer, default=85, server_default="85")
+    alert_digest_hour = Column(Integer, default=8, server_default="8")
+    alert_timezone = Column(String, default="", server_default="")
     # Last time this user's daily digest was actually sent -- lets the
     # digest job query "what's new since last time" per user instead of
     # a fixed 24h window, so it stays correct regardless of when in the
@@ -249,6 +255,9 @@ class Application(Base):
     # send a factual completion notification when the checklist hits
     # 100% -- never any conversation content.
     manager_notified_at = Column(DateTime, nullable=True)
+    # Set when a smart alert already emailed this match on its own, so the
+    # digest does not list it a second time.
+    alerted_at = Column(DateTime, nullable=True)
     # Guards against re-notifying the manager every time (e.g. if an
     # admin adds a new checklist item after the employee already
     # finished, re-completing it shouldn't re-fire the notification).

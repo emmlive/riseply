@@ -1141,7 +1141,18 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
         # Applies the same way regardless of whether this run came from
         # a manual click or the scheduled job -- one preference, one
         # behavior, not a confusing split by trigger source.
-        if preference == "every_match" and clears_threshold:
+        smart_instant = False
+        if preference == "smart":
+            from app.services import job_alerts
+            sent_today = db.query(func.count(models.Application.id)).filter(
+                models.Application.user_id == user.id,
+                models.Application.alerted_at > datetime.utcnow() - timedelta(hours=24),
+            ).scalar() or 0
+            smart_instant = job_alerts.is_instant(best["score"], user, sent_today)
+            if smart_instant:
+                application.alerted_at = datetime.utcnow()
+                db.commit()
+        if (preference == "every_match" and clears_threshold) or smart_instant:
             job_notify = {**job, "matched_profile": best["profile_name"], "match_score": best["score"],
                           "match_reason": best["reason"]}
             if channel in ("email", "both"):
@@ -1328,3 +1339,66 @@ def send_daily_digests(db: Session) -> dict:
         db.commit()
 
     return {"digests_sent": sent}
+
+
+
+def send_smart_alerts(db: Session, now: datetime | None = None) -> dict:
+    """Hourly. For each person on smart alerts whose chosen hour it is (in
+    their own time zone), emails one digest of everything new that was not
+    already sent as an instant alert, best first. Sends nothing when nothing
+    is new, apart from one short "quiet week" note at most weekly."""
+    from app.services import job_alerts
+    now = now or datetime.utcnow()
+    sent = quiet = 0
+    for user in db.query(models.User).filter_by(notification_preference="smart").all():
+        if not job_alerts.is_due(user, now):
+            continue
+        since = user.last_digest_sent_at or (now - timedelta(days=2))
+        rows = db.query(models.Application, models.Job).join(
+            models.Job, models.Application.job_id == models.Job.id
+        ).filter(
+            models.Application.user_id == user.id,
+            models.Application.created_at > since,
+            models.Application.alerted_at.is_(None),
+            models.Application.match_score >= (user.notification_min_score or 0),
+        ).all()
+        matches = [{
+            "title": j.title, "company": j.company, "location": j.location, "match_score": a.match_score,
+            "match_reason": a.match_reason, "url": j.url, "posted_at": j.posted_at,
+            "salary_min": j.salary_min, "salary_max": j.salary_max, "salary_currency": j.salary_currency,
+            "salary_is_predicted": j.salary_is_predicted,
+        } for a, j in rows]
+        to = user.notify_email or user.email
+        channel = user.notification_channel or "email"
+        try:
+            if matches:
+                chosen = job_alerts.choose(matches, user.alert_instant_min_score or 85)
+                if channel in ("email", "both"):
+                    notifier.send_alert_digest(to, job_alerts.subject_for(chosen), job_alerts.digest_text(chosen, now),
+                                               job_alerts.digest_html(chosen, now))
+                    sent += 1
+                if channel in ("sms", "both") and user.sms_consent:
+                    sms.notify_digest_sms(user.phone, len(matches))
+                user.last_digest_sent_at = now
+            elif user.last_digest_sent_at is None:
+                user.last_digest_sent_at = now   # first day: start the clock, no "quiet" note yet
+            elif channel in ("email", "both") and now - user.last_digest_sent_at >= job_alerts.QUIET_EVERY \
+                    and not _recent_quiet_note(db, to, now):
+                profiles = job_alerts.profiles_of(db.query(models.SearchProfile).filter_by(user_id=user.id).all())
+                notifier.send_email(to, "Nothing new this week, and how to widen your search",
+                                    job_alerts.quiet_text(job_alerts.widen_suggestion(profiles)), kind="alert_quiet")
+                quiet += 1
+                user.last_digest_sent_at = now
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[pipeline] Smart alert failed for user {user.id}: {e}")
+    return {"digests_sent": sent, "quiet_notes": quiet}
+
+
+def _recent_quiet_note(db: Session, to_addr: str, now: datetime) -> bool:
+    from app.services import job_alerts
+    return db.query(models.EmailLog.id).filter(
+        models.EmailLog.kind == "alert_quiet", models.EmailLog.to_addr == (to_addr or "")[:200],
+        models.EmailLog.created_at > now - job_alerts.QUIET_EVERY,
+    ).first() is not None

@@ -11,8 +11,22 @@ export default function ProfilePage() {
     full_name: "", phone: "", location: "", linkedin_url: "",
     portfolio_url: "", notify_email: "", auto_submit: false,
     notification_preference: "every_match", notification_min_score: 0,
+    alert_instant_min_score: 85, alert_digest_hour: 8, alert_timezone: "",
     notification_channel: "email", sms_consent: false,
   });
+  const [previewing, setPreviewing] = useState(false);
+  const [previewMsg, setPreviewMsg] = useState("");
+  async function sendPreview() {
+    setPreviewing(true); setPreviewMsg("");
+    try {
+      await api("/me", { method: "PATCH", body: JSON.stringify({
+        notification_preference: form.notification_preference, alert_digest_hour: form.alert_digest_hour,
+        alert_timezone: form.alert_timezone, alert_instant_min_score: form.alert_instant_min_score }) });
+      await api("/me/alerts/preview", { method: "POST" });
+      setPreviewMsg("Sent. Check your inbox (and Spam, just this once).");
+    } catch (e: any) { setPreviewMsg(e?.message || "Couldn't send the preview."); }
+    setPreviewing(false);
+  }
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -80,6 +94,8 @@ export default function ProfilePage() {
         linkedin_url: u.linkedin_url, portfolio_url: u.portfolio_url,
         notify_email: u.notify_email, auto_submit: u.auto_submit,
         notification_preference: u.notification_preference, notification_min_score: u.notification_min_score,
+        alert_instant_min_score: u.alert_instant_min_score ?? 85, alert_digest_hour: u.alert_digest_hour ?? 8,
+        alert_timezone: u.alert_timezone || (typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "") || "",
         notification_channel: u.notification_channel, sms_consent: u.sms_consent,
       });
     });
@@ -169,11 +185,13 @@ export default function ProfilePage() {
           <label>New match notifications</label>
           <select value={form.notification_preference}
                   onChange={(e) => setForm({ ...form, notification_preference: e.target.value })}>
+            <option value="smart">Smart alerts (recommended)</option>
             <option value="every_match">Notify me for every match</option>
             <option value="daily_digest">Once-a-day digest instead</option>
             <option value="off">Don't notify me — I'll check the dashboard</option>
           </select>
           <p className="hint">
+            {form.notification_preference === "smart" && "Riseply searches every day. A standout match is emailed right away; everything else comes in one ranked email at the hour you pick. If nothing new turns up, you get no email."}
             {form.notification_preference === "every_match" && "One alert per match, as soon as it's found — from the scheduled daily search or a manual \"Find new matches\" click."}
             {form.notification_preference === "daily_digest" && "One summary a day listing everything found since your last digest, instead of one per match."}
             {form.notification_preference === "off" && "No alerts — matches will still show up on your Overview and Applications pages, you'll just need to check."}
@@ -235,6 +253,31 @@ export default function ProfilePage() {
             {form.sms_consent && !form.phone.trim() && (
               <p className="hint" style={{ color: "var(--danger)" }}>Add a phone number above to actually enable SMS.</p>
             )}
+          </div>
+        )}
+
+
+        {form.notification_preference === "smart" && (
+          <div className="field">
+            <label>Daily email time</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select value={form.alert_digest_hour}
+                      onChange={(e) => setForm({ ...form, alert_digest_hour: Number(e.target.value) })}>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}</option>
+                ))}
+              </select>
+              <input value={form.alert_timezone} placeholder="Time zone, e.g. America/Chicago"
+                     onChange={(e) => setForm({ ...form, alert_timezone: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+            </div>
+            <label style={{ marginTop: 12 }}>Email me right away at or above ({form.alert_instant_min_score}%)</label>
+            <input type="range" min={50} max={100} value={form.alert_instant_min_score}
+                   onChange={(e) => setForm({ ...form, alert_instant_min_score: Number(e.target.value) })} />
+            <p className="hint">Up to 3 instant emails a day. Anything below this waits for your daily email.</p>
+            <button type="button" className="btn secondary" disabled={previewing} onClick={sendPreview}>
+              {previewing ? "Sending…" : "Send me a preview"}
+            </button>
+            {previewMsg && <p className="hint">{previewMsg}</p>}
           </div>
         )}
 
