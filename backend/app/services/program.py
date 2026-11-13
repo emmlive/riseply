@@ -20,8 +20,18 @@ CERT_STATUSES = ("planning", "studying", "earned", "skip")
 
 
 def _line(v, n: int) -> str:
+    """Collapse whitespace and cap the length. Past the cap, cut at the end of
+    the last whole sentence (or, failing that, the last whole word), never
+    mid-word, so the text never ends in a half-finished word."""
     t = re.sub(r"\s+", " ", str(v or "")).strip()
-    return t if len(t) <= n else t[:n].rstrip() + "…"
+    if len(t) <= n:
+        return t
+    cut = t[:n]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end >= n * 0.5:
+        return cut[:end + 1]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp >= n * 0.5 else cut).rstrip(" ,;:-") + "…"
 
 
 def _list(v, n: int, width: int) -> list[str]:
@@ -87,7 +97,7 @@ def parse(text: str, role: str) -> dict:
     phases = []
     for kind in LEARNING:
         p = raw.get(kind)
-        if not isinstance(p, dict) or not _line(p.get("name"), 90) or not _line(p.get("topic"), 140):
+        if not isinstance(p, dict) or not _line(p.get("name"), 90) or not _line(p.get("topic"), 200):
             raise ValueError(f"missing {kind} phase")
         try:
             weeks = max(1, min(26, int(p.get("weeks") or 4)))
@@ -95,20 +105,20 @@ def parse(text: str, role: str) -> dict:
             weeks = 4
         phases.append({
             "id": f"p{len(phases) + 1}", "kind": kind, "name": _line(p.get("name"), 90),
-            "goal": _line(p.get("goal"), 260), "topic": _line(p.get("topic"), 140),
-            "skills": _list(p.get("skills"), 6, 70), "weeks": weeks,
+            "goal": _line(p.get("goal"), 420), "topic": _line(p.get("topic"), 200),
+            "skills": _list(p.get("skills"), 6, 120), "weeks": weeks,
         })
     projects = []
     for x in (raw.get("projects") or [])[:3] if isinstance(raw.get("projects"), list) else []:
         if isinstance(x, dict) and _line(x.get("title"), 100):
-            projects.append({"title": _line(x.get("title"), 100), "build": _line(x.get("build"), 300),
-                             "deliverable": _line(x.get("deliverable"), 200)})
+            projects.append({"title": _line(x.get("title"), 100), "build": _line(x.get("build"), 450),
+                             "deliverable": _line(x.get("deliverable"), 300)})
     if not projects:
         raise ValueError("no projects")
     certs = []
     for x in (raw.get("certs") or [])[:3] if isinstance(raw.get("certs"), list) else []:
         if isinstance(x, dict) and _line(x.get("name"), 100):
-            certs.append({"name": _line(x.get("name"), 100), "why": _line(x.get("why"), 220)})
+            certs.append({"name": _line(x.get("name"), 100), "why": _line(x.get("why"), 350)})
     titles = _list(raw.get("titles"), 4, 80) or [role]
     phases.append({"id": f"p{len(phases) + 1}", "kind": "projects", "name": "Portfolio projects",
                    "goal": "Build proof you can show an employer.", "items": projects})
@@ -119,8 +129,8 @@ def parse(text: str, role: str) -> dict:
                    "goal": "Turn what you learned into interviews and offers.", "items": job_ready_items(role, titles)})
     return {
         "title": _line(raw.get("title"), 120) or f"{role}: zero to hired",
-        "overview": _line(raw.get("overview"), 400), "role_summary": _line(raw.get("role_summary"), 400),
-        "honest_note": _line(raw.get("honest_note"), 500), "titles": titles, "phases": phases,
+        "overview": _line(raw.get("overview"), 700), "role_summary": _line(raw.get("role_summary"), 700),
+        "honest_note": _line(raw.get("honest_note"), 800), "titles": titles, "phases": phases,
     }
 
 

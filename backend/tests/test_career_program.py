@@ -159,3 +159,16 @@ def test_test_out_brief_checks_instead_of_teaching_and_normal_brief_is_unchanged
     assert "HOW TO TEACH IT" in normal and "TEST-OUT" not in normal
     assert "TEST-OUT" in test and "Do not teach yet" in test and "ONLY when the answer is correct" in test
     assert "HOW TO TEACH IT" not in test
+
+
+def test_long_text_is_cut_at_a_word_or_sentence_not_mid_word():
+    from app.services import program, syllabus
+    text = ("A Security Architect designs the security blueprint of systems. "
+            "Employers expect you to translate business risk into defensible technical designs and architecture documentation.")
+    for line in (program._line, syllabus._line):
+        assert line(text, 500) == text
+        cut = line(text, 100)
+        assert cut.endswith("systems.")                      # whole sentence
+        cut = line("SABSA framework concepts and enterprise architecture layers", 40)
+        assert cut.endswith("…") and cut[:-1] in "SABSA framework concepts and enterprise architecture layers"
+        assert not cut[:-1].endswith(("enterpr", "archite"))  # no half words
