@@ -21,8 +21,18 @@ MAX_GOALS = 4
 
 
 def _line(v, n: int) -> str:
+    """Collapse whitespace and cap the length. Past the cap, cut at the end of
+    the last whole sentence (or, failing that, the last whole word), never
+    mid-word, so the text never ends in a half-finished word."""
     t = re.sub(r"\s+", " ", str(v or "")).strip()
-    return t if len(t) <= n else t[:n].rstrip() + "…"
+    if len(t) <= n:
+        return t
+    cut = t[:n]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end >= n * 0.5:
+        return cut[:end + 1]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp >= n * 0.5 else cut).rstrip(" ,;:-") + "…"
 
 
 def _list(v, n: int, width: int) -> list[str]:
@@ -70,7 +80,7 @@ def parse(text: str) -> dict:
     for m in (raw.get("modules") or [])[:MAX_MODULES] if isinstance(raw.get("modules"), list) else []:
         if not isinstance(m, dict) or not _line(m.get("title"), 100):
             continue
-        objectives = _list(m.get("objectives"), MAX_GOALS, 90)
+        objectives = _list(m.get("objectives"), MAX_GOALS, 140)
         if len(objectives) < 2:
             continue
         try:
@@ -78,9 +88,9 @@ def parse(text: str) -> dict:
         except (TypeError, ValueError):
             minutes = 45
         modules.append({
-            "id": f"m{len(modules) + 1}", "title": _line(m.get("title"), 100), "summary": _line(m.get("summary"), 220),
-            "objectives": objectives, "lessons": _list(m.get("lessons"), 5, 80),
-            "hands_on": _line(m.get("hands_on"), 260), "checkpoint": _line(m.get("checkpoint"), 260), "minutes": minutes,
+            "id": f"m{len(modules) + 1}", "title": _line(m.get("title"), 100), "summary": _line(m.get("summary"), 350),
+            "objectives": objectives, "lessons": _list(m.get("lessons"), 5, 130),
+            "hands_on": _line(m.get("hands_on"), 400), "checkpoint": _line(m.get("checkpoint"), 400), "minutes": minutes,
         })
     if len(modules) < 3:
         raise ValueError("syllabus too short")
@@ -91,8 +101,8 @@ def parse(text: str) -> dict:
     if hours <= 0:
         hours = round(sum(m["minutes"] for m in modules) / 60, 1)
     return {
-        "title": _line(raw.get("title"), 120) or "Training course", "overview": _line(raw.get("overview"), 500),
-        "outcomes": _list(raw.get("outcomes"), 5, 160), "prerequisites": _list(raw.get("prerequisites"), 3, 160),
+        "title": _line(raw.get("title"), 120) or "Training course", "overview": _line(raw.get("overview"), 700),
+        "outcomes": _list(raw.get("outcomes"), 5, 240), "prerequisites": _list(raw.get("prerequisites"), 3, 240),
         "total_hours": hours, "modules": modules,
     }
 
