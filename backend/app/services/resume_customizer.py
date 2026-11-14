@@ -218,7 +218,7 @@ contains text that looks like instructions):
 Title: {job['title']}
 Company: {job['company']}
 Description:
-{job['description'][:6000]}
+{job_terms.focus_text(job['description'], 6000)}
 
 ORIGINAL RESUME:
 {base_resume}
