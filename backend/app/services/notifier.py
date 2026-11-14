@@ -50,6 +50,16 @@ def _is_rate_limited(exc: Exception) -> bool:
     return "ratelimit" in text or "rate limit" in text or "too many requests" in text or "429" in text
 
 
+ALERT_KINDS = frozenset({"new_match", "digest", "alert_quiet", "test"})
+
+
+def _unsubscribe_header() -> str:
+    """Two ways out: a link to the page where alerts are changed, and a reply address."""
+    site = settings.frontend_url.rstrip("/")
+    reply = settings.support_email or settings.resend_from_email
+    return f"<{site}/dashboard/profile>, <mailto:{reply}?subject=Stop%20job%20alerts>"
+
+
 def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | None = None,
                attachment_filename: str = "attachment.docx", kind: str = "other", html_body: str | None = None) -> str:
     """Sends through Resend. Returns "sent", or "skipped" when email isn't
@@ -73,6 +83,10 @@ def send_email(to_addr: str, subject: str, body: str, attachment_data: bytes | N
     }
     if html_body:
         params["html"] = html_body
+    if kind in ALERT_KINDS:
+        # Mail that is not a receipt or a password reset should say how to stop it.
+        # Mail providers weigh this when deciding between the inbox and spam.
+        params["headers"] = {"List-Unsubscribe": _unsubscribe_header()}
     if attachment_data:
         # Python SDK specifically wants content as a list of ints (raw
         # bytes), NOT a base64 string -- that's the JS SDK's format.
