@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
+from app.config import settings
 from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
@@ -56,6 +57,10 @@ def _to_out(user: models.User, db: Session | None = None) -> schemas.UserOut:
         alert_instant_min_score=user.alert_instant_min_score or 85,
         alert_digest_hour=8 if user.alert_digest_hour is None else user.alert_digest_hour,
         alert_timezone=user.alert_timezone or "",
+        autopilot_enabled=bool(user.autopilot_enabled),
+        autopilot_min_score=user.autopilot_min_score or 85,
+        autopilot_daily_cap=user.autopilot_daily_cap or 5,
+        autopilot_available=bool(settings.auto_submit_enabled),
         notification_channel=user.notification_channel or "email",
         sms_consent=bool(user.sms_consent),
         resume_text=user.resume_text or "",
@@ -87,6 +92,18 @@ def update_me(
         from app.services import job_alerts
         if not job_alerts.valid_timezone(updates["alert_timezone"]):
             raise HTTPException(status_code=400, detail="That time zone isn't recognized.")
+    consent = updates.pop("autopilot_consent", None)
+    if updates.get("autopilot_enabled"):
+        if not (user.resume_text or "").strip():
+            raise HTTPException(status_code=400, detail="Add your resume before turning on Autopilot.")
+        phone = updates.get("phone", user.phone)
+        location = updates.get("location", user.location)
+        if not (phone or "").strip() or not (location or "").strip():
+            raise HTTPException(status_code=400, detail="Add your phone number and location above first. Application forms ask for them.")
+        if not user.autopilot_consent_at:
+            if not consent:
+                raise HTTPException(status_code=400, detail="Confirm that you want Riseply to submit applications on your behalf.")
+            user.autopilot_consent_at = datetime.utcnow()
     if "notification_channel" in updates and updates["notification_channel"] not in ("email", "sms", "both"):
         raise HTTPException(status_code=400, detail="notification_channel must be email, sms, or both.")
 
@@ -166,6 +183,13 @@ def regenerate_bookmarklet_token(
     return _to_out(user, db)
 
 
+@router.get("/alerts/status")
+def alert_status(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Why alerts are or are not arriving: setup, delivery and the daily search, each checked."""
+    from app.services import alert_status as svc
+    return svc.build(db, user)
+
+
 @router.post("/alerts/preview")
 def preview_alert(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Sends the person a sample of the email smart alerts produce, built from
@@ -192,4 +216,23 @@ def preview_alert(user: models.User = Depends(get_current_user), db: Session = D
     text = ("This is a preview of your Riseply alerts" + (" (sample jobs, since you have no matches yet)" if sample else " using your latest matches") + ".\n\n"
             + job_alerts.digest_text(chosen, now))
     notifier.send_alert_digest(user.notify_email or user.email, subject, text, job_alerts.digest_html(chosen, now), kind="test")
-    return {"sent_to": user.notify_email or user.email, "sample": sample}
+    return {"sent_to": user.notify_email or user.email, "sample": sample, "discord": _preview_discord(db, user, matches)}
+
+
+def _preview_discord(db: Session, user: models.User, matches: list[dict]) -> str:
+    """Sends the same sample to Discord and says what happened:
+    sent | not_connected | alerts_off | failed."""
+    from app.services import discord_notify
+    conn = db.query(models.DiscordConnection).filter_by(user_id=user.id).first()
+    if not conn or not conn.enabled:
+        return "not_connected"
+    if not conn.matches_enabled:
+        return "alerts_off"
+    before = conn.last_success_at
+    try:
+        discord_notify.notify_digest(db, user, matches)
+    except Exception as e:
+        print(f"[alerts] preview Discord failed for user {user.id}: {e}")
+        return "failed"
+    db.refresh(conn)
+    return "sent" if conn.last_success_at and conn.last_success_at != before else "failed"

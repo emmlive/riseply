@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { isPreviewingAsIndividual } from "@/lib/previewMode";
 import { api, User, API_URL, CalendarConnection, Organization, Application } from "@/lib/api";
 import DiscordSettings from "@/components/DiscordSettings";
+import AlertHealth from "@/components/AlertHealth";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -13,6 +14,7 @@ export default function ProfilePage() {
     portfolio_url: "", notify_email: "", auto_submit: false,
     notification_preference: "every_match", notification_min_score: 0,
     alert_instant_min_score: 85, alert_digest_hour: 8, alert_timezone: "",
+    autopilot_enabled: false, autopilot_min_score: 85, autopilot_daily_cap: 5, autopilot_consent: false,
     notification_channel: "email", sms_consent: false,
   });
   const [previewing, setPreviewing] = useState(false);
@@ -23,8 +25,11 @@ export default function ProfilePage() {
       await api("/me", { method: "PATCH", body: JSON.stringify({
         notification_preference: form.notification_preference, alert_digest_hour: form.alert_digest_hour,
         alert_timezone: form.alert_timezone, alert_instant_min_score: form.alert_instant_min_score }) });
-      await api("/me/alerts/preview", { method: "POST" });
-      setPreviewMsg("Sent. Check your inbox (and Spam, just this once).");
+      const r = await api<{ discord?: string }>("/me/alerts/preview", { method: "POST" });
+      const d = r?.discord === "sent" ? " A copy went to Discord too."
+        : r?.discord === "alerts_off" ? " Discord is connected but job alerts are off for it. Turn them on in the Discord section below."
+        : "";
+      setPreviewMsg("Sent. Check your inbox (and Spam, just this once)." + d);
     } catch (e: any) { setPreviewMsg(e?.message || "Couldn't send the preview."); }
     setPreviewing(false);
   }
@@ -98,6 +103,8 @@ export default function ProfilePage() {
         alert_instant_min_score: u.alert_instant_min_score ?? 85, alert_digest_hour: u.alert_digest_hour ?? 8,
         alert_timezone: u.alert_timezone || (typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "") || "",
         notification_channel: u.notification_channel, sms_consent: u.sms_consent,
+        autopilot_enabled: !!u.autopilot_enabled, autopilot_min_score: u.autopilot_min_score ?? 85,
+        autopilot_daily_cap: u.autopilot_daily_cap ?? 5, autopilot_consent: false,
       });
     });
     loadCalendarConnections();
@@ -303,6 +310,39 @@ export default function ProfilePage() {
             )}
           </div>
         )}
+
+        <div className="field">
+          <label>Autopilot (beta)</label>
+          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontWeight: 400 }}>
+            <input type="checkbox" checked={form.autopilot_enabled} style={{ width: "auto", marginTop: 4 }}
+                   onChange={(e) => setForm({ ...form, autopilot_enabled: e.target.checked })} />
+            <span>Let Riseply apply for me when a match is strong enough.</span>
+          </label>
+          <p className="hint">
+            It applies only on Greenhouse, Lever, Ashby and Workable job pages, with your tailored resume, and emails you every
+            time. It never applies on LinkedIn or Indeed. If a form asks a question it can&apos;t answer for you, such as work
+            authorization, it stops and leaves the job in your Applications for you to finish.
+            {user && !user.autopilot_available && " Autopilot isn't switched on for this server yet, so it won't apply until it is."}
+          </p>
+          {form.autopilot_enabled && (
+            <>
+              <label style={{ marginTop: 12 }}>Apply only at or above ({form.autopilot_min_score}%)</label>
+              <input type="range" min={75} max={100} value={form.autopilot_min_score}
+                     onChange={(e) => setForm({ ...form, autopilot_min_score: Number(e.target.value) })} />
+              <label style={{ marginTop: 12 }}>Most applications a day</label>
+              <select value={form.autopilot_daily_cap} onChange={(e) => setForm({ ...form, autopilot_daily_cap: Number(e.target.value) })}>
+                {[1, 2, 3, 5, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              {user && !user.autopilot_enabled && (
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontWeight: 400, marginTop: 12 }}>
+                  <input type="checkbox" checked={form.autopilot_consent} style={{ width: "auto", marginTop: 4 }}
+                         onChange={(e) => setForm({ ...form, autopilot_consent: e.target.checked })} />
+                  <span>I understand Riseply will submit applications on my behalf, using my resume and the details in my profile, without asking me first.</span>
+                </label>
+              )}
+            </>
+          )}
+        </div>
           </>
         )}
 
@@ -407,6 +447,7 @@ export default function ProfilePage() {
         </p>
         </div>
       )}
+      {isOrgAffiliated === false && <AlertHealth />}
       {isOrgAffiliated === false && <DiscordSettings />}
     </div>
   );

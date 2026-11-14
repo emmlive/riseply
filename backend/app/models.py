@@ -96,6 +96,13 @@ class User(Base):
     # times, not just during the scheduled run).
     last_digest_sent_at = Column(DateTime, nullable=True)
     auto_submit = Column(Boolean, default=False)  # per-user override, defaults OFF
+    # Autopilot (services/autopilot.py): applies by itself, on supported application
+    # systems only, to matches at or above this score, at most this many a day.
+    # Off until the person turns it on and confirms; autopilot_consent_at records when.
+    autopilot_enabled = Column(Boolean, default=False, server_default="false")
+    autopilot_min_score = Column(Integer, default=85, server_default="85")
+    autopilot_daily_cap = Column(Integer, default=5, server_default="5")
+    autopilot_consent_at = Column(DateTime, nullable=True)
 
     tos_accepted_at = Column(DateTime, nullable=True)
     subscription_terms_accepted_at = Column(DateTime, nullable=True)
@@ -258,6 +265,10 @@ class Application(Base):
     # Set when a smart alert already emailed this match on its own, so the
     # digest does not list it a second time.
     alerted_at = Column(DateTime, nullable=True)
+    # Autopilot: when it was last tried (it tries each application once) and,
+    # when it actually applied, when.
+    autopilot_tried_at = Column(DateTime, nullable=True)
+    auto_applied_at = Column(DateTime, nullable=True)
     # Guards against re-notifying the manager every time (e.g. if an
     # admin adds a new checklist item after the employee already
     # finished, re-completing it shouldn't re-fire the notification).
