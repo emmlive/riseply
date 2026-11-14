@@ -30,12 +30,71 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     return text
 
 
+def _docx_lines(doc) -> list[str]:
+    """Every piece of text in a Word resume, in reading order: body paragraphs,
+    tables (a lot of resumes are laid out in one), text boxes, and the header and
+    footer, which is where many people put their contact details. Reading only
+    doc.paragraphs silently drops all of that."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    lines: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: str):
+        t = (text or "").strip()
+        if t:
+            lines.append(t)
+
+    def table_lines(tbl):
+        for row in tbl.rows:
+            cells, last = [], None
+            for cell in row.cells:
+                if cell._tc is last:            # a merged cell repeats itself
+                    continue
+                last = cell._tc
+                cells.append(" ".join(p.text.strip() for p in cell.paragraphs if p.text.strip()))
+                for inner in cell.tables:
+                    table_lines(inner)
+            joined = " | ".join(c for c in cells if c)
+            if joined:
+                lines.append(joined)
+
+    for section in doc.sections:
+        for part in (section.header, section.footer):
+            for p in part.paragraphs:
+                t = p.text.strip()
+                if t and t not in seen:
+                    seen.add(t)
+                    add(t)
+            for tbl in part.tables:
+                table_lines(tbl)
+
+    body = doc.element.body
+    for child in body.iterchildren():
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            add(Paragraph(child, doc).text)
+        elif tag == "tbl":
+            table_lines(Table(child, doc))
+
+    # Text boxes sit inside paragraphs; Word stores each one twice (a modern and a
+    # fallback copy), so repeats are dropped.
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    boxed: set[str] = set()
+    for p in body.iterfind(".//w:txbxContent//w:p", ns):
+        t = "".join(x.text or "" for x in p.iterfind(".//w:t", ns)).strip()
+        if t and t not in boxed:
+            boxed.add(t)
+            add(t)
+    return lines
+
+
 def extract_text_from_docx(file_bytes: bytes) -> str:
     from docx import Document
     try:
         doc = Document(io.BytesIO(file_bytes))
-        paragraphs = [p.text for p in doc.paragraphs]
-        text = "\n".join(paragraphs).strip()
+        text = "\n".join(_docx_lines(doc)).strip()
     except Exception:
         raise HTTPException(
             status_code=400,

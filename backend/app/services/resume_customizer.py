@@ -181,6 +181,8 @@ Rules:
 - Keep roughly the same overall length as the original (one to two pages, never more).
 - Keep every employer, title and date exactly as in the original.
 - Plain text only: no tables, columns, icons, or special characters.
+- Never use an em dash or en dash inside a sentence (they mark text as machine-written). Use a
+  comma, a period or "and". Date ranges keep their dash.
 {_terms_block(job)}{_facts_block(facts)}{_closeness_block(base_resume, job)}{_focus_block(focus)}
 Return ONLY one JSON object, no markdown fences, in this shape:
 
@@ -278,6 +280,27 @@ def _clean(value) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+_DASH_SPACED = re.compile(r"\s*(?:\u2014|--+)\s*|(?<!\d)\s\u2013\s(?!\d)")
+
+
+def dedash(text: str) -> str:
+    """Em dashes in sentences are the best-known sign of machine-written text, and a
+    reader who sees many stops reading. A comma does the same job. Date ranges
+    ("Jan 2020 - Present") are not sentences and are never passed through here."""
+    t = _DASH_SPACED.sub(", ", str(text or ""))
+    return re.sub(r",\s*,", ",", t).strip()
+
+
+def scrub_blocks(blocks: list[dict]) -> list[dict]:
+    """The same blocks with em dashes taken out of bullets, paragraphs, skills and company lines."""
+    out = []
+    for b in blocks:
+        if b.get("type") in ("bullet", "text", "skills", "sub") and b.get("text"):
+            b = dict(b, text=dedash(b["text"]))
+        out.append(b)
+    return out
+
+
 def structure_to_blocks(resume: dict) -> list[dict]:
     blocks: list[dict] = []
     if _clean(resume.get("name")):
@@ -317,7 +340,7 @@ def structure_to_blocks(resume: dict) -> list[dict]:
                 if not title:
                     continue
                 section_blocks.append({"type": "entry", "left": title, "right": _clean(e.get("dates"))})
-                org_line = " — ".join(p for p in (_clean(e.get("org")) if _clean(e.get("title")) else "", _clean(e.get("location"))) if p)
+                org_line = ", ".join(p for p in (_clean(e.get("org")) if _clean(e.get("title")) else "", _clean(e.get("location"))) if p)
                 if org_line:
                     section_blocks.append({"type": "sub", "text": org_line})
                 for b in e.get("bullets") or []:
@@ -328,7 +351,7 @@ def structure_to_blocks(resume: dict) -> list[dict]:
             if heading:
                 blocks.append({"type": "heading", "text": heading})
             blocks.extend(section_blocks)
-    return blocks
+    return scrub_blocks(blocks)
 
 
 _CONTACT_HINT = re.compile(r"@|https?://|linkedin\.com|\(\d{3}\)|\d{3}[-. ]\d{3}[-. ]\d{4}", re.I)
@@ -607,6 +630,45 @@ _METRICS = {
 }
 
 
+# --------------------------------------------------------------------------
+# PDF fonts
+# --------------------------------------------------------------------------
+# The PDF used reportlab's built-in Helvetica, which is not embedded and has no
+# text map. Parsers then read every bullet as a stray control character
+# ("(cid:127)" in pdfminer, DEL in pypdf). Carlito (Calibri-sized, SIL OFL) is
+# embedded instead, so every glyph reads back as the text it is.
+_FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts")
+_PDF_FONT: tuple[str, str, str] | None = None
+
+
+def pdf_fonts() -> tuple[str, str, str]:
+    """(regular, bold, italic) font names for PDFs; Helvetica if Carlito can't load."""
+    global _PDF_FONT
+    if _PDF_FONT:
+        return _PDF_FONT
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        for name, fn in (("Carlito", "Carlito-Regular.ttf"), ("Carlito-Bold", "Carlito-Bold.ttf"),
+                         ("Carlito-Italic", "Carlito-Italic.ttf")):
+            pdfmetrics.registerFont(TTFont(name, os.path.join(_FONT_DIR, fn)))
+        pdfmetrics.registerFontFamily("Carlito", normal="Carlito", bold="Carlito-Bold",
+                                      italic="Carlito-Italic", boldItalic="Carlito-Bold")
+        _PDF_FONT = ("Carlito", "Carlito-Bold", "Carlito-Italic")
+    except Exception as e:
+        print(f"[resume_customizer] Carlito not available, using Helvetica: {e}")
+        _PDF_FONT = ("Helvetica", "Helvetica-Bold", "Helvetica-Oblique")
+    return _PDF_FONT
+
+
+_PDF_REPLACE = {"\u2713": "", "\u2714": "", "\u2192": "->", "\u00a0": " ", "\u200b": "", "\u2011": "-"}
+
+
+def pdf_safe(text: str) -> str:
+    """Characters Carlito has no glyph for would print as empty boxes."""
+    return "".join(_PDF_REPLACE.get(ch, ch) for ch in str(text or ""))
+
+
 def build_pdf_from_blocks(blocks: list[dict]) -> bytes:
     """The same resume as a PDF with real, selectable text: one column, a
     standard font, no images, tables or text boxes, so applicant tracking
@@ -621,26 +683,27 @@ def build_pdf_from_blocks(blocks: list[dict]) -> bytes:
     from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer
 
     ink, accent, muted = HexColor("#16233D"), HexColor("#1F7A6C"), HexColor("#5B6472")
+    F, FB, FI = pdf_fonts()
 
     def st(name, size, **kw):
-        return ParagraphStyle(name, fontName=kw.pop("font", "Helvetica"), fontSize=size, leading=kw.pop("leading", size * 1.25),
+        return ParagraphStyle(name, fontName=kw.pop("font", F), fontSize=size, leading=kw.pop("leading", size * 1.25),
                               textColor=kw.pop("color", ink), alignment=TA_LEFT, **kw)
 
     S = {
-        "name": st("name", 22, font="Helvetica-Bold", spaceAfter=2),
+        "name": st("name", 22, font=FB, spaceAfter=2),
         "headline": st("headline", 11, color=accent, spaceAfter=2),
         "contact": st("contact", 9, color=muted, spaceAfter=4),
-        "heading": st("heading", 10, font="Helvetica-Bold", color=accent, spaceBefore=10, spaceAfter=2, keepWithNext=1),
-        "entry": st("entry", 10, font="Helvetica-Bold", spaceBefore=5, keepWithNext=1),
-        "sub": st("sub", 9.5, font="Helvetica-Oblique", color=muted, spaceAfter=1, keepWithNext=1),
+        "heading": st("heading", 10, font=FB, color=accent, spaceBefore=10, spaceAfter=2, keepWithNext=1),
+        "entry": st("entry", 10, font=FB, spaceBefore=5, keepWithNext=1),
+        "sub": st("sub", 9.5, font=FI, color=muted, spaceAfter=1, keepWithNext=1),
         "text": st("text", 10, spaceAfter=3, leading=13),
         "skills": st("skills", 9.5, spaceAfter=2, leading=12.5),
-        "bullet": st("bullet", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, allowWidows=0, allowOrphans=0),
+        "bullet": st("bullet", 9.5, bulletFontName=F, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, allowWidows=0, allowOrphans=0),
         # The first bullet under a job stays with the next one, so a job title is never
         # left at the bottom of a page with a single line under it.
-        "bullet_first": st("bullet_first", 9.5, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, keepWithNext=1, allowWidows=0, allowOrphans=0),
+        "bullet_first": st("bullet_first", 9.5, bulletFontName=F, spaceAfter=1.5, leftIndent=14, bulletIndent=3, leading=12.5, keepWithNext=1, allowWidows=0, allowOrphans=0),
     }
-    esc = lambda t: escape(str(t or ""))
+    esc = lambda t: escape(pdf_safe(t))
 
     story = []
     prev = ""
@@ -654,7 +717,7 @@ def build_pdf_from_blocks(blocks: list[dict]) -> bytes:
             rule.keepWithNext = 1
             story.append(rule)
         elif t == "entry":
-            right = f' <font name="Helvetica" size="9" color="#5B6472">  |  {esc(b.get("right"))}</font>' if b.get("right") else ""
+            right = f' <font name="{F}" size="9" color="#5B6472">  |  {esc(b.get("right"))}</font>' if b.get("right") else ""
             story.append(Paragraph(esc(b.get("left")) + right, S["entry"]))
         elif t == "bullet":
             story.append(Paragraph(esc(b.get("text")), S["bullet_first" if prev == "sub" else "bullet"], bulletText="\u2022"))
@@ -1010,7 +1073,7 @@ def fit_to_pages(blocks: list[dict], job: dict, max_pages: float = 2.0, use_ai: 
                 got = None
             if not got:
                 break
-            current_blocks, note = got[0], got[1] or note
+            current_blocks, note = scrub_blocks(got[0]), got[1] or note
             result["ai_used"] = True
             if estimate_pages(current_blocks) <= limit:
                 break

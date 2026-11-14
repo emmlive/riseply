@@ -519,7 +519,7 @@
           filled.push(...(await RF.finishCustom()));
         }
         if (a.resume && RF.hasResumeInput() && await RF.attachResumeAsync(a.resume, { replace: !!a.replace })) {
-          filled.push(`${a.replace ? "ATS resume" : "resume"} (${a.resume.filename})`);
+          filled.push(resumeLabel(a.resume));
         }
         return { filled, left: RF.leftForYou(), changes: RF.changes() };
       }
@@ -896,7 +896,7 @@
         // when it fails: the person can still drag the file in themselves.
         if (window.RisePlyFill.hasResumeInput()) {
           const rf = await getResume();
-          if (rf.success && await window.RisePlyFill.attachResumeAsync(rf, { replace: !!tailored })) filled.push(`${tailored ? "ATS resume" : "resume"} (${rf.filename})`);
+          if (rf.success && await window.RisePlyFill.attachResumeAsync(rf, { replace: !!tailored })) filled.push(resumeLabel(rf));
         }
       }
       // The same again inside any iframes on the page (iCIMS, embedded
@@ -1294,6 +1294,14 @@
 
   // What Riseply already knows about the job on this page: in the person's
   // list or not, tailored resume or not, applied or not.
+  // Which file went into the form, said plainly. The tailored one is named for the
+  // job; anything else is the person's original resume, and they should know that.
+  function resumeLabel(rf) {
+    return rf && rf.source === "tailored"
+      ? `ATS resume for this job (${rf.filename})`
+      : `your original resume, not tailored for this job (${rf.filename})`;
+  }
+
   let pageApp = null;
 
   function pageUrl() { return location.href.split("#")[0]; }
@@ -1329,7 +1337,7 @@
         const msg = root.getElementById("riseply-attach-msg");
         const rf = await sendMessage({ type: "GET_RESUME_FILE", applicationId: pageApp.application_id });
         if (rf.success && window.RisePlyFill && await attachAnywhere(rf)) {
-          msg.innerHTML = `<p class="filled-list">Attached ${escapeHtml(rf.filename)}.</p>`;
+          msg.innerHTML = rf.source === "tailored" ? `<p class="filled-list">Attached ${escapeHtml(rf.filename)}.</p>` : `<p class="hint" style="color:#C97A2B;">The tailored resume could not be loaded, so ${escapeHtml(rf.filename)} (your original) was attached instead. Reload the page and try again.</p>`;
         } else {
           msg.innerHTML = `<p class="hint">I couldn't find a resume upload box on this page yet. Open the application form and press this again.</p>`;
         }
