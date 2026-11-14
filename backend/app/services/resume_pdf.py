@@ -18,8 +18,10 @@ def safe_filename(name: str) -> str:
 
 
 def build(resume_text: str) -> bytes:
-    body = ParagraphStyle("b", fontName="Helvetica", fontSize=10, leading=13)
-    head = ParagraphStyle("h", parent=body, fontName="Helvetica-Bold", spaceBefore=8)
+    from app.services.resume_customizer import pdf_fonts, pdf_safe  # embedded font: bullets and dashes read back as text
+    regular, bold, _ = pdf_fonts()
+    body = ParagraphStyle("b", fontName=regular, fontSize=10, leading=13)
+    head = ParagraphStyle("h", parent=body, fontName=bold, spaceBefore=8)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.8 * inch, rightMargin=0.8 * inch,
                             topMargin=0.7 * inch, bottomMargin=0.7 * inch)
@@ -31,7 +33,7 @@ def build(resume_text: str) -> bytes:
             continue
         # Short all-caps lines read as section headings.
         is_head = len(line) <= 40 and line.upper() == line and re.search(r"[A-Z]", line)
-        flow.append(Paragraph(escape(line.strip()), head if is_head else body))
+        flow.append(Paragraph(escape(pdf_safe(line.strip())), head if is_head else body))
     if not flow:
         flow.append(Paragraph("Resume", body))
     doc.build(flow)

@@ -71,7 +71,7 @@ def test_structure_becomes_blocks_in_order():
     ]
     assert blocks[2]["text"] == "jane@x.com  |  Plainfield, IL"
     assert blocks[8] == {"type": "entry", "left": "IT Auditor", "right": "2019 – Present"}
-    assert blocks[9]["text"] == "Fed — Chicago, IL"
+    assert blocks[9]["text"] == "Fed, Chicago, IL"
 
 
 def test_docx_round_trips_to_the_same_blocks():
