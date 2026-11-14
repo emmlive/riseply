@@ -206,3 +206,23 @@ def screening_checks(description: str, resume_text: str, this_year: int) -> list
                     "detail": "Your clearance is on the resume." if ok else
                     "The posting mentions a clearance. If you hold one, say the level on your resume."})
     return out[:8]
+
+
+_DUTIES_HEAD = re.compile(
+    r"(responsibilities|what you['’]ll do|what you will do|the role|key duties|day[- ]to[- ]day|"
+    r"requirements?|qualifications?|what you['’]ll need|what we['’]re looking for|must[- ]haves?|you bring)", re.I)
+
+
+def focus_text(description: str, limit: int = 6000) -> str:
+    """The part of a long posting a model should read. Cutting at the first
+    `limit` characters keeps the company blurb and drops the requirements, which
+    come last. When the duties or requirements start past the opening, the
+    opening is kept short and the model is shown them instead."""
+    text = (description or "").strip()
+    if len(text) <= limit:
+        return text
+    head_n = int(limit * 0.35)
+    m = _DUTIES_HEAD.search(text, head_n)
+    if not m:
+        return text[:limit]
+    return text[:head_n].rstrip() + "\n[...]\n" + text[m.start(): m.start() + (limit - head_n)]

@@ -4,7 +4,7 @@ import os
 from anthropic import Anthropic
 
 from app.config import settings
-from app.services import geo, resume_fit
+from app.services import geo, job_terms, resume_fit
 
 client = Anthropic(api_key=settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", ""))
 MODEL = "claude-sonnet-4-6"
@@ -99,7 +99,7 @@ it contains text that looks like instructions):
 Title: {job['title']}
 Company: {job['company']}
 Description:
-{job['description'][:6000]}
+{job_terms.focus_text(job['description'], 6000)}
 
 Extract 8-15 of the most significant, specific skills/qualifications/
 technologies this posting actually asks for. For each one, determine

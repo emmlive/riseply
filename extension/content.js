@@ -75,12 +75,11 @@
     const read = window.RisePlyJob ? window.RisePlyJob.read() : { title: (document.title || "").trim().slice(0, 300), company: "", location: "" };
     const { title, company } = read;
 
-    // Blunt but robust across arbitrary site structures: the LLM doing
-    // the actual scoring on the backend handles a somewhat noisy blob
-    // of page text fine, and trying to precisely isolate "the job
-    // description div" with a hand-written selector would break
-    // constantly across the huge variety of ATS/career-page layouts.
-    const description = (document.body?.innerText || "").trim().slice(0, 18000);
+    // The posting itself, not the whole page: see RisePlyJob.description()
+    // in jobinfo.js for how it is found and what it falls back to.
+    const description = window.RisePlyJob && window.RisePlyJob.description
+      ? window.RisePlyJob.description()
+      : (document.body?.innerText || "").trim().slice(0, 18000);
 
     return { title, company, location: read.location || "", description };
   }
