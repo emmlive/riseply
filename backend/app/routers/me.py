@@ -183,6 +183,13 @@ def regenerate_bookmarklet_token(
     return _to_out(user, db)
 
 
+@router.get("/alerts/status")
+def alert_status(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Why alerts are or are not arriving: setup, delivery and the daily search, each checked."""
+    from app.services import alert_status as svc
+    return svc.build(db, user)
+
+
 @router.post("/alerts/preview")
 def preview_alert(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Sends the person a sample of the email smart alerts produce, built from
@@ -209,4 +216,23 @@ def preview_alert(user: models.User = Depends(get_current_user), db: Session = D
     text = ("This is a preview of your Riseply alerts" + (" (sample jobs, since you have no matches yet)" if sample else " using your latest matches") + ".\n\n"
             + job_alerts.digest_text(chosen, now))
     notifier.send_alert_digest(user.notify_email or user.email, subject, text, job_alerts.digest_html(chosen, now), kind="test")
-    return {"sent_to": user.notify_email or user.email, "sample": sample}
+    return {"sent_to": user.notify_email or user.email, "sample": sample, "discord": _preview_discord(db, user, matches)}
+
+
+def _preview_discord(db: Session, user: models.User, matches: list[dict]) -> str:
+    """Sends the same sample to Discord and says what happened:
+    sent | not_connected | alerts_off | failed."""
+    from app.services import discord_notify
+    conn = db.query(models.DiscordConnection).filter_by(user_id=user.id).first()
+    if not conn or not conn.enabled:
+        return "not_connected"
+    if not conn.matches_enabled:
+        return "alerts_off"
+    before = conn.last_success_at
+    try:
+        discord_notify.notify_digest(db, user, matches)
+    except Exception as e:
+        print(f"[alerts] preview Discord failed for user {user.id}: {e}")
+        return "failed"
+    db.refresh(conn)
+    return "sent" if conn.last_success_at and conn.last_success_at != before else "failed"

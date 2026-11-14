@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { isPreviewingAsIndividual } from "@/lib/previewMode";
 import { api, User, API_URL, CalendarConnection, Organization, Application } from "@/lib/api";
 import DiscordSettings from "@/components/DiscordSettings";
+import AlertHealth from "@/components/AlertHealth";
 import { buildAutoFillBookmarklet } from "@/lib/bookmarklet";
 
 export default function ProfilePage() {
@@ -24,8 +25,11 @@ export default function ProfilePage() {
       await api("/me", { method: "PATCH", body: JSON.stringify({
         notification_preference: form.notification_preference, alert_digest_hour: form.alert_digest_hour,
         alert_timezone: form.alert_timezone, alert_instant_min_score: form.alert_instant_min_score }) });
-      await api("/me/alerts/preview", { method: "POST" });
-      setPreviewMsg("Sent. Check your inbox (and Spam, just this once).");
+      const r = await api<{ discord?: string }>("/me/alerts/preview", { method: "POST" });
+      const d = r?.discord === "sent" ? " A copy went to Discord too."
+        : r?.discord === "alerts_off" ? " Discord is connected but job alerts are off for it. Turn them on in the Discord section below."
+        : "";
+      setPreviewMsg("Sent. Check your inbox (and Spam, just this once)." + d);
     } catch (e: any) { setPreviewMsg(e?.message || "Couldn't send the preview."); }
     setPreviewing(false);
   }
@@ -443,6 +447,7 @@ export default function ProfilePage() {
         </p>
         </div>
       )}
+      {isOrgAffiliated === false && <AlertHealth />}
       {isOrgAffiliated === false && <DiscordSettings />}
     </div>
   );

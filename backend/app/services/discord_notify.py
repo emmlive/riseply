@@ -263,10 +263,18 @@ def notify_digest(db: Session, user: models.User, matches: list[dict]) -> None:
     if not conn or not matches:
         return
     top = sorted(matches, key=lambda m: m.get("match_score") or 0, reverse=True)[:5]
-    lines = [f"• **{m.get('title','')}** at {m.get('company','')} — {m.get('match_score','?')}%" for m in top]
+    lines = [_match_line(m) for m in top]
     extra = f"\n…and {len(matches) - 5} more" if len(matches) > 5 else ""
-    send(db, conn, build_payload(f"{len(matches)} new match{'es' if len(matches) != 1 else ''} today", "\n".join(lines) + extra,
-                                 url=settings.frontend_url.rstrip("/") + "/dashboard"))
+    send(db, conn, build_payload(f"{len(matches)} new match{'es' if len(matches) != 1 else ''} to apply to", "\n".join(lines) + extra,
+                                 url=settings.frontend_url.rstrip("/") + "/dashboard/apply-queue"))
+
+
+def _match_line(m: dict) -> str:
+    """One digest line. The title links to the posting when there is a safe link."""
+    title = re.sub(r"[\[\]()]", "", str(m.get("title", ""))).strip() or "New match"
+    url = str(m.get("url") or "")
+    label = f"[{title}]({url})" if url.startswith(("http://", "https://")) and " " not in url and ")" not in url else title
+    return f"• **{label}** at {m.get('company', '')}, {m.get('match_score', '?')}%"
 
 
 def _in_window(local_hour: int, target_hour: int) -> bool:

@@ -160,7 +160,14 @@ def send_alerts(
         raise HTTPException(status_code=503, detail="Alerts aren't configured (CRON_SECRET unset).")
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
-    return pipeline_runner.send_smart_alerts(db)
+    result = pipeline_runner.send_smart_alerts(db)
+    from app.services import alert_status
+    try:
+        alert_status.record_tick(db, result)
+    except Exception as e:      # the heartbeat must never break the alerts themselves
+        db.rollback()
+        print(f"[alerts] heartbeat failed: {e}")
+    return result
 
 
 @router.post("/run-autopilot", status_code=202)

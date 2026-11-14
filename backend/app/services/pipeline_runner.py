@@ -1398,6 +1398,11 @@ def send_smart_alerts(db: Session, now: datetime | None = None) -> dict:
                     sent += 1
                 if channel in ("sms", "both") and user.sms_consent:
                     sms.notify_digest_sms(user.phone, len(matches))
+                try:
+                    # Discord is its own opt-in (matches_enabled), so it is not tied to the email channel.
+                    discord_notify.notify_digest(db, user, matches)
+                except Exception as e:
+                    print(f"[pipeline] Smart digest Discord failed for user {user.id}: {e}")
                 user.last_digest_sent_at = now
             elif user.last_digest_sent_at is None:
                 user.last_digest_sent_at = now   # first day: start the clock, no "quiet" note yet
