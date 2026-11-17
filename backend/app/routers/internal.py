@@ -160,8 +160,18 @@ def send_alerts(
         raise HTTPException(status_code=503, detail="Alerts aren't configured (CRON_SECRET unset).")
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Invalid cron secret.")
-    result = pipeline_runner.send_smart_alerts(db)
     from app.services import alert_status
+    try:
+        result = pipeline_runner.send_smart_alerts(db)
+    except Exception as e:
+        db.rollback()
+        # Leave a failed run on record, so "are my alerts working?" can show the
+        # reason instead of staying silent.
+        try:
+            alert_status.record_tick(db, {}, error=f"{type(e).__name__}: {e}")
+        except Exception:
+            db.rollback()
+        raise HTTPException(status_code=500, detail=f"Smart alerts failed: {type(e).__name__}: {e}")
     try:
         alert_status.record_tick(db, result)
     except Exception as e:      # the heartbeat must never break the alerts themselves
