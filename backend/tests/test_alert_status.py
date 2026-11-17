@@ -195,11 +195,33 @@ def test_endpoints_status_preview_and_hourly_heartbeat(monkeypatch):
             with patch.object(dn, "_post", return_value=(False, 500, "Discord returned HTTP 500.")):
                 assert c.post("/me/alerts/preview").json()["discord"] == "failed"
 
-        before = db.query(models.ScheduledRunLog).filter_by(run_type=alert_status.HEARTBEAT).count()
         monkeypatch.setattr(settings, "cron_secret", "s3cret")
         r = c.post("/internal/send-alerts", headers={"x-cron-secret": "s3cret"})
         assert r.status_code == 200
-        assert db.query(models.ScheduledRunLog).filter_by(run_type=alert_status.HEARTBEAT).count() == before + 1
+        latest = db.query(models.ScheduledRunLog).filter_by(run_type=alert_status.HEARTBEAT).order_by(models.ScheduledRunLog.started_at.desc()).first()
+        assert latest.status == "success" and datetime.utcnow() - latest.started_at < timedelta(minutes=1)
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+
+def test_a_failed_hourly_run_is_reported_with_its_reason(monkeypatch):
+    from app.database import get_db
+    from app.security import get_current_user
+    db = _db()
+    u = _user(db)
+    app.dependency_overrides[get_current_user] = lambda: u
+    app.dependency_overrides[get_db] = lambda: db
+    monkeypatch.setattr(settings, "cron_secret", "s3cret")
+    c = TestClient(app, raise_server_exceptions=False)
+    try:
+        db.query(models.ScheduledRunLog).filter_by(run_type=alert_status.HEARTBEAT).delete()
+        db.commit()
+        with patch.object(pipeline_runner, "send_smart_alerts", side_effect=RuntimeError("bad timezone for user 7")):
+            r = c.post("/internal/send-alerts", headers={"x-cron-secret": "s3cret"})
+        assert r.status_code == 500 and "bad timezone" in r.json()["detail"]
+        hourly = _by_id(alert_status.build(db, u, datetime.utcnow()))["hourly"]
+        assert not hourly["ok"] and "failed" in hourly["detail"] and "bad timezone" in hourly["detail"]
     finally:
         app.dependency_overrides.clear()
         db.close()

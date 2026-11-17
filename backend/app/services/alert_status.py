@@ -15,12 +15,12 @@ STALE_TICK = timedelta(hours=3)
 HEARTBEAT = "smart_alerts"
 
 
-def record_tick(db: Session, result: dict, now: datetime | None = None) -> None:
+def record_tick(db: Session, result: dict, now: datetime | None = None, error: str | None = None) -> None:
     """One row each time the hourly alerts job runs, so 'is the hourly job running at
     all?' can be answered. Rows older than three days are dropped."""
     now = now or datetime.utcnow()
-    db.add(models.ScheduledRunLog(run_type=HEARTBEAT, status="success", result_json=json.dumps(result),
-                                  started_at=now, finished_at=now))
+    db.add(models.ScheduledRunLog(run_type=HEARTBEAT, status="failed" if error else "success", result_json=json.dumps(result),
+                                  error=(error or None) and error[:500], started_at=now, finished_at=now))
     db.query(models.ScheduledRunLog).filter(
         models.ScheduledRunLog.run_type == HEARTBEAT, models.ScheduledRunLog.started_at < now - timedelta(days=3)
     ).delete(synchronize_session=False)
@@ -123,10 +123,13 @@ def build(db: Session, user: models.User, now: datetime | None = None) -> dict:
 
     if pref == "smart":
         tick = db.query(models.ScheduledRunLog).filter_by(run_type=HEARTBEAT).order_by(models.ScheduledRunLog.started_at.desc()).first()
-        if not tick or now - tick.started_at > STALE_TICK:
+        if tick and tick.status == "failed" and now - tick.started_at <= STALE_TICK:
             checks.append(_check("hourly", False, "The hourly alert job runs",
-                                 ("It has not run yet." if not tick else f"It last ran {_ago(tick.started_at, now)}.")
-                                 + " In GitHub: Actions, Smart alerts, Run workflow, and check the BACKEND_URL and CRON_SECRET secrets."))
+                                 f"It ran {_ago(tick.started_at, now)} but failed: {(tick.error or 'no detail')[:200]}"))
+        elif not tick or now - tick.started_at > STALE_TICK:
+            checks.append(_check("hourly", False, "The hourly alert job runs",
+                                 ("Riseply has never heard from it." if not tick else f"Riseply last heard from it {_ago(tick.started_at, now)}.")
+                                 + " In GitHub: Actions, Smart alerts. If there are no runs, press Run workflow; if runs show a red X, open one and read the error."))
         else:
             checks.append(_check("hourly", True, "The hourly alert job runs", f"Last ran {_ago(tick.started_at, now)}."))
 
