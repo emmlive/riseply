@@ -167,6 +167,9 @@ class Settings(BaseSettings):
     # Blank means the endpoint is disabled (503), not open -- there's no
     # "unauthenticated batch job that processes every user" default.
     cron_secret: str = ""
+    # The server checks its own clock every few minutes and sends the hourly smart alerts
+    # itself if the GitHub Actions trigger has not been heard from in the last 50 minutes.
+    alerts_timer_enabled: bool = True
 
     # How many unseen jobs a single interactive "Find new matches" click
     # scores before returning, so the request comes back in a reasonable
