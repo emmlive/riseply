@@ -34,3 +34,4 @@ os.environ.setdefault("CRON_SECRET", "test-secret-value")
 os.environ.setdefault("CALENDAR_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("MICROSOFT_OAUTH_CLIENT_ID", "test-client-id")
 os.environ.setdefault("MICROSOFT_OAUTH_CLIENT_SECRET", "test-client-secret")
+os.environ.setdefault("ALERTS_TIMER_ENABLED", "false")   # no background timer thread during tests

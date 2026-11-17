@@ -99,6 +99,9 @@ except OperationalError as e:
 
 app = FastAPI(title="Riseply API")
 
+from app.services import alert_timer  # noqa: E402  (after startup tasks: the tables must exist first)
+alert_timer.start()
+
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
