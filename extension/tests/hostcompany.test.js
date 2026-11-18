@@ -8,4 +8,7 @@ assert.equal(h("careers.acme.com"), "acme");
 assert.equal(h("www.acme.com"), "acme");
 assert.equal(h("constellation.wd5.myworkdayjobs.com"), "constellation");
 assert.equal(h("jobs.lever.co"), "lever");
+assert.equal(h("job-boards.greenhouse.io","/kairospower/jobs/6102019004"),"kairospower");
+assert.equal(h("jobs.lever.co","/acme/abc"),"acme");
+assert.equal(h("boards.greenhouse.io","/embed/job_app"),"greenhouse");
 console.log("ok");

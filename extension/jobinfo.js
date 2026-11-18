@@ -33,7 +33,14 @@
   const GENERIC = new Set(["www", "apply", "jobs", "job", "careers", "career", "boards", "board", "recruiting",
     "recruit", "hire", "hiring", "talent", "external", "ext", "work", "workat", "join", "app", "secure"]);
 
-  function hostCompany(host) {
+  // Boards hosted by an ATS carry the company in the first path segment
+  // (job-boards.greenhouse.io/kairospower/jobs/123), not in the host.
+  const PATH_BOARDS = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|jobvite\.com)$/;
+
+  function hostCompany(host, path) {
+    const h = String(host || "").toLowerCase();
+    const seg = String(path || "").split("/").filter(Boolean)[0];
+    if (seg && PATH_BOARDS.test(h) && !/^(embed|jobs|apply|v1|api)$/i.test(seg)) return seg.toLowerCase();
     const labels = String(host || "").toLowerCase().split(".").filter(Boolean);
     const pick = labels.slice(0, -1).find((l) => !GENERIC.has(l) && !/^wd\d+$/.test(l));
     return pick || labels[0] || "";
@@ -41,7 +48,7 @@
 
   function siteName() {
     const og = document.querySelector('meta[property="og:site_name"]')?.content;
-    return clean(og || hostCompany(location.hostname), 200);
+    return clean(og || hostCompany(location.hostname, location.pathname), 200);
   }
 
   // The job heading is rarely the first <h1>: logos and site banners are
