@@ -271,7 +271,7 @@ def test_approve_keeps_the_job_when_the_site_will_not_say(db):
 # --- regression: the relevance check must not hide jobs people want ------
 
 @pytest.mark.parametrize("profile_title, wanted_jobs", [
-    ("Cybersecurity Architect", ["Security Architect", "Information Security Engineer", "Cloud Security Lead", "Cyber Defense Analyst"]),
+    ("Cybersecurity Architect", ["Security Architect", "Cloud Security Architect", "Cloud Security Lead", "Cyber Defense Analyst"]),
     ("IT Auditor", ["Internal Audit Manager", "Technology Risk Assurance Associate", "Information Systems Auditor"]),
     ("Project Scheduler", ["Planning Engineer", "Primavera P6 Planner", "Construction Project Controls Specialist"]),
     ("Software Engineer", ["Backend Developer", "Python Developer", "Full Stack Developer"]),
@@ -321,3 +321,17 @@ def test_find_new_matches_works_with_a_resume_and_no_profile(db):
     bare = _user(db, resume="I like walking dogs and baking bread")
     r = _as(bare.id).post("/pipeline/match")
     assert r.status_code == 400 and "search profile" in r.json()["detail"]
+
+
+def test_same_opening_in_several_towns_is_scored_once(db):
+    u = _user(db)
+    _profile(db, u.id, ["IT Auditor"])
+    _job(db, "Senior IT Auditor - Preble, WI", company="Green Bay Packaging", location="Preble, WI")
+    _job(db, "Senior IT Auditor - Oneida, WI", company="Green Bay Packaging", location="Oneida, WI")
+    _job(db, "Senior IT Auditor", company="Other Co")
+    scored, _ = _run(db, u)
+    assert len(scored) == 2
+    # the skipped repeat is remembered, so it does not return next run
+    assert db.query(models.ScoredJob).filter_by(user_id=u.id).count() == 3
+    scored2, _ = _run(db, u)
+    assert scored2 == []
