@@ -874,7 +874,7 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
     # memory for a capped run is bounded by max_jobs full postings,
     # not the whole backlog.
     unseen_rows = db.query(
-        models.Job.id, models.Job.title, models.Job.location,
+        models.Job.id, models.Job.title, models.Job.location, models.Job.company,
         # Only the start of the description, for the relevance check below
         # (the full text is fetched later for the few jobs actually scored).
         func.substr(models.Job.description, 1, 800).label("snippet"),
@@ -904,6 +904,39 @@ def run_matching_for_user(db: Session, user: models.User, max_jobs: int | None =
             if any(matcher._location_matches(p.get("locations", []), r.location or "", r.title or "", p.get("radius_miles"))
                    for p in profiles)
         ]
+
+    # One opening, one card: the same company and title posted in several towns
+    # (or on several boards) is a single job. Skip any the person already has
+    # or has already been shown, and keep only the first of a group here. The
+    # first is the one nearest to what they searched, since the location check
+    # above has already run. Skipped repeats are marked seen so they never come back.
+    seen_keys = {
+        search_terms.dupe_key(c, t)
+        for c, t in db.query(models.Job.company, models.Job.title)
+        .join(models.Application, models.Application.job_id == models.Job.id)
+        .filter(models.Application.user_id == user.id).all()
+    }
+    seen_keys |= {
+        search_terms.dupe_key(c, t)
+        for c, t in db.query(models.Job.company, models.Job.title)
+        .join(models.ScoredJob, models.ScoredJob.job_id == models.Job.id)
+        .filter(models.ScoredJob.user_id == user.id).all()
+    }
+    kept_rows, repeat_ids = [], []
+    for r in unseen_rows:
+        k = search_terms.dupe_key(r.company, r.title)
+        if k in seen_keys:
+            repeat_ids.append(r.id)
+        else:
+            seen_keys.add(k)
+            kept_rows.append(r)
+    if repeat_ids:
+        insert_fn = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+        for jid in repeat_ids:
+            db.execute(insert_fn(models.ScoredJob).values(user_id=user.id, job_id=jid)
+                       .on_conflict_do_nothing(index_elements=["user_id", "job_id"]))
+        db.commit()
+    unseen_rows = kept_rows
 
     hit_job_cap = False
     if max_jobs is not None and len(unseen_rows) > max_jobs:

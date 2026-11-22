@@ -80,6 +80,33 @@ def _has_tech_role(text: str) -> bool:
     return bool(set(re.split(r"[^a-z]+", (text or "").lower())) & _TECH_ROLES)
 
 
+# What a job IS, one step above the words: an Architect designs, an Engineer
+# builds, an Analyst reviews. A person searching for one of these does not
+# want the others just because the topic matches ("Security Architect" and
+# "Security Engineer" share "security" and nothing else they care about).
+# Only these two are split; auditor, manager, analyst and the like stay loose
+# because people do search across them.
+_ROLE_KINDS = {
+    "architect": "architect",
+    "engineer": "engineer", "developer": "engineer", "programmer": "engineer",
+}
+
+
+def role_kinds(text: str) -> set[str]:
+    return {_ROLE_KINDS[w] for w in re.split(r"[^a-z]+", (text or "").lower()) if w in _ROLE_KINDS}
+
+
+def dupe_key(company: str, title: str) -> str:
+    """Same company + same title is the same opening, whichever town or board
+    it was posted under. 'Senior Security Engineer - Preble, WI' and
+    '... - Oneida, WI' collapse to one key."""
+    c = re.sub(r"[^a-z0-9]+", " ", (company or "").lower()).strip()
+    c = re.sub(r"\b(inc|llc|ltd|corp|corporation|co|company)\b", "", c).strip()
+    t = re.split(r"\s+[-–—|]\s+|\s*\(|\s*,\s+(?=[A-Z]{2}\b)", title or "")[0]
+    t = re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+    return f"{' '.join(c.split())}|{' '.join(t.split())}"
+
+
 def _expand(stems: set[str]) -> set[str]:
     out = set(stems)
     for family in _FAMILIES:
@@ -184,6 +211,14 @@ def title_fits(job_title: str, profiles: list[dict], description: str = "") -> b
             wanted |= _distinctive_stems(term)
         if not wanted:
             return True
+        # Wrong kind of job (Engineer when they search Architect): not for them,
+        # however much the topic words overlap.
+        wanted_kinds = set()
+        for t in profile.get("titles", []):
+            wanted_kinds |= role_kinds(t)
+        job_kinds = role_kinds(job_title)
+        if wanted_kinds and job_kinds and not (wanted_kinds & job_kinds):
+            continue
         wanted = _expand(wanted)
         if (title_stems | desc_stems) & wanted:
             return True
